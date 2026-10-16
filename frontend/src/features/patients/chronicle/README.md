@@ -51,3 +51,13 @@ Run from `frontend/`:
 npm run test -- PatientChroniclePage
 npm run test -- workspaceRegistry visitScopeUtils
 ```
+
+Current Rust startup `permissions` is authoritative for full-clinical presentation
+and the individual add-note, record-vitals and prescribe actions. Summary access
+keeps authorized timeline titles/status/dates, medication/vital/lab summaries and
+scalar vital trends; note bodies, note focus/copy/edit, prescription detail/actions
+and full nursing/history workspaces do not mount without the corresponding proof.
+An absent proof fails closed. Clinical writes are not inferred from a data class
+or an admin role. The page uses the existing sanitized authorization/transport
+scope to discard copied UI state on authority changes; mounted startup reads still
+reconfirm current access. Summary trend views disable fluid queries and tabs.

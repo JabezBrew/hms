@@ -1,3 +1,4 @@
+import { savedStockPolicy, scheduledPolicyMatches } from './scheduledStockPolicy';
 import { v2Request } from '@/lib/api/v2/client';
 import { acknowledgeWriteResponse, copyWriteResponseMetadata, markWriteResponseUncertain } from '@/lib/api/v2/writeUncertainty';
 
@@ -15,6 +16,7 @@ export function prescriptionDetail(value, { id, patientId } = {}) {
     || !(value.first_dose_at === null || date(value.first_dose_at))
     || !(value.inventory_item_id === null || validId(value.inventory_item_id))
     || !(value.successor_prescription_id === null || validId(value.successor_prescription_id))
+    || (value.scheduled_stock_policy != null && (!savedStockPolicy(value.scheduled_stock_policy) || value.prn_policy || value.frequency.trim().toLowerCase() === 'prn'))
     || (value.provenance && (!validId(value.provenance.source_prescription_id) || !['renewal', 'replacement'].includes(value.provenance.relation) || !date(value.provenance.recorded_at) || typeof value.provenance.change_reason !== 'string'))
     || (value.prn_policy && (!Number.isSafeInteger(value.prn_policy.minimum_interval_hours) || !Number.isSafeInteger(value.prn_policy.maximum_doses_per_24_hours) || !Number.isSafeInteger(value.prn_policy.stock_units_per_dose) || typeof value.prn_policy.indication !== 'string' || typeof value.prn_policy.stock_unit !== 'string'))) throw new Error('The current prescription details could not be confirmed.');
   return value;
@@ -24,6 +26,7 @@ const uncertain = (error) => !error?.status || error.status >= 500 || error.data
 function documentationReceipt(value, source, payload) {
   const detail = prescriptionDetail(value?.prescription, { id: source.id, patientId: source.patient_id });
   if (value.client_request_id !== payload.client_request_id || typeof value.replayed !== 'boolean' || detail.instructions !== payload.instructions || detail.reason !== payload.reason
+    || ['stock_unit', 'stock_units_per_dose'].some((key) => (detail.scheduled_stock_policy?.[key] ?? null) !== (source.scheduled_stock_policy?.[key] ?? null))
     || ['medication_name', 'dose', 'route', 'frequency', 'status', 'inventory_item_id', 'start_date', 'duration_days', 'first_dose_at'].some((key) => (detail[key] ?? null) !== (source[key] ?? null))) throw new PrescriptionActionUnconfirmedError();
   return value;
 }
@@ -36,6 +39,7 @@ function courseReceipt(value, source, payload) {
     || (payload.first_dose_at ? Date.parse(detail.first_dose_at) !== Date.parse(payload.first_dose_at) : detail.first_dose_at !== null)
     || ['encounter_id', 'visit_id'].some((key) => (detail[key] ?? null) !== (payload[key] ?? null))
     || detail.provenance?.source_prescription_id !== source.id || detail.provenance.relation !== payload.relation || detail.provenance.change_reason !== payload.change_reason) throw new PrescriptionActionUnconfirmedError();
+  if (payload.scheduled_stock_policy ? !scheduledPolicyMatches(detail.scheduled_stock_policy, payload.scheduled_stock_policy) : detail.scheduled_stock_policy != null) throw new PrescriptionActionUnconfirmedError();
   if (payload.prn_policy) { const saved = detail.prn_policy; if (!saved || ['minimum_interval_hours', 'maximum_doses_per_24_hours', 'indication', 'stock_units_per_dose'].some((key) => saved[key] !== payload.prn_policy[key]) || saved.stock_unit !== payload.expected_stock_unit) throw new PrescriptionActionUnconfirmedError(); }
   else if (detail.prn_policy) throw new PrescriptionActionUnconfirmedError();
   return value;

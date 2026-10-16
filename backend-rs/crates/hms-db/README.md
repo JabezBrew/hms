@@ -66,3 +66,14 @@ Run from `backend-rs/`:
 ```bash
 cargo test -p hms-db
 ```
+
+## Reviewed medication stock basis
+
+`clinical/stock_basis.rs` owns explicit scheduled inventory units, immutable unit
+validation, active admission fences, checked quantity multiplication and shared
+actor-deadline checks. Migration016 preserves unknown legacy evidence; reviewed
+replacement courses provide the supported recovery. See
+[scope and compatibility](../../../docs/v2/2026-10-16-scheduled-stock-basis-scope.md).
+Focused tests are `scheduled_stock_basis`, `medication_lifecycle`, `prn_doses`,
+`mar_outcomes`, and `prescription_courses`; inventory/standing suites cover shared
+stock writers.

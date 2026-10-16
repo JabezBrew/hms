@@ -14,6 +14,7 @@ pub mod laboratory;
 pub mod network;
 pub mod observability;
 pub mod ops;
+pub mod patient_handover;
 pub mod patients;
 pub mod pharmacy;
 pub mod referrals;

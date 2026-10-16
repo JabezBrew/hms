@@ -235,6 +235,7 @@ impl MarService {
         ctx: &hms_access::RequestContext,
         id: Uuid,
         payload: RecordMedicationOutcomeRequest,
+        authorization_deadline: chrono::DateTime<chrono::Utc>,
     ) -> Result<ObjectResponse<MedicationAdministrationListItem>, ApiError> {
         self.administer_medication(
             ctx,
@@ -245,6 +246,7 @@ impl MarService {
                 reason_not_given: payload.reason_not_given,
                 administration_notes: payload.administration_notes,
             },
+            authorization_deadline,
         )
         .await
     }
@@ -254,6 +256,7 @@ impl MarService {
         ctx: &hms_access::RequestContext,
         id: Uuid,
         payload: AdministerMedicationRequest,
+        authorization_deadline: chrono::DateTime<chrono::Utc>,
     ) -> Result<ObjectResponse<MedicationAdministrationListItem>, ApiError> {
         common::require_facility_permission(
             ctx,
@@ -283,6 +286,7 @@ impl MarService {
         let medication = hms_db::ward::record_medication_outcome(
             self.state.db_pool(),
             RecordMedicationOutcome {
+ authorization: Some(crate::services::clinical::prescription_courses::authorization(ctx, authorization_deadline)),
                 facility_id: self.state.facility_id(), medication_id: id,
                 actor_user_id: ctx.user_id,
                 status: payload.status.unwrap_or(MedicationAdministrationOutcome::Administered),
@@ -294,6 +298,8 @@ impl MarService {
         )
         .await
         .map_err(|error| {
+            if error.is::<hms_db::clinical::stock_basis::StockBasisError>() || error.is::<hms_db::clinical::prescription_courses::PrescriptionCourseError>() {return crate::services::clinical::prescription_courses::write_error(error);}
+
             if let Some(reason) = error.downcast_ref::<MedicationOutcomeError>() {
                 return match reason {
                     MedicationOutcomeError::InvalidReason | MedicationOutcomeError::NotesTooLong

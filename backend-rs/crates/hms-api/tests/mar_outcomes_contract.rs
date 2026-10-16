@@ -219,7 +219,7 @@ async fn source_based_administration_requires_supply_but_refusal_does_not_invent
     .unwrap();
     let prescription = Uuid::new_v4();
     let start = Utc::now() - chrono::Duration::hours(1);
-    hms_db::clinical::create_prescription(
+    create_reviewed_scheduled_fixture(
         &pool,
         hms_db::clinical::NewPrescription {
             id: prescription,
@@ -244,6 +244,7 @@ async fn source_based_administration_requires_supply_but_refusal_does_not_invent
     let generated = hms_db::pharmacy::generate_mar_for_prescription(
         &pool,
         hms_db::pharmacy::GenerateMarCommand {
+            authorization: None,
             facility_id: facility,
             prescription_id: prescription,
             admission_case_id: admission,
@@ -315,4 +316,31 @@ async fn generic_storage_failures_report_an_uncertain_outcome_without_leaking_or
         status, "scheduled",
         "the transaction still rolls back on a known precommit failure"
     );
+}
+
+// Synthetic scenario deliberately reviews one inventory unit per dose. This is
+// fixture input, never a default for existing or newly submitted prescriptions.
+async fn create_reviewed_scheduled_fixture(
+    pool: &hms_db::PgPool,
+    prescription: hms_db::clinical::NewPrescription,
+) -> anyhow::Result<hms_domain::clinical::PrescriptionDetail> {
+    let expected_stock_unit =
+        sqlx::query_scalar("SELECT unit FROM inventory_items WHERE facility_id=$1 AND id=$2")
+            .bind(prescription.facility_id)
+            .bind(prescription.inventory_item_id.unwrap())
+            .fetch_one(pool)
+            .await?;
+    hms_db::clinical::prescription_courses::create_with_stock_policy(
+        pool,
+        prescription,
+        None,
+        Some(hms_domain::clinical::ScheduledStockPolicyRequest {
+            expected_stock_unit,
+            stock_units_per_dose: 1,
+        }),
+        hms_db::clinical::prescription_courses::PrescriptionDocumentation::default(),
+        None,
+        None,
+    )
+    .await
 }

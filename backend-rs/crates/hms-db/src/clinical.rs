@@ -1,4 +1,5 @@
 pub mod prescription_courses;
+pub mod stock_basis;
 
 use anyhow::Context;
 use chrono::{DateTime, NaiveDate, Utc};
@@ -46,7 +47,7 @@ pub async fn list_medication_catalog(
         updated_at: DateTime<Utc>,
     }
     let mut query = QueryBuilder::<Postgres>::new(
-        "SELECT id, code, name, unit, controlled, updated_at FROM inventory_items WHERE facility_id = ",
+        "SELECT id, code, name, unit, (controlled OR item_type='controlled_substance') AS controlled, updated_at FROM inventory_items WHERE facility_id = ",
     );
     query.push_bind(facility_id);
     query.push(" AND is_active AND item_type IN ('medication', 'controlled_substance')");
@@ -1176,6 +1177,7 @@ pub async fn create_prescription_with_prn_policy(
         policy,
         prescription_courses::PrescriptionDocumentation::default(),
         None,
+        None,
     )
     .await?;
     transaction.commit().await?;
@@ -1188,6 +1190,7 @@ pub(crate) async fn insert_prescription_in_transaction(
     policy: Option<PrnPolicyRequest>,
     documentation: prescription_courses::PrescriptionDocumentation,
     inherited_prn_group: Option<Uuid>,
+    scheduled_policy: Option<hms_domain::clinical::ScheduledStockPolicyRequest>,
 ) -> anyhow::Result<PrescriptionListItem> {
     let documentation = documentation.normalized()?;
     let policy = policy
@@ -1195,6 +1198,19 @@ pub(crate) async fn insert_prescription_in_transaction(
         .transpose()?;
     if policy.is_some() && !prescription.frequency.eq_ignore_ascii_case("prn") {
         anyhow::bail!("invalid_prn_policy");
+    }
+    let scheduled_policy = scheduled_policy
+        .map(|p| {
+            p.normalized()
+                .map_err(|_| stock_basis::StockBasisError::InvalidPolicy)
+        })
+        .transpose()?;
+    if scheduled_policy.is_some()
+        && (policy.is_some()
+            || prescription.frequency.trim().eq_ignore_ascii_case("prn")
+            || prescription.inventory_item_id.is_none())
+    {
+        return Err(stock_basis::StockBasisError::InvalidPolicy.into());
     }
     let mut stock_unit = None;
     if let Some(item_id) = prescription.inventory_item_id {
@@ -1211,6 +1227,21 @@ pub(crate) async fn insert_prescription_in_transaction(
     {
         anyhow::bail!("prn_stock_unit_changed");
     }
+    let scheduled_policy = if let Some(limits) = scheduled_policy {
+        Some(sqlx::types::Json(
+            stock_basis::capture_policy(
+                transaction,
+                prescription.facility_id,
+                prescription
+                    .inventory_item_id
+                    .ok_or(stock_basis::StockBasisError::InvalidPolicy)?,
+                limits,
+            )
+            .await?,
+        ))
+    } else {
+        None
+    };
     let policy = policy
         .map(|limits| {
             stock_unit
@@ -1232,9 +1263,9 @@ pub(crate) async fn insert_prescription_in_transaction(
     let row = sqlx::query_as::<_, PrescriptionRow>(
         r#"
         INSERT INTO prescriptions (
-            id, facility_id, patient_id, encounter_id, visit_id, discharge_case_id, medication_name, dose, route, frequency, inventory_item_id, start_date, duration_days, first_dose_at, status, created_by_user_id, prn_policy, instructions, reason, prn_safety_group_id
+            id, facility_id, patient_id, encounter_id, visit_id, discharge_case_id, medication_name, dose, route, frequency, inventory_item_id, start_date, duration_days, first_dose_at, status, created_by_user_id, prn_policy, instructions, reason, prn_safety_group_id, scheduled_stock_policy
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
         RETURNING id, patient_id, encounter_id, visit_id, discharge_case_id, medication_name, dose, route, frequency, inventory_item_id, start_date, duration_days, first_dose_at, prn_policy, status, prescribed_at
         "#,
     )
@@ -1258,6 +1289,7 @@ pub(crate) async fn insert_prescription_in_transaction(
     .bind(documentation.instructions)
     .bind(documentation.reason)
     .bind(prn_group)
+    .bind(scheduled_policy)
     .fetch_one(&mut **transaction)
     .await?;
     prescription_from_row(row)
@@ -1340,7 +1372,7 @@ pub(crate) async fn update_prescription_in_transaction(
         prescription_courses::lock_prn_safety_group(transaction, facility_id, prescription_id)
             .await?;
     let has_course = sqlx::query_scalar::<_, bool>(
-        "SELECT EXISTS (SELECT 1 FROM medication_courses WHERE facility_id = $1 AND prescription_id = $2)",
+        "SELECT EXISTS (SELECT 1 FROM medication_courses WHERE facility_id = $1 AND prescription_id = $2) OR EXISTS(SELECT 1 FROM prescriptions WHERE facility_id=$1 AND id=$2 AND scheduled_stock_policy IS NOT NULL)",
     ).bind(facility_id).bind(prescription_id).fetch_one(&mut **transaction).await?;
     let regimen_changed = update
         .medication_name

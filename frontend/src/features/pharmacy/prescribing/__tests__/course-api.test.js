@@ -34,3 +34,9 @@ it('confirms explicitly reviewed PRN limits while rejecting a changed saved stoc
   globalThis.fetch.mockResolvedValueOnce(json({ data: courseReceipt(payload, original) })); await expect(courseApi.course(original, payload)).resolves.toMatchObject({ prescription: { prn_policy: { minimum_interval_hours: 4, maximum_doses_per_24_hours: 3 } } });
   const malformed = courseReceipt(payload, original); malformed.prescription.stock_unit = 'pack'; globalThis.fetch.mockResolvedValueOnce(json({ data: malformed })); await expect(courseApi.course(original, payload)).rejects.toMatchObject({ name: 'PrescriptionActionUnconfirmedError' });
 });
+
+it.each(['exact', 'missing', 'quantity', 'unit'])('requires the exact saved scheduled stock basis on a reviewed linked course (%s)', async (fault) => {
+  const payload = { ...coursePayload, inventory_item_id: requestId, expected_stock_unit: 'tablet', scheduled_stock_policy: { expected_stock_unit: 'tablet', stock_units_per_dose: 2 } };
+  const receipt = courseReceipt(payload); if (fault === 'missing') receipt.prescription.scheduled_stock_policy = null; if (fault === 'quantity') receipt.prescription.scheduled_stock_policy.stock_units_per_dose = 1; if (fault === 'unit') receipt.prescription.scheduled_stock_policy.stock_unit = 'pack';
+  globalThis.fetch.mockResolvedValueOnce(json({ data: receipt })); if (fault === 'exact') await expect(courseApi.course(source, payload)).resolves.toMatchObject({ prescription: { scheduled_stock_policy: { stock_units_per_dose: 2 } } }); else await expect(courseApi.course(source, payload)).rejects.toMatchObject({ name: 'PrescriptionActionUnconfirmedError' }); expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+});

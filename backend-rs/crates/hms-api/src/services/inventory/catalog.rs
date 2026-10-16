@@ -217,11 +217,25 @@ impl InventoryCatalogService {
         &self,
         ctx: &hms_access::RequestContext,
         payload: CreateInventoryCatalogEditRequest,
+        authorization_deadline: chrono::DateTime<chrono::Utc>,
     ) -> Result<ObjectResponse<InventoryCatalogVersionItem>, ApiError> {
         require_inventory_access(ctx, self.facility_id(), PermissionCode::InventoryManage)?;
+        if !ctx.reauth.is_fresh_at(chrono::Utc::now()) {
+            return Err(ApiError::forbidden(
+                "reauth_required",
+                "Confirm your current credentials before correcting the catalog.",
+            ));
+        }
+        let authorization_deadline = authorization_deadline.min(ctx.reauth.required_after);
         let edit = hms_db::inventory::apply_catalog_edit(
             self.pool(),
             CatalogEditCommand {
+                authorization: Some(
+                    crate::services::clinical::prescription_courses::authorization(
+                        ctx,
+                        authorization_deadline,
+                    ),
+                ),
                 id: Uuid::new_v4(),
                 facility_id: self.facility_id(),
                 item_id: payload.item_id,
@@ -234,7 +248,12 @@ impl InventoryCatalogService {
             },
         )
         .await
-        .map_err(|_| {
+        .map_err(|error| {
+            if error.is::<hms_db::clinical::stock_basis::StockBasisError>()
+                || error.is::<hms_db::clinical::prescription_courses::PrescriptionCourseError>()
+            {
+                return crate::services::clinical::prescription_courses::write_error(error);
+            }
             ApiError::conflict(
                 "inventory_catalog_edit_failed",
                 "Inventory catalog edit could not be saved.",

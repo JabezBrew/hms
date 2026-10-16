@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import PatientChroniclePage from '../PatientChroniclePage'
 import { SidebarProvider } from '@/components/ui/sidebar'
 
+const authState = vi.hoisted(() => ({ user: null }));
 const patientHookState = vi.hoisted(() => ({
   data: {
     id: 'patient-1',
@@ -129,7 +130,7 @@ vi.mock('@/features/patients/hooks/usePatientQueries', () => ({
 
 vi.mock('@/lib/auth', () => ({
   useAuth: () => ({
-    user: { role: 'admin', user_type: 'doctor' },
+    user: authState.user,
   }),
 }))
 
@@ -192,10 +193,13 @@ vi.mock('@/hooks/useSystemQueries', () => ({
 }))
 
 vi.mock('@/components/chronicle/PatientIdentityHero', () => ({
-  default: ({ onAskChronicle, onStartWardRound, onStartDischarge }) => (
+  default: ({ onAskChronicle, onStartWardRound, onStartDischarge, onAddNote, onRecordVitals, onPrescribe }) => (
     <div>
       <span data-testid="ask-chronicle-action">{String(Boolean(onAskChronicle))}</span>
       <span data-testid="ward-round-action">{String(Boolean(onStartWardRound))}</span>
+      <span data-testid="note-action">{String(Boolean(onAddNote))}</span>
+      <span data-testid="vitals-action">{String(Boolean(onRecordVitals))}</span>
+      <span data-testid="prescribe-action">{String(Boolean(onPrescribe))}</span>
       <span data-testid="discharge-action">{String(Boolean(onStartDischarge))}</span>
     </div>
   ),
@@ -294,6 +298,7 @@ function renderPage(initialEntry = '/patients/patient-1/chronicle') {
 describe('PatientChroniclePage Rust V2 workflow guards', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    authState.user = { id: 'synthetic-clinician', role: 'admin', user_type: 'doctor', facilityCode: 'HMS', adminAccess: { capabilities: ['clinical_documentation.view', 'clinical_documentation.manage', 'nursing.task.manage'] }, accessContext: { facility_id: 'synthetic-facility', active_profile: 'hospital', session_version: 1, permission_version: 1, features: ['encounters', 'nursing'], patient_visibility: ['demographics', 'clinical_summary', 'full_clinical'] } }
     chronicleHookState.calls = []
     chronicleStartupState.calls = []
     timelineHookState.calls = []
@@ -309,6 +314,7 @@ describe('PatientChroniclePage Rust V2 workflow guards', () => {
       },
     }
     chronicleStartupState.data = {
+      permissions: { can_view_full_clinical: true, can_add_note: true, can_record_vitals: true, can_prescribe: true },
       patient: {
         id: 'patient-1',
         name: 'Ama Mensah',
@@ -438,6 +444,7 @@ describe('PatientChroniclePage Rust V2 workflow guards', () => {
       },
     }
     chronicleStartupState.data = {
+      permissions: { can_view_full_clinical: true, can_add_note: true, can_record_vitals: true, can_prescribe: true },
       ...chronicleStartupState.data,
       active_admission: {
         admission_id: 'admission-v2',
@@ -512,6 +519,7 @@ describe('PatientChroniclePage Rust V2 workflow guards', () => {
   it('passes recent vitals and lab results as separate sidebar sections', async () => {
     window.__HMS_RUNTIME_CONFIG__ = { apiMode: 'rust-v2' }
     chronicleStartupState.data = {
+      permissions: { can_view_full_clinical: true, can_add_note: true, can_record_vitals: true, can_prescribe: true },
       ...chronicleStartupState.data,
       latest_vitals: {
         id: 'vitals-1',
@@ -549,6 +557,7 @@ describe('PatientChroniclePage Rust V2 workflow guards', () => {
   it('fetches the authoritative Rust timeline when the startup all-history seed is empty', () => {
     window.__HMS_RUNTIME_CONFIG__ = { apiMode: 'rust-v2' }
     chronicleStartupState.data = {
+      permissions: { can_view_full_clinical: true, can_add_note: true, can_record_vitals: true, can_prescribe: true },
       ...chronicleStartupState.data,
       timeline: {
         results: [],
@@ -596,6 +605,7 @@ describe('PatientChroniclePage Rust V2 workflow guards', () => {
     window.__HMS_RUNTIME_CONFIG__ = { apiMode: 'rust-v2' }
     timelineHookState.returnNoDataWhenDisabled = true
     chronicleStartupState.data = {
+      permissions: { can_view_full_clinical: true, can_add_note: true, can_record_vitals: true, can_prescribe: true },
       ...chronicleStartupState.data,
       timeline: {
         results: [{
@@ -639,6 +649,7 @@ describe('PatientChroniclePage Rust V2 workflow guards', () => {
   it('uses the Rust startup encounter list for documented visit focus options', async () => {
     window.__HMS_RUNTIME_CONFIG__ = { apiMode: 'rust-v2' }
     chronicleStartupState.data = {
+      permissions: { can_view_full_clinical: true, can_add_note: true, can_record_vitals: true, can_prescribe: true },
       ...chronicleStartupState.data,
       encounters: [
         {
@@ -692,6 +703,7 @@ describe('PatientChroniclePage Rust V2 workflow guards', () => {
   it('orders all-history visit groups with the current visit first', async () => {
     window.__HMS_RUNTIME_CONFIG__ = { apiMode: 'rust-v2' }
     chronicleStartupState.data = {
+      permissions: { can_view_full_clinical: true, can_add_note: true, can_record_vitals: true, can_prescribe: true },
       ...chronicleStartupState.data,
       encounters: [
         {
@@ -761,4 +773,15 @@ describe('PatientChroniclePage Rust V2 workflow guards', () => {
       expect(screen.getByTestId('active-workspace')).toHaveTextContent('none')
     })
   })
+  it.each([undefined, { can_view_full_clinical: false, can_add_note: true, can_record_vitals: true, can_prescribe: true }])('fails closed for missing or summary-only authoritative action facts (%j)', async (permissions) => {
+    window.__HMS_RUNTIME_CONFIG__ = { apiMode: 'rust-v2' }; chronicleStartupState.data = { ...chronicleStartupState.data, permissions }; renderPage(); expect(screen.getByTestId('note-action')).toHaveTextContent('false'); expect(screen.getByTestId('vitals-action')).toHaveTextContent('false'); expect(screen.getByTestId('prescribe-action')).toHaveTextContent('false'); expect(screen.getByText(/Summary access:/)).toBeInTheDocument(); await screen.findByTestId('clinical-summary'); expect(workspaceHostState.lastProps.workspaceContext.clinicalPermissions).toEqual({ can_view_full_clinical: false, can_add_note: false, can_record_vitals: false, can_prescribe: false });
+  });
+  it('does not infer write authority from full clinical visibility or an admin role', async () => {
+    window.__HMS_RUNTIME_CONFIG__ = { apiMode: 'rust-v2' }; chronicleStartupState.data.permissions = { can_view_full_clinical: true, can_add_note: true, can_record_vitals: false, can_prescribe: false }; renderPage(); expect(screen.getByTestId('note-action')).toHaveTextContent('true'); expect(screen.getByTestId('vitals-action')).toHaveTextContent('false'); expect(screen.getByTestId('prescribe-action')).toHaveTextContent('false'); expect(screen.queryByText(/Summary access:/)).not.toBeInTheDocument(); await screen.findByTestId('clinical-summary'); expect(workspaceHostState.lastProps.workspaceContext.clinicalPermissions.can_prescribe).toBe(false);
+  });
+
+  it('keeps the summary visible without granting nursing trend/history access from the data class alone', async () => {
+    window.__HMS_RUNTIME_CONFIG__ = { apiMode: 'rust-v2' }; authState.user = { ...authState.user, adminAccess: { capabilities: ['clinical_documentation.view'] }, accessContext: { ...authState.user.accessContext, features: ['encounters'], patient_visibility: ['demographics', 'clinical_summary'] } }; chronicleStartupState.data.permissions = { can_view_full_clinical: false, can_add_note: false, can_record_vitals: false, can_prescribe: false }; renderPage(); await screen.findByTestId('clinical-summary'); expect(summarySidebarState.lastProps.onViewVitalsTrends).toBeUndefined(); expect(summarySidebarState.lastProps.onViewFluidTrends).toBeUndefined(); expect(summarySidebarState.lastProps.showFluidBalance).toBe(false);
+  });
+
 })

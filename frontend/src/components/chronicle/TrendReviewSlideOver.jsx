@@ -1,3 +1,4 @@
+import { useChronicleClinicalPermissions } from '@/features/patients/chronicle/clinicalPermissions';
 import { useMemo, useState } from 'react';
 import { format, parseISO } from 'date-fns';
 
@@ -36,13 +37,15 @@ export default function TrendReviewSlideOver({
   admissionId = null,
   allHistory = false,
   initialTab = 'vitals',
+  clinicalPermissions,
 }) {
+  const permissions = useChronicleClinicalPermissions();
   if (!open) {
     return null;
   }
 
   const patientId = getPatientId(patient);
-  const showFluidTab = allHistory || Boolean(admissionId);
+  const showFluidTab = permissions.can_view_full_clinical && (!clinicalPermissions || clinicalPermissions.can_view_full_clinical === true) && (allHistory || Boolean(admissionId));
   const resolvedInitialTab = showFluidTab ? initialTab : 'vitals';
   const scopeKey = [
     patientId || 'patient',
@@ -50,6 +53,7 @@ export default function TrendReviewSlideOver({
     admissionId || 'no-admission',
     allHistory ? 'all-history' : 'scoped',
     resolvedInitialTab,
+    showFluidTab,
   ].join(':');
 
   return (
@@ -112,7 +116,7 @@ function TrendReviewSlideOverContent({
     isLoading: fluidLoading,
     error: fluidError,
   } = useFluidBalanceTrends(patientId, fluidFilters, {
-    enabled: !!patientId && (allHistory || !!admissionId),
+    enabled: showFluidTab && !!patientId && (allHistory || !!admissionId),
   });
 
   const formattedVitals = useMemo(() => (

@@ -5,7 +5,7 @@ use hms_domain::clinical::{
     UpdatePrescriptionDocumentationRequest,
 };
 
-pub(super) fn authorization(
+pub(crate) fn authorization(
     ctx: &hms_access::RequestContext,
     deadline: DateTime<Utc>,
 ) -> repository::PrescriptionAuthorization {
@@ -137,7 +137,14 @@ impl ClinicalService {
         Ok(object(result))
     }
 }
-pub(super) fn write_error(error: anyhow::Error) -> ApiError {
+pub(crate) fn write_error(error: anyhow::Error) -> ApiError {
+    if let Some(value) = error.downcast_ref::<hms_db::clinical::stock_basis::StockBasisError>() {
+        return if *value == hms_db::clinical::stock_basis::StockBasisError::InvalidPolicy {
+            ApiError::bad_request(value.code(), value.message())
+        } else {
+            ApiError::conflict(value.code(), value.message())
+        };
+    }
     use repository::PrescriptionCourseError as E;
     if let Some(value) = error.downcast_ref::<E>() {
         return match value {

@@ -59,7 +59,7 @@ describe('PharmacyQueue Rust V2 dispensing controls', () => {
     client.clear();
     delete window.__HMS_RUNTIME_CONFIG__;
     delete pendingMedication.inventory_item_id;
-    delete pendingMedication.prn_policy;
+    delete pendingMedication.prn_policy; pendingMedication.frequency = 'TDS';
     delete pendingMedication.inventory_item_name; delete pendingMedication.inventory_item_code; delete pendingMedication.inventory_item_unit;
     vi.clearAllMocks();
   });
@@ -94,6 +94,7 @@ describe('PharmacyQueue Rust V2 dispensing controls', () => {
     window.__HMS_RUNTIME_CONFIG__ = { apiMode: 'rust-v2' };
     pendingMedication.inventory_item_id = 'stock-one';
     pendingMedication.inventory_item_name = 'Amoxicillin capsules'; pendingMedication.inventory_item_code = 'AMOX'; pendingMedication.inventory_item_unit = 'tablet';
+    pendingMedication.frequency = 'prn';
     pendingMedication.prn_policy = { stock_units_per_dose: 2, stock_unit: 'tablet' };
     const error = new Error('Supply may have been recorded');
     error.name = 'PharmacyDispenseUnconfirmedError';

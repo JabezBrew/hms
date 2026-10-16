@@ -1,0 +1,51 @@
+import { patientsApi } from '@/features/patients/api';
+import { configureV2ApiClient, __resetV2ApiClientForTests } from '@/lib/api/v2/client';
+import { afterEach, expect, it, vi } from 'vitest';
+import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { AuthContext } from '@/lib/auth/AuthContext';
+import TimelineEntry from '@/components/chronicle/TimelineEntry';
+import { MedicationContent } from '@/components/chronicle/TimelineEntryMedicationContent';
+import PatientIdentityHero from '@/components/chronicle/PatientIdentityHero';
+import { ChronicleClinicalPermissionsContext, chronicleClinicalPermissions } from '../clinicalPermissions';
+const originalFetch = globalThis.fetch;
+const originalRuntime = window.__HMS_RUNTIME_CONFIG__;
+vi.mock('@/components/chronicle/PrescriptionActionsDialog', () => ({ default: () => <div>Synthetic prescription detail</div> }));
+vi.mock('@/components/chronicle/NoteDetailModal', () => ({ default: ({ entry }) => <div role="dialog">{entry.data?.assessment || entry.data?.instructions || entry.data?.clinical_notes || entry.data?.notes}</div> }));
+vi.mock('@/components/chronicle/ChronicleNoteBody', () => ({ default: ({ data }) => <p>{data.assessment}</p> }));
+const actor = { id: 'synthetic-actor', adminAccess: { capabilities: ['clinical_documentation.view', 'clinical_documentation.manage'] }, accessContext: { features: ['encounters'], patient_visibility: ['demographics', 'clinical_summary', 'full_clinical'] } };
+const note = { id: 'synthetic-note', type: 'progress_note', title: 'Synthetic authorized note title', timestamp: '2026-10-16T01:00:00Z', author_id: actor.id, data: { assessment: 'SYNTHETIC-PRIVATE-NARRATIVE' }, template: { id: 'synthetic-template', title: 'Synthetic note' } };
+const full = { can_view_full_clinical: true, can_add_note: true, can_prescribe: true, can_record_vitals: false };
+function tree(permissions) { return <AuthContext.Provider value={{ user: actor }}><ChronicleClinicalPermissionsContext.Provider value={chronicleClinicalPermissions({ permissions }, true)}><TimelineEntry entry={note} currentUserId={actor.id} onCopyNote={vi.fn()} onEditNote={vi.fn()} /><MedicationContent medication={{ id: 'synthetic-rx', medication_name: 'Synthetic medication summary', dose: '5 mg', frequency: 'daily', status: 'active', instructions: 'SYNTHETIC-PRIVATE-INSTRUCTIONS' }} /><TimelineEntry entry={{ id: 'synthetic-vitals', type: 'vitals', timestamp: note.timestamp, data: { blood_pressure: '120/80' } }} /><TimelineEntry entry={{ id: 'synthetic-lab', type: 'lab_result', timestamp: note.timestamp, data: { test_name: 'Synthetic lab summary', value: '4.2', unit: 'unit' } }} /></ChronicleClinicalPermissionsContext.Provider></AuthContext.Provider>; }
+afterEach(() => { globalThis.fetch = originalFetch; __resetV2ApiClientForTests(); window.__HMS_RUNTIME_CONFIG__ = originalRuntime; });
+it('retains authorized summaries while hiding full cached note fields and prescription detail/write actions', () => {
+  window.__HMS_RUNTIME_CONFIG__ = { apiMode: 'rust-v2' }; render(tree({ can_view_full_clinical: false, can_add_note: true, can_prescribe: true })); expect(screen.getByText(/Full clinical access is required to read/)).toBeInTheDocument(); for (const text of ['SYNTHETIC-PRIVATE-NARRATIVE', 'SYNTHETIC-PRIVATE-INSTRUCTIONS']) expect(screen.queryByText(text)).not.toBeInTheDocument(); expect(screen.queryByRole('button', { name: 'Open note' })).not.toBeInTheDocument(); expect(screen.queryByRole('button', { name: 'Prescription actions' })).not.toBeInTheDocument(); expect(screen.getByText('Synthetic authorized note title')).toBeInTheDocument(); expect(screen.getByText('Synthetic medication summary')).toBeInTheDocument(); expect(screen.getByText('120/80')).toBeInTheDocument(); expect(screen.getByText('Synthetic lab summary')).toBeInTheDocument();
+});
+it('immediately removes expanded full clinical content and its actions when the authoritative proof becomes summary-only', async () => {
+  window.__HMS_RUNTIME_CONFIG__ = { apiMode: 'rust-v2' }; const user = userEvent.setup(); const view = render(tree(full)); await user.click(screen.getByRole('button', { name: 'Open note' })); await screen.findByText('SYNTHETIC-PRIVATE-NARRATIVE'); await user.click(screen.getByRole('button', { name: 'Prescription actions' })); expect(await screen.findByRole('menuitem', { name: 'Edit documentation' })).toBeInTheDocument(); await user.keyboard('{Escape}'); view.rerender(tree({ ...full, can_view_full_clinical: false })); for (const text of ['SYNTHETIC-PRIVATE-NARRATIVE', 'SYNTHETIC-PRIVATE-INSTRUCTIONS']) expect(screen.queryByText(text)).not.toBeInTheDocument(); expect(screen.queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument(); expect(screen.queryByRole('button', { name: 'Prescription actions' })).not.toBeInTheDocument();
+});
+it('allows full read/expansion without granting note editing or prescribing from the data class alone', async () => {
+  window.__HMS_RUNTIME_CONFIG__ = { apiMode: 'rust-v2' }; const user = userEvent.setup(); render(tree({ ...full, can_add_note: false, can_prescribe: false })); expect(screen.getByRole('button', { name: 'Open note' })).toBeInTheDocument(); expect(screen.queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument(); await user.click(screen.getByRole('button', { name: 'Prescription actions' })); expect(await screen.findByRole('menuitem', { name: 'View prescription' })).toBeInTheDocument(); expect(screen.queryByRole('menuitem', { name: 'Edit documentation' })).not.toBeInTheDocument(); expect(screen.queryByRole('menuitem', { name: 'Put on Hold' })).not.toBeInTheDocument();
+});
+it('removes absent primary actions instead of showing inert write controls while preserving legacy callbacks', () => {
+  render(<PatientIdentityHero patient={{ name: 'Synthetic patient' }} onAddNote={undefined} onRecordVitals={undefined} onPrescribe={undefined} />); for (const name of ['Add Note', 'Vitals', 'Prescribe']) expect(screen.queryByRole('button', { name })).not.toBeInTheDocument();
+});
+
+it('unmounts a cached full note focus dialog on a summary-only proof transition', async () => {
+  window.__HMS_RUNTIME_CONFIG__ = { apiMode: 'rust-v2' }; const user = userEvent.setup(); const view = render(tree(full)); await user.click(screen.getByRole('button', { name: 'Focus view' })); expect(await screen.findByRole('dialog')).toHaveTextContent('SYNTHETIC-PRIVATE-NARRATIVE'); view.rerender(tree({ ...full, can_view_full_clinical: false })); expect(screen.queryByRole('dialog')).not.toBeInTheDocument(); expect(screen.queryByText('SYNTHETIC-PRIVATE-NARRATIVE')).not.toBeInTheDocument(); expect(screen.getByText('Synthetic authorized note title')).toBeInTheDocument();
+});
+
+it.each([false, true])('uses the actual adapted Rust startup permissions from the fetch boundary (Full=%s)', async (fullClinical) => {
+  __resetV2ApiClientForTests(); window.__HMS_RUNTIME_CONFIG__ = { apiMode: 'rust-v2', v2ApiBaseUrl: 'http://localhost:8080/api/v2' }; configureV2ApiClient({ getAccessToken: () => 'synthetic-token', getFacilityCode: () => 'HMS', canRefreshSession: () => false }); const signal = new AbortController().signal;
+  globalThis.fetch = vi.fn(async (url, options) => { expect(url).toBe('http://localhost:8080/api/v2/patients/synthetic-patient/chronicle'); expect(options.signal).toBe(signal); return new Response(JSON.stringify({ data: { patient: { id: 'synthetic-patient', display_name: 'Synthetic patient', patient_code: 'SYNTHETIC' }, permissions: { can_view_full_clinical: fullClinical, can_add_note: fullClinical, can_prescribe: fullClinical, can_record_vitals: false }, timeline: { data: [], page: { has_next: false, next_cursor: null } } } }), { headers: { 'content-type': 'application/json' } }); });
+  const startup = await patientsApi.getPatientChronicleStartup('synthetic-patient', {}, { signal }); expect(startup.permissions.can_view_full_clinical).toBe(fullClinical); render(tree(startup.permissions)); if (fullClinical) expect(screen.getByRole('button', { name: 'Open note' })).toBeInTheDocument(); else { expect(screen.queryByRole('button', { name: 'Open note' })).not.toBeInTheDocument(); expect(screen.queryByRole('button', { name: 'Prescription actions' })).not.toBeInTheDocument(); } expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+});
+
+it.each([
+  ['medication', { medication_name: 'Synthetic scalar medication', dose: '5 mg', frequency: 'daily', instructions: 'SYNTHETIC-PRIVATE-CACHED-NARRATIVE' }, 'Synthetic scalar medication'],
+  ['vitals', { heart_rate: 88, notes: 'SYNTHETIC-PRIVATE-CACHED-NARRATIVE' }, '88 bpm'],
+  ['lab_result', { test_name: 'Synthetic scalar lab', value: '4.2', clinical_notes: 'SYNTHETIC-PRIVATE-CACHED-NARRATIVE' }, 'Synthetic scalar lab'],
+])('never offers a generic full-detail modal for a summary %s and removes an already open full modal on downgrade', async (type, data, visibleSummary) => {
+  window.__HMS_RUNTIME_CONFIG__ = { apiMode: 'rust-v2' }; const user = userEvent.setup(); const tree = (fullClinical) => <AuthContext.Provider value={{ user: actor }}><ChronicleClinicalPermissionsContext.Provider value={chronicleClinicalPermissions({ permissions: { ...full, can_view_full_clinical: fullClinical } }, true)}><TimelineEntry entry={{ id: 'synthetic-scalar', type, timestamp: note.timestamp, data }} /></ChronicleClinicalPermissionsContext.Provider></AuthContext.Provider>;
+  const view = render(tree(false)); expect(screen.getByText(visibleSummary)).toBeInTheDocument(); expect(screen.queryByRole('button', { name: 'View details' })).not.toBeInTheDocument(); expect(screen.queryByText('SYNTHETIC-PRIVATE-CACHED-NARRATIVE')).not.toBeInTheDocument(); view.rerender(tree(true)); await user.click(screen.getByRole('button', { name: 'View details' })); expect(await screen.findByRole('dialog')).toHaveTextContent('SYNTHETIC-PRIVATE-CACHED-NARRATIVE'); view.rerender(tree(false)); expect(screen.queryByRole('dialog')).not.toBeInTheDocument(); expect(screen.queryByRole('button', { name: 'View details' })).not.toBeInTheDocument(); expect(screen.queryByText('SYNTHETIC-PRIVATE-CACHED-NARRATIVE')).not.toBeInTheDocument(); expect(screen.getByText(visibleSummary)).toBeInTheDocument();
+});

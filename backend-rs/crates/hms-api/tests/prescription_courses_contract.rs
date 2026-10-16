@@ -465,7 +465,7 @@ async fn assert_expiring_prescribing_grant_cannot_finish(kind: WaitingWrite) {
             )
         }
         WaitingWrite::Create => {
-            let item:Uuid=sqlx::query_scalar("SELECT id FROM inventory_items WHERE facility_id=$1 AND is_active AND item_type='medication' LIMIT 1").bind(facility).fetch_one(&pool).await.unwrap();
+            let item:Uuid=sqlx::query_scalar("SELECT id FROM inventory_items WHERE facility_id=$1 AND is_active AND NOT controlled AND item_type='medication' LIMIT 1").bind(facility).fetch_one(&pool).await.unwrap();
             sqlx::query("SELECT id FROM inventory_items WHERE id=$1 FOR UPDATE")
                 .bind(item)
                 .execute(&mut *held)
@@ -477,7 +477,7 @@ async fn assert_expiring_prescribing_grant_cannot_finish(kind: WaitingWrite) {
                     "/api/v2/patients/{}/clinical/prescriptions",
                     source["patient_id"].as_str().unwrap()
                 ),
-                json!({"medication_name":"Synthetic waiting prescription","dose":"1 tablet","route":"oral","frequency":"daily","inventory_item_id":item,"instructions":"Synthetic waiting instructions","reason":"Synthetic waiting indication"}),
+                json!({"medication_name":"Synthetic waiting prescription","dose":"1 tablet","route":"oral","frequency":"daily","inventory_item_id":item,"scheduled_stock_policy":{"expected_stock_unit":sqlx::query_scalar::<_,String>("SELECT unit FROM inventory_items WHERE id=$1").bind(item).fetch_one(&pool).await.unwrap(),"stock_units_per_dose":1},"instructions":"Synthetic waiting instructions","reason":"Synthetic waiting indication"}),
             )
         }
     };
@@ -686,9 +686,9 @@ async fn demographics_only_clinician_cannot_read_or_write_expanded_prescription_
         )
         .await
         .status(),
-        StatusCode::OK
+        StatusCode::FORBIDDEN
     );
-    // Existing lean lifecycle PATCH retains its established authorization shape.
+    // Clinical list data and lifecycle writes also require the appropriate data-class visibility.
     assert_eq!(
         call(
             &app,
@@ -699,7 +699,7 @@ async fn demographics_only_clinician_cannot_read_or_write_expanded_prescription_
         )
         .await
         .status(),
-        StatusCode::OK
+        StatusCode::FORBIDDEN
     );
     let counts:(i64,i64,i64)=sqlx::query_as("SELECT (SELECT count(*) FROM prescriptions),(SELECT count(*) FROM prescription_commands),(SELECT count(*) FROM prescription_course_provenance)").fetch_one(&pool).await.unwrap();
     assert_eq!(counts, (1, 0, 0));

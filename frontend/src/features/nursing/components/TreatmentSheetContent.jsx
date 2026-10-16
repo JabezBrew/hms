@@ -1,3 +1,4 @@
+import { scheduledDoseReviewReason } from '@/features/pharmacy/prescribing/scheduledStockPolicy';
 import ChevronLeft from 'lucide-react/dist/esm/icons/chevron-left.js';
 import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
 import Check from 'lucide-react/dist/esm/icons/check.js';
@@ -82,6 +83,8 @@ function DoseIndicator({ dose, medication, date, onAdminister }) {
   const status = DOSE_STATUS[dose.status] || DOSE_STATUS.scheduled;
   const isClickable = (isRustV2ApiMode() ? ['scheduled', 'due'] : ['scheduled', 'due', 'missed']).includes(dose.status);
 
+  const stockReview = isClickable ? scheduledDoseReviewReason(dose) : null;
+
   const administerDose = () => {
     if (isClickable && onAdminister) {
       onAdminister({ medication, date, dose });
@@ -139,6 +142,8 @@ function DoseIndicator({ dose, medication, date, onAdminister }) {
             {dose.notes && (
               <p className="text-xs italic mt-1">{dose.notes}</p>
             )}
+            {stockReview && <p className="text-xs">{stockReview}</p>}
+            {dose.dispensed_stock_quantity != null && dose.dispensed_stock_unit && <p className="text-xs">Saved supplied stock: {dose.dispensed_stock_quantity} {dose.dispensed_stock_unit}</p>}
             {dose.reason_not_given && <p className="text-xs">Reason: {dose.reason_not_given}</p>}
             {dose.outcome_recorded_at && <p className="text-xs text-muted-foreground">Recorded at {formatTime(dose.outcome_recorded_at)}{dose.outcome_recorded_by_display_name ? ` by ${dose.outcome_recorded_by_display_name}` : ''}</p>}
             {isClickable && (

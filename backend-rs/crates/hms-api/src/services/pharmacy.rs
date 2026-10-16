@@ -146,6 +146,7 @@ impl PharmacyService {
         ctx: &hms_access::RequestContext,
         id: Uuid,
         payload: DispensePharmacyFulfillmentRequest,
+        authorization_deadline: chrono::DateTime<chrono::Utc>,
     ) -> Result<ObjectResponse<PharmacyFulfillmentDispenseResult>, ApiError> {
         require_pharmacy_access(ctx, self.state.facility_id())?;
         if payload.quantity <= 0 {
@@ -167,6 +168,7 @@ impl PharmacyService {
         let result = hms_db::pharmacy::dispense_fulfillment(
             self.state.db_pool(),
             hms_db::pharmacy::DispenseFulfillmentCommand {
+ authorization: Some(crate::services::clinical::prescription_courses::authorization(ctx, authorization_deadline)),
                 facility_id: self.state.facility_id(),
                 fulfillment_id: id,
                 item_id: payload.item_id,
@@ -177,6 +179,8 @@ impl PharmacyService {
         )
         .await
         .map_err(|error| {
+            if error.is::<hms_db::clinical::stock_basis::StockBasisError>() || error.is::<hms_db::clinical::prescription_courses::PrescriptionCourseError>() {return crate::services::clinical::prescription_courses::write_error(error);}
+
             if let Some(reason)=error.downcast_ref::<hms_db::ward::PrnError>() {
                 return ApiError::conflict("prescription_not_actionable",reason.message());
             }

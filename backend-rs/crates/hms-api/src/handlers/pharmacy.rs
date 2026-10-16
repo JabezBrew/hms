@@ -89,14 +89,19 @@ pub async fn get_queue_item(
 )]
 pub async fn dispense_queue_item(
     State(state): State<AppState>,
-    RequestContext(user): RequestContext,
+    network: crate::extractors::NetworkContext,
     Path(id): Path<Uuid>,
     Json(payload): Json<DispensePharmacyFulfillmentRequest>,
 ) -> Result<Json<ObjectResponse<PharmacyFulfillmentDispenseResult>>, ApiError> {
     Ok(Json(
         state
             .pharmacy_service()
-            .dispense(&user, id, payload)
+            .dispense(
+                &network.context,
+                id,
+                payload,
+                network.authorization_deadline,
+            )
             .await?,
     ))
 }

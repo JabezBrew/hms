@@ -22,7 +22,8 @@ lives in `hms-db::ward`.
 | `bed_management.rs` | bed layout, bed status, assignment, hold, and movement workflows. |
 | `admission_cases.rs` | admission-case creation, status transitions, and active inpatient context. |
 | `discharge_cases.rs` | discharge planning, discharge completion, and discharge summaries. |
-| `handoff.rs` | shift handoff creation, review, and acknowledgement. |
+| `handoff.rs` | ward shift header creation and sender-only finalization. |
+| `patient_handover.rs` | protected patient narrative, immutable corrections/voids and original command receipts. |
 | `mar.rs` | medication administration record workflows. |
 | `nursing_task_board.rs` | nursing task list, assignment, status, and board projections. |
 | `observations_monitoring.rs` | vitals/observation monitoring and alert-facing projections. |
@@ -109,3 +110,9 @@ before bounded cursor pages. Handoff-header queries support only actual ward,
 shift, status and creation-time fields; no patient association is inferred.
 The critical alert preview filters open high/critical state in SQL before LIMIT.
 See `docs/v2/2026-10-16-scoped-nursing-lists.md` for access and paging semantics.
+
+Patient handover reads and writes require FullClinical plus Nursing workflow and
+original-ward assignment/all-ward authority. Every HTTP path carries a locked
+actor/session/deadline proof through the protected transaction. Lists remain lean;
+history expands one immutable revision. Intended recipient is documentation only.
+See `docs/v2/2026-10-16-patient-handover-scope.md`.

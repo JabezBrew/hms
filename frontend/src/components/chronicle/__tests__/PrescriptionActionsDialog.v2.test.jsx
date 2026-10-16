@@ -2,6 +2,7 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AuthContext } from '@/lib/auth/AuthContext';
+import { ChronicleClinicalPermissionsContext, chronicleClinicalPermissions } from '@/features/patients/chronicle/clinicalPermissions';
 import PrescriptionActionsDialog from '../PrescriptionActionsDialog';
 import { MedicationContent } from '../TimelineEntryMedicationContent';
 
@@ -17,7 +18,9 @@ vi.mock('@/features/pharmacy/prescribing/PrescriptionCourseDialog', () => ({ Pre
 vi.mock('@/lib/api/v2/runtime', () => ({ isRustV2ApiMode: () => actions.rustV2 }));
 const prescription = { id: 'rx-1', patient_id: 'patient-1', medication_name: 'Synthetic medication', dose: '5 mg', frequency: 'daily', duration_days: 7, route: 'oral', status: 'active' };
 const renderAction = (action) => render(<PrescriptionActionsDialog open action={action} prescription={prescription} onOpenChange={vi.fn()} />);
-const renderMedication = (status) => render(<AuthContext.Provider value={{ user: { adminAccess: { capabilities: ['clinical_documentation.manage'] } } }}><MedicationContent medication={{ ...prescription, status }} /></AuthContext.Provider>);
+const prescribingUser = { id: 'synthetic-prescriber', facilityCode: 'HMS', adminAccess: { capabilities: ['clinical_documentation.view', 'clinical_documentation.manage'] }, accessContext: { facility_id: 'synthetic-facility', active_profile: 'hospital', features: ['encounters'], patient_visibility: ['demographics', 'full_clinical'] } };
+const prescribingPermissions = chronicleClinicalPermissions({ permissions: { can_view_full_clinical: true, can_prescribe: true, can_add_note: true, can_record_vitals: false } }, true);
+const renderMedication = (status) => render(<AuthContext.Provider value={{ user: prescribingUser }}><ChronicleClinicalPermissionsContext.Provider value={prescribingPermissions}><MedicationContent medication={{ ...prescription, status }} /></ChronicleClinicalPermissionsContext.Provider></AuthContext.Provider>);
 
 describe('prescription action compatibility integration', () => {
   beforeEach(() => { actions.rustV2 = true; vi.clearAllMocks(); for (const action of ['update', 'stop', 'hold', 'resume', 'renew']) actions[action].mockResolvedValue({ id: 'rx-1' }); });

@@ -640,6 +640,10 @@ export function buildMARGrid(records = [], admissionId, startDate = null, days =
     const day = row.days[date];
     const dose = {
       id: record.id,
+      frequency: record.frequency,
+      scheduled_stock_policy: record.scheduled_stock_policy || null,
+      dispensed_stock_quantity: record.dispensed_stock_quantity ?? null,
+      dispensed_stock_unit: record.dispensed_stock_unit ?? null,
       prn_indication: record.prn_indication,
       prn_request_id: record.prn_request_id,
       dose_number: day.doses.length + 1,
@@ -1182,6 +1186,7 @@ function adaptV2PharmacyQueueItem(item = {}) {
 
   return {
     prn_policy: item.prn_policy || null,
+    scheduled_stock_policy: item.scheduled_stock_policy || null,
     id: item.id,
     fulfillment_id: item.id,
     mar_entry_id: item.id,

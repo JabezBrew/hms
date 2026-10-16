@@ -4,11 +4,10 @@ use hms_domain::inventory::{
     PurchaseOrderStatus, RequisitionStatus, StandingOrderFrequency, StandingOrderStatus,
     StockMovementType, TransferStatus,
 };
-use sqlx::{FromRow, Postgres, QueryBuilder};
+use sqlx::{Postgres, QueryBuilder};
 use uuid::Uuid;
 
 use crate::codec;
-use crate::PgPool;
 
 mod catalog;
 mod controlled_substances;
@@ -174,6 +173,8 @@ pub struct StandingOrderFilters {
 
 #[derive(Clone, Debug)]
 pub struct NewStockBatch {
+    pub expected_unit: String,
+    pub authorization: Option<crate::clinical::prescription_courses::PrescriptionAuthorization>,
     pub id: Uuid,
     pub facility_id: Uuid,
     pub item_id: Uuid,
@@ -257,6 +258,7 @@ pub struct NewControlledCount {
 
 #[derive(Clone, Debug)]
 pub struct NewPharmacyDispense {
+    pub authorization: Option<crate::clinical::prescription_courses::PrescriptionAuthorization>,
     pub id: Uuid,
     pub facility_id: Uuid,
     pub patient_id: Uuid,
@@ -268,6 +270,7 @@ pub struct NewPharmacyDispense {
 
 #[derive(Clone, Debug)]
 pub struct CatalogEditCommand {
+    pub authorization: Option<crate::clinical::prescription_courses::PrescriptionAuthorization>,
     pub id: Uuid,
     pub facility_id: Uuid,
     pub item_id: Uuid,
@@ -284,11 +287,6 @@ pub struct SupplyDispenseLine {
     pub item_id: Uuid,
     pub location_id: Uuid,
     pub quantity: i64,
-}
-
-#[derive(Clone, Debug, FromRow)]
-struct ItemContextRow {
-    controlled: bool,
 }
 
 async fn insert_movement(
@@ -341,6 +339,17 @@ async fn apply_stock_delta_tx(
 ) -> anyhow::Result<()> {
     if quantity_delta == 0 {
         return Ok(());
+    }
+    // Fence every runtime stock writer against a catalog unit correction.
+    let item: Option<Uuid> = sqlx::query_scalar(
+        "SELECT id FROM inventory_items WHERE facility_id=$1 AND id=$2 AND is_active FOR SHARE",
+    )
+    .bind(facility_id)
+    .bind(item_id)
+    .fetch_optional(&mut **transaction)
+    .await?;
+    if item.is_none() {
+        anyhow::bail!("inventory_item_not_actionable");
     }
 
     if quantity_delta > 0 {
@@ -466,24 +475,6 @@ async fn apply_stock_delta_tx(
         actor_user_id,
     )
     .await
-}
-
-async fn item_context(
-    pool: &PgPool,
-    facility_id: Uuid,
-    item_id: Uuid,
-) -> anyhow::Result<ItemContextRow> {
-    hms_observability::observe_db_query(
-        "inventory.items.context",
-        sqlx::query_as::<_, ItemContextRow>(
-            "SELECT controlled FROM inventory_items WHERE facility_id = $1 AND id = $2",
-        )
-        .bind(facility_id)
-        .bind(item_id)
-        .fetch_optional(pool),
-    )
-    .await?
-    .ok_or_else(|| anyhow::anyhow!("inventory item was not found"))
 }
 
 pub(super) fn apply_cursor(

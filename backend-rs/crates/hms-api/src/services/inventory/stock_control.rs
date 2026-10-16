@@ -174,6 +174,7 @@ impl StockControlService {
         &self,
         ctx: &hms_access::RequestContext,
         payload: CreateStockBatchRequest,
+        authorization_deadline: chrono::DateTime<chrono::Utc>,
     ) -> Result<ObjectResponse<StockBatchListItem>, ApiError> {
         require_stock_write_access(ctx, self.facility_id())?;
         require_positive(payload.quantity_received, "quantity_received")?;
@@ -181,6 +182,13 @@ impl StockControlService {
         let batch = hms_db::inventory::create_batch(
             self.pool(),
             NewStockBatch {
+                expected_unit: normalize_text(payload.expected_unit, "expected_unit")?,
+                authorization: Some(
+                    crate::services::clinical::prescription_courses::authorization(
+                        ctx,
+                        authorization_deadline,
+                    ),
+                ),
                 id: Uuid::new_v4(),
                 facility_id: self.facility_id(),
                 item_id: payload.item_id,
@@ -192,9 +200,14 @@ impl StockControlService {
             },
         )
         .await
-        .map_err(|_| {
+        .map_err(|error| {
+            if error.is::<hms_db::clinical::stock_basis::StockBasisError>()
+                || error.is::<hms_db::clinical::prescription_courses::PrescriptionCourseError>()
+            {
+                return crate::services::clinical::prescription_courses::write_error(error);
+            }
             ApiError::conflict(
-                "stock_batch_create_failed",
+                "stock_batch_create_unconfirmed",
                 "Stock batch could not be saved.",
             )
         })?;

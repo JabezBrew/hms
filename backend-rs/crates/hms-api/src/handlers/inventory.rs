@@ -88,14 +88,14 @@ pub async fn get_item(
 #[utoipa::path(post, path = "/api/v2/inventory/catalog-edits", operation_id = "postInventoryCatalogEdit", tag = "inventory", security(("bearerAuth" = [])), request_body = CreateInventoryCatalogEditRequest, responses((status = 200, body = ObjectResponse<InventoryCatalogVersionItem>), (status = 400, body = ApiErrorResponse), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse), (status = 409, body = ApiErrorResponse)))]
 pub async fn apply_catalog_edit(
     State(state): State<AppState>,
-    RequestContext(user): RequestContext,
+    network: crate::extractors::NetworkContext,
     Json(payload): Json<CreateInventoryCatalogEditRequest>,
 ) -> Result<Json<ObjectResponse<InventoryCatalogVersionItem>>, ApiError> {
     Ok(Json(
         state
             .inventory_services()
             .catalog()
-            .apply_catalog_edit(&user, payload)
+            .apply_catalog_edit(&network.context, payload, network.authorization_deadline)
             .await?,
     ))
 }
@@ -226,14 +226,20 @@ pub async fn list_batches(
 #[utoipa::path(post, path = "/api/v2/inventory/stock-batches", operation_id = "postStockBatches", tag = "inventory", security(("bearerAuth" = [])), request_body = CreateStockBatchRequest, responses((status = 200, body = ObjectResponse<StockBatchListItem>), (status = 400, body = ApiErrorResponse), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
 pub async fn create_batch(
     State(state): State<AppState>,
-    RequestContext(user): RequestContext,
-    Json(payload): Json<CreateStockBatchRequest>,
+    network: crate::extractors::NetworkContext,
+    payload: Result<Json<CreateStockBatchRequest>, axum::extract::rejection::JsonRejection>,
 ) -> Result<Json<ObjectResponse<StockBatchListItem>>, ApiError> {
+    let Json(payload) = payload.map_err(|_| {
+        ApiError::bad_request(
+            "invalid_stock_receipt",
+            "Provide the required reviewed stock receipt fields in the supported format.",
+        )
+    })?;
     Ok(Json(
         state
             .inventory_services()
             .stock_control()
-            .create_batch(&user, payload)
+            .create_batch(&network.context, payload, network.authorization_deadline)
             .await?,
     ))
 }
@@ -786,14 +792,14 @@ pub async fn list_dispenses(
 #[utoipa::path(post, path = "/api/v2/pharmacy/dispenses", operation_id = "postPharmacyDispenses", tag = "pharmacy", security(("bearerAuth" = [])), request_body = CreatePharmacyDispenseRequest, responses((status = 200, body = ObjectResponse<PharmacyDispenseListItem>), (status = 400, body = ApiErrorResponse), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
 pub async fn create_dispense(
     State(state): State<AppState>,
-    RequestContext(user): RequestContext,
+    network: crate::extractors::NetworkContext,
     Json(payload): Json<CreatePharmacyDispenseRequest>,
 ) -> Result<Json<ObjectResponse<PharmacyDispenseListItem>>, ApiError> {
     Ok(Json(
         state
             .inventory_services()
             .pharmacy()
-            .create_dispense(&user, payload)
+            .create_dispense(&network.context, payload, network.authorization_deadline)
             .await?,
     ))
 }

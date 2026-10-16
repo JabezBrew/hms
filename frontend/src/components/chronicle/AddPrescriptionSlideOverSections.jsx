@@ -1,3 +1,4 @@
+import { ScheduledStockPolicyField } from '@/features/pharmacy/components/ScheduledStockPolicyField';
 import X from 'lucide-react/dist/esm/icons/x.js';
 import Pill from 'lucide-react/dist/esm/icons/pill.js';
 import AlertCircle from 'lucide-react/dist/esm/icons/circle-alert.js';
@@ -467,6 +468,7 @@ function PrescriptionSummary({ formData }) {
           Instructions: {formData.instructions}
         </p>
       )}
+      {formData.frequency !== 'prn' && formData.inventory_item_id && <p className="mt-2 text-sm">One scheduled dose uses {formData.scheduled_stock_units_per_dose || '—'} {formData.inventory_item_unit} of linked stock.</p>}
       {formData.frequency === 'prn' && formData.prn_indication ? <p className="mt-2 text-sm">
         For {formData.prn_indication}. Minimum {formData.prn_minimum_interval_hours || '—'} hours between doses;
         maximum {formData.prn_maximum_doses_per_24_hours || '—'} doses in any 24 hours.
@@ -515,7 +517,7 @@ export function PrescriptionFormContent({
           onDrugFormSelect={onDrugFormSelect}
         />
         {medicationCatalogAvailable ? (
-          <MedicationStockPicker itemId={formData.inventory_item_id} itemName={formData.inventory_item_name} onSelect={onStockSelect} required={prnPolicyAvailable && formData.frequency === 'prn'} />
+          <MedicationStockPicker allowControlled={false} itemId={formData.inventory_item_id} itemName={formData.inventory_item_name} onSelect={onStockSelect} required={prnPolicyAvailable && formData.frequency === 'prn'} />
         ) : null}
         <DosageField
           value={formData.dosage}
@@ -523,6 +525,8 @@ export function PrescriptionFormContent({
           onFieldChange={onFieldChange}
         />
         <RouteFrequencyFields formData={formData} errors={errors} onFieldChange={onFieldChange} />
+        {prnPolicyAvailable && formData.frequency !== 'prn' && <ScheduledStockPolicyField form={formData} onChange={onFieldChange} error={errors.scheduled_stock_units_per_dose} />}
+        {prnPolicyAvailable && !formData.inventory_item_id && errors.scheduled_stock_units_per_dose && <p role="alert" className="text-sm text-destructive">{errors.scheduled_stock_units_per_dose}</p>}
         {prnPolicyAvailable && formData.frequency === 'prn' ? <PrnPolicyFields formData={formData} errors={errors} onFieldChange={onFieldChange} /> : null}
         <DurationStartDateFields formData={formData} errors={errors} onFieldChange={onFieldChange} />
         {clinicalTextFieldsAvailable ? <ReasonInstructionsFields formData={formData} onFieldChange={onFieldChange} errors={errors} /> : null}

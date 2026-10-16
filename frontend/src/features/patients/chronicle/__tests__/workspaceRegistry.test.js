@@ -26,6 +26,7 @@ describe('chronicle workspace registry', () => {
       'medicationHistory',
       'treatmentSheet',
       'fluids',
+      'handover',
       'trends',
       'insurance',
       'wardRound',
@@ -90,6 +91,12 @@ describe('chronicle workspace registry', () => {
     });
 
     expect(props.admission).toEqual({ id: 'admission-requested' });
+  });
+
+  it('binds handover to the selected Chronicle admission before falling back to current admission',()=>{
+    const context={patient:{current_admission_id:'current-admission'},selectedAdmissionId:'selected-admission',clinicalPermissions:{can_view_full_clinical:true}};
+    expect(buildChronicleWorkspaceProps('handover',context)).toMatchObject({admission:{id:'selected-admission'},clinicalPermissions:{can_view_full_clinical:true}});
+    expect(buildChronicleWorkspaceProps('handover',{...context,selectedAdmissionId:null}).admission).toEqual({id:'current-admission'});
   });
 
   it('builds historical medication workspace props without requiring an admission', () => {

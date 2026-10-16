@@ -185,7 +185,9 @@ pub struct StockBatchListItem {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
 pub struct CreateStockBatchRequest {
+    pub expected_unit: String,
     pub item_id: Uuid,
     pub location_id: Uuid,
     pub batch_number: String,

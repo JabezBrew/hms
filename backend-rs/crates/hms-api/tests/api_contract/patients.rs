@@ -986,6 +986,12 @@ async fn patient_registry_hot_path_reuses_scoped_cache_and_invalidates_on_write(
 #[tokio::test]
 async fn patient_chronicle_startup_hot_path_reuses_scoped_cache() {
     let app = app().await;
+    grant_test_patient_visibility(
+        &app,
+        Uuid::from_u128(hms_db::provision::OWNER_USER_ID),
+        PatientDataVisibility::ClinicalSummary,
+    )
+    .await;
     let (access_token, _, _) = login(app.clone(), "owner@hms.local").await;
     let claims = access_claims(&access_token);
     let user = app
@@ -1097,7 +1103,7 @@ async fn patient_chronicle_startup_hot_path_reuses_scoped_cache() {
     let offsite = offsite.expect("offsite Chronicle startup succeeds");
     assert!(
         offsite_queries > 0,
-        "offsite Chronicle startup must not reuse an onsite write-capable cache entry"
+        "offsite Chronicle startup must not reuse an onsite access-decision cache entry"
     );
     assert!(
         offsite.data.permissions.read_only,
@@ -1108,6 +1114,12 @@ async fn patient_chronicle_startup_hot_path_reuses_scoped_cache() {
 #[tokio::test]
 async fn patient_chronicle_startup_is_shaped_bounded_and_query_budgeted() {
     let app = app().await;
+    grant_test_patient_visibility(
+        &app,
+        Uuid::from_u128(hms_db::provision::OWNER_USER_ID),
+        PatientDataVisibility::ClinicalSummary,
+    )
+    .await;
     let (access_token, _, _) = login(app.clone(), "owner@hms.local").await;
     let auth_header = format!("Bearer {access_token}");
 

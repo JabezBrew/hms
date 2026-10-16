@@ -3,7 +3,7 @@ use hms_domain::inventory::{DispenseStatus, PharmacyDispenseListItem, StockMovem
 use sqlx::{FromRow, Postgres, QueryBuilder};
 use uuid::Uuid;
 
-use super::{apply_cursor, insert_movement, item_context, InventoryCursor, NewPharmacyDispense};
+use super::{apply_cursor, insert_movement, InventoryCursor, NewPharmacyDispense};
 use crate::codec;
 use crate::PgPool;
 
@@ -49,11 +49,36 @@ pub async fn create_dispense(
     pool: &PgPool,
     dispense: NewPharmacyDispense,
 ) -> anyhow::Result<PharmacyDispenseListItem> {
-    let item = item_context(pool, dispense.facility_id, dispense.item_id).await?;
-    if item.controlled {
-        anyhow::bail!("controlled items require controlled-substance register workflow");
-    }
     let mut transaction = pool.begin().await?;
+    let actor = crate::clinical::stock_basis::authorize(
+        &mut transaction,
+        dispense.facility_id,
+        dispense.actor_user_id,
+        dispense.authorization.clone(),
+    )
+    .await?;
+    let item:Option<(bool,String)>=sqlx::query_as("SELECT controlled,item_type FROM inventory_items WHERE facility_id=$1 AND id=$2 AND is_active FOR SHARE")
+        .bind(dispense.facility_id).bind(dispense.item_id).fetch_optional(&mut *transaction).await?;
+    match item {
+        Some((false, kind)) if kind != "controlled_substance" => {}
+        Some(_) => {
+            anyhow::bail!("controlled items require controlled-substance register workflow")
+        }
+        None => anyhow::bail!("inventory_item_not_actionable"),
+    }
+    if dispense.quantity <= 0 {
+        anyhow::bail!("invalid_dispense_quantity");
+    }
+    let location: Option<Uuid> = sqlx::query_scalar(
+        "SELECT id FROM storage_locations WHERE facility_id=$1 AND id=$2 AND is_active FOR SHARE",
+    )
+    .bind(dispense.facility_id)
+    .bind(dispense.location_id)
+    .fetch_optional(&mut *transaction)
+    .await?;
+    if location.is_none() {
+        anyhow::bail!("dispensing_location_not_actionable");
+    }
     let batch = hms_observability::observe_db_query(
         "inventory.pharmacy.dispenses.select_batch",
         sqlx::query_as::<_, (Uuid, i64)>(
@@ -64,6 +89,7 @@ pub async fn create_dispense(
           AND item_id = $2
           AND location_id = $3
           AND quantity_on_hand >= $4
+          AND (expires_on IS NULL OR expires_on >= (clock_timestamp() AT TIME ZONE 'UTC')::date)
         ORDER BY expires_on ASC NULLS LAST, received_at ASC, id ASC
         LIMIT 1
         FOR UPDATE
@@ -127,6 +153,7 @@ pub async fn create_dispense(
     )
     .await?;
 
+    crate::clinical::stock_basis::check_authorization(&mut transaction, &actor).await?;
     transaction.commit().await?;
     fetch_dispense_by_id(pool, dispense.facility_id, dispense.id)
         .await?

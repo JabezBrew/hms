@@ -81,6 +81,7 @@ impl PharmacyService {
         &self,
         ctx: &hms_access::RequestContext,
         payload: CreatePharmacyDispenseRequest,
+        authorization_deadline: chrono::DateTime<chrono::Utc>,
     ) -> Result<ObjectResponse<PharmacyDispenseListItem>, ApiError> {
         require_inventory_access(ctx, self.facility_id(), PermissionCode::PharmacyDispense)?;
         require_positive(payload.quantity, "quantity")?;
@@ -88,6 +89,12 @@ impl PharmacyService {
         let dispense = hms_db::inventory::create_dispense(
             self.pool(),
             NewPharmacyDispense {
+                authorization: Some(
+                    crate::services::clinical::prescription_courses::authorization(
+                        ctx,
+                        authorization_deadline,
+                    ),
+                ),
                 id: Uuid::new_v4(),
                 facility_id: self.facility_id(),
                 patient_id: payload.patient_id,
@@ -98,9 +105,12 @@ impl PharmacyService {
             },
         )
         .await
-        .map_err(|_| {
+        .map_err(|error| {
+            if error.is::<hms_db::clinical::prescription_courses::PrescriptionCourseError>() {
+                return crate::services::clinical::prescription_courses::write_error(error);
+            }
             ApiError::conflict(
-                "pharmacy_dispense_create_failed",
+                "pharmacy_dispense_create_unconfirmed",
                 "Dispense could not be saved.",
             )
         })?;

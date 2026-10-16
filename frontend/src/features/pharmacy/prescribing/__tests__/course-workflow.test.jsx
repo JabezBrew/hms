@@ -13,7 +13,7 @@ import { MedicationContent } from '@/components/chronicle/TimelineEntryMedicatio
 import { PrescriptionPatientProvider } from '../PrescriptionPatientProvider';
 import { PrescriptionCourseDialog } from '../PrescriptionCourseDialog';
 import { prescribingScope } from '../courseModel';
-import { courseReceipt, documentationReceipt, patient, patientId, source, user } from './fixtures';
+import { courseReceipt, documentationReceipt, patient, patientId, requestId, source, user } from './fixtures';
 
 const originalFetch = globalThis.fetch; const runtime = window.__HMS_RUNTIME_CONFIG__; const json = (data, status = 200) => new Response(JSON.stringify(data), { status, headers: { 'content-type': 'application/json' } });
 let client; let serverSource; let bodies; let mode; let saved; let close; let onSuccess;
@@ -25,6 +25,7 @@ beforeEach(() => {
   globalThis.fetch = vi.fn(async (url, request = {}) => {
     const path = new URL(url).pathname;
     if (request.method === 'GET' && path.includes('/requests/')) { if (mode === 'recovery-missing') return json({ error: { code: 'not_found' } }, 404); if (mode === 'recovery-malformed') return json({ data: { ...saved, prescription: { ...saved.prescription, instructions: 'Unexpected saved text' } } }); return json({ data: { ...saved, replayed: true } }); }
+    if (request.method === 'GET' && path.endsWith('/clinical/medication-catalog')) return json({ data: [{ id: requestId, code: 'STOCK-1', name: 'Synthetic reviewed stock', unit: 'tablet', controlled: false }], page: { has_next: false, next_cursor: null } });
     if (request.method === 'GET') return json({ data: serverSource });
     const payload = JSON.parse(request.body); bodies.push(payload); saved = path.endsWith('/documentation') ? documentationReceipt(payload, source) : courseReceipt(payload, source);
     if (mode === 'generic409') return json({ error: { code: 'prescription_action_unconfirmed' } }, 409); if (mode === 'malformed2xx') return json({ data: {} });
@@ -105,4 +106,14 @@ it('allows an imported whitespace PRN source only through an explicitly configur
 
 it('distinguishes the current catalog unit from the saved PRN basis in a fresh detail', async () => {
   serverSource = { ...source, frequency: 'prn', stock_unit: 'pack', prn_policy: { minimum_interval_hours: 6, maximum_doses_per_24_hours: 2, stock_units_per_dose: 1, indication: 'Synthetic earlier indication', stock_unit: 'tablet' } }; mount('view'); await screen.findByText('Current catalog stock unit: pack'); expect(screen.getByText(/One dose uses 1 tablet/)).toBeInTheDocument(); expect(screen.queryByText('Saved stock unit: pack')).not.toBeInTheDocument();
+});
+
+it('reviews scheduled base units independently from a reused dose and confirms their exact persisted receipt', async () => {
+  serverSource = { ...source, inventory_item_id: requestId, stock_unit: 'tablet', scheduled_stock_policy: { stock_unit: 'tablet', stock_units_per_dose: 1 } }; mount(); const events = userEvent.setup(); await events.click(await screen.findByRole('button', { name: 'Use current regimen as a draft' })); expect(screen.getByLabelText('Start date')).toHaveValue(''); expect(screen.queryByLabelText('Stock units for one scheduled dose (tablet)')).not.toBeInTheDocument();
+  await events.click(screen.getByRole('button', { name: 'Choose facility medication' })); await events.click(await screen.findByRole('button', { name: /Synthetic reviewed stock.*STOCK-1/ })); expect(screen.getByLabelText('Dose')).toHaveValue(''); expect(screen.getByLabelText('Stock units for one scheduled dose (tablet)')).toHaveValue(null);
+  fireEvent.change(screen.getByLabelText('Dose'), { target: { value: '500 mg' } }); fireEvent.change(screen.getByLabelText('Start date'), { target: { value: '2026-10-17' } }); fireEvent.change(screen.getByLabelText('Reason for this new course'), { target: { value: 'Synthetic reviewed unit decision' } }); await events.click(screen.getByRole('button', { name: 'Review prescription change' })); expect(screen.getByRole('alert')).toHaveTextContent(/positive whole number/); expect(bodies).toHaveLength(0);
+  fireEvent.change(screen.getByLabelText('Stock units for one scheduled dose (tablet)'), { target: { value: '2' } }); await events.click(screen.getByRole('button', { name: 'Review prescription change' })); expect(screen.getByText('Each scheduled dose uses 2 tablet of the selected stock.')).toBeInTheDocument(); await confirm(events); await screen.findByText('New course saved'); expect(bodies[0]).toMatchObject({ dose: '500 mg', inventory_item_id: requestId, scheduled_stock_policy: { expected_stock_unit: 'tablet', stock_units_per_dose: 2 } }); expect(screen.getByText('Saved scheduled stock basis: 2 tablet per dose.')).toBeInTheDocument(); expect(bodies).toHaveLength(1);
+});
+it('labels legacy scheduled courses as unconfigured without inventing a policy from dose text', async () => {
+  serverSource = { ...source, inventory_item_id: requestId, stock_unit: 'tablet', dose: '2 tablets', scheduled_stock_policy: null }; mount('view'); await screen.findByText(/Scheduled stock basis is unconfigured/); expect(screen.queryByText('Saved scheduled stock basis: 2 tablet per dose.')).not.toBeInTheDocument(); expect(bodies).toHaveLength(0);
 });

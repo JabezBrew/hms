@@ -1,3 +1,4 @@
+import { useChronicleClinicalPermissions } from '@/features/patients/chronicle/clinicalPermissions';
 import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.js';
 import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
 import Pill from 'lucide-react/dist/esm/icons/pill.js';
@@ -35,9 +36,11 @@ const ClinicalSummarySidebar = ({
   encounter,
   onViewVitalsTrends,
   onViewFluidTrends,
+  showFluidBalance = true,
   className,
   style
 }) => {
+  const clinicalPermissions = useChronicleClinicalPermissions();
   const normalizedAllergies = Array.isArray(allergies) ? allergies : [];
   const normalizedProblems = normalizeProblems(problems);
   // Check if patient is admitted (has active admission)
@@ -92,7 +95,7 @@ const ClinicalSummarySidebar = ({
       <MedicationsSection medications={medications} />
 
       {/* Section: Fluid Balance - Only for admitted patients */}
-      {isAdmitted && patientId && (
+      {clinicalPermissions.can_view_full_clinical && showFluidBalance && isAdmitted && patientId && (
         <>
           <div className="divider-gradient" />
           <FluidBalanceSection patientId={patientId} admissionId={admissionId} onViewTrends={onViewFluidTrends} />

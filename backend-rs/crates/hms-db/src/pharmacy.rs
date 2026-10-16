@@ -11,6 +11,7 @@ use hms_observability::observe_db_query;
 use sqlx::{FromRow, Postgres, QueryBuilder};
 use uuid::Uuid;
 
+use crate::clinical::stock_basis as basis;
 use crate::codec;
 use crate::PgPool;
 
@@ -74,6 +75,7 @@ pub async fn list_dispensing_locations(
 
 #[derive(Clone, Debug)]
 pub struct GenerateMarCommand {
+    pub authorization: Option<crate::clinical::prescription_courses::PrescriptionAuthorization>,
     pub facility_id: Uuid,
     pub prescription_id: Uuid,
     pub admission_case_id: Uuid,
@@ -84,6 +86,7 @@ pub struct GenerateMarCommand {
 
 #[derive(Clone, Debug)]
 pub struct DispenseFulfillmentCommand {
+    pub authorization: Option<crate::clinical::prescription_courses::PrescriptionAuthorization>,
     pub facility_id: Uuid,
     pub fulfillment_id: Uuid,
     pub item_id: Uuid,
@@ -94,6 +97,7 @@ pub struct DispenseFulfillmentCommand {
 
 #[derive(Clone, Debug, FromRow)]
 struct PrescriptionGenerationRow {
+    scheduled_stock_policy: Option<sqlx::types::Json<hms_domain::clinical::ScheduledStockPolicy>>,
     prn_policy: Option<sqlx::types::Json<PrnPolicy>>,
     id: Uuid,
     patient_id: Uuid,
@@ -116,6 +120,7 @@ struct AdmissionGenerationRow {
 
 #[derive(Clone, Debug, FromRow)]
 struct QueueRow {
+    scheduled_stock_policy: Option<sqlx::types::Json<hms_domain::clinical::ScheduledStockPolicy>>,
     inventory_item_name: Option<String>,
     inventory_item_code: Option<String>,
     inventory_item_unit: Option<String>,
@@ -156,6 +161,8 @@ struct FulfillmentForUpdate {
 
 #[derive(Clone, Debug, FromRow)]
 struct MedicationCourseForUpdate {
+    prescription_scheduled_stock_policy:
+        Option<sqlx::types::Json<hms_domain::clinical::ScheduledStockPolicy>>,
     prescription_prn_policy: Option<sqlx::types::Json<PrnPolicy>>,
     id: Uuid,
     medication_name: String,
@@ -179,7 +186,7 @@ pub async fn generate_mar_for_prescription(
     let mut transaction = pool.begin().await?;
     let prescription = sqlx::query_as::<_, PrescriptionGenerationRow>(
         r#"
-        SELECT id, patient_id, medication_name, dose, route, frequency, inventory_item_id, duration_days, start_date, first_dose_at, prn_policy, status
+        SELECT id, patient_id, medication_name, dose, route, frequency, inventory_item_id, duration_days, start_date, first_dose_at, prn_policy, scheduled_stock_policy, status
         FROM prescriptions
         WHERE facility_id = $1 AND id = $2
         FOR UPDATE
@@ -195,6 +202,19 @@ pub async fn generate_mar_for_prescription(
         anyhow::bail!("prescription_not_active");
     }
 
+    let actor = basis::authorize(
+        &mut transaction,
+        command.facility_id,
+        command.actor_user_id,
+        command.authorization.clone(),
+    )
+    .await?;
+    let _group = crate::clinical::prescription_courses::lock_prn_safety_group(
+        &mut transaction,
+        command.facility_id,
+        prescription.id,
+    )
+    .await?;
     if let Some(item_id) = prescription.inventory_item_id {
         let local_item = sqlx::query_scalar::<_, bool>(
             "SELECT EXISTS (SELECT 1 FROM inventory_items WHERE facility_id = $1 AND id = $2)",
@@ -213,6 +233,7 @@ pub async fn generate_mar_for_prescription(
         SELECT patient_id, status
         FROM admission_cases
         WHERE facility_id = $1 AND id = $2
+        FOR SHARE
         "#,
     )
     .bind(command.facility_id)
@@ -225,14 +246,31 @@ pub async fn generate_mar_for_prescription(
         anyhow::bail!("admission_patient_mismatch");
     }
     if !matches!(admission.status.as_str(), "admitted" | "discharge_pending") {
-        anyhow::bail!("admission_not_active");
+        return Err(basis::StockBasisError::AdmissionInactive.into());
     }
 
+    let scheduled_policy = if prescription.frequency.trim().eq_ignore_ascii_case("prn") {
+        None
+    } else {
+        Some(
+            basis::validate_policy(
+                &mut transaction,
+                command.facility_id,
+                prescription.inventory_item_id,
+                prescription
+                    .scheduled_stock_policy
+                    .as_ref()
+                    .map(|p| p.0.clone()),
+            )
+            .await?,
+        )
+    };
+    basis::check_authorization(&mut transaction, &actor).await?;
     let existing_course = sqlx::query_as::<_, MedicationCourseForUpdate>(
         r#"
         SELECT id, medication_name, dose, route, frequency, inventory_item_id, first_dose_at,
                interval_minutes, generation_window_start, generation_window_end,
-               prescription_start_date, prescription_duration_days, prescription_first_dose_at, prescription_prn_policy
+               prescription_start_date, prescription_duration_days, prescription_first_dose_at, prescription_prn_policy, prescription_scheduled_stock_policy
         FROM medication_courses
         WHERE facility_id = $1 AND prescription_id = $2 AND admission_case_id = $3
         FOR UPDATE
@@ -306,6 +344,11 @@ pub async fn generate_mar_for_prescription(
             || course.generation_window_end != window_end
             || course.prescription_start_date != prescription.start_date
             || course.prescription_duration_days != prescription.duration_days
+            || course
+                .prescription_scheduled_stock_policy
+                .as_ref()
+                .map(|p| &p.0)
+                != scheduled_policy.as_ref()
             || course.prescription_prn_policy != prescription.prn_policy
             || course.prescription_first_dose_at != prescription.first_dose_at
         {
@@ -320,9 +363,9 @@ pub async fn generate_mar_for_prescription(
             id, facility_id, patient_id, admission_case_id, prescription_id,
             medication_name, dose, route, frequency, inventory_item_id, first_dose_at, interval_minutes,
             generation_window_start, generation_window_end, status, created_by_user_id,
-            prescription_start_date, prescription_duration_days, prescription_first_dose_at, prescription_prn_policy
+            prescription_start_date, prescription_duration_days, prescription_first_dose_at, prescription_prn_policy, prescription_scheduled_stock_policy
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, 'active', $15, $16, $17, $18, $19)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, 'active', $15, $16, $17, $18, $19, $20)
         RETURNING id
         "#,
         )
@@ -341,12 +384,13 @@ pub async fn generate_mar_for_prescription(
         .bind(window_start)
         .bind(window_end)
         .bind(command.actor_user_id)
-        .bind(prescription.start_date).bind(prescription.duration_days).bind(prescription.first_dose_at).bind(prescription.prn_policy.as_ref())
+        .bind(prescription.start_date).bind(prescription.duration_days).bind(prescription.first_dose_at).bind(prescription.prn_policy.as_ref()).bind(scheduled_policy.as_ref().map(sqlx::types::Json))
         .fetch_one(&mut *transaction)
         .await?
     };
 
     if schedule.is_prn() {
+        basis::check_authorization(&mut transaction, &actor).await?;
         transaction.commit().await?;
         return Ok(GenerateMedicationAdministrationResponse {
             prescription_id: prescription.id,
@@ -403,9 +447,9 @@ pub async fn generate_mar_for_prescription(
             INSERT INTO medication_administrations (
                 id, facility_id, admission_case_id, patient_id, prescription_id,
                 medication_course_id, pharmacy_fulfillment_id, medication_name, dose, route,
-                frequency, dose_sequence, scheduled_at, status, created_by_user_id
+                frequency, dose_sequence, scheduled_at, status, created_by_user_id, scheduled_stock_policy
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 'scheduled', $14)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 'scheduled', $14, $15)
             ON CONFLICT (facility_id, medication_course_id, scheduled_at, dose_sequence)
             WHERE medication_course_id IS NOT NULL
             DO NOTHING
@@ -425,6 +469,7 @@ pub async fn generate_mar_for_prescription(
         .bind(dose_sequence)
         .bind(*scheduled_at)
         .bind(command.actor_user_id)
+        .bind(scheduled_policy.as_ref().map(sqlx::types::Json))
         .execute(&mut *transaction)
         .await?;
         if result.rows_affected() == 1 {
@@ -469,6 +514,7 @@ pub async fn generate_mar_for_prescription(
     .bind(fulfillment_id)
     .fetch_one(&mut *transaction)
     .await?;
+    basis::check_authorization(&mut transaction, &actor).await?;
     transaction.commit().await?;
     Ok(GenerateMedicationAdministrationResponse {
         prescription_id: prescription.id,
@@ -579,8 +625,8 @@ pub async fn dispense_fulfillment(
     let mut transaction = pool.begin().await?;
     // Read only the parent id first, then use the same source-before-child lock
     // order as prescription updates and MAR generation/administration.
-    let prescription_id = sqlx::query_scalar::<_, Uuid>(
-        "SELECT prescription_id FROM pharmacy_fulfillments WHERE facility_id = $1 AND id = $2",
+    let (prescription_id,admission_id,patient_id) = sqlx::query_as::<_, (Uuid,Uuid,Uuid)>(
+        "SELECT prescription_id,admission_case_id,patient_id FROM pharmacy_fulfillments WHERE facility_id = $1 AND id = $2",
     )
     .bind(command.facility_id)
     .bind(command.fulfillment_id)
@@ -591,6 +637,29 @@ pub async fn dispense_fulfillment(
         crate::clinical::lock_prescription(&mut transaction, command.facility_id, prescription_id)
             .await?
             .context("prescription_not_found")?;
+    let actor = basis::authorize(
+        &mut transaction,
+        command.facility_id,
+        command.actor_user_id,
+        command.authorization.clone(),
+    )
+    .await?;
+    let _group = crate::clinical::prescription_courses::lock_prn_safety_group(
+        &mut transaction,
+        command.facility_id,
+        prescription.id,
+    )
+    .await?;
+    if patient_id != prescription.patient_id {
+        anyhow::bail!("admission_patient_mismatch");
+    }
+    basis::lock_active_admission(
+        &mut transaction,
+        command.facility_id,
+        admission_id,
+        patient_id,
+    )
+    .await?;
     if prescription.status != PrescriptionStatus::Active {
         anyhow::bail!("prescription_not_active");
     }
@@ -614,6 +683,7 @@ pub async fn dispense_fulfillment(
                 AND c.prescription_duration_days IS NOT DISTINCT FROM p.duration_days
                 AND c.prescription_first_dose_at IS NOT DISTINCT FROM p.first_dose_at
                 AND c.prescription_prn_policy IS NOT DISTINCT FROM p.prn_policy
+                AND c.prescription_scheduled_stock_policy IS NOT DISTINCT FROM p.scheduled_stock_policy
         )
         "#,
     )
@@ -653,39 +723,39 @@ pub async fn dispense_fulfillment(
         None => anyhow::bail!("inventory_item_not_bound"),
     }
 
-    let stock_quantity = if prescription.frequency.trim().eq_ignore_ascii_case("prn") {
-        let at = sqlx::query_scalar("SELECT clock_timestamp()")
-            .fetch_one(&mut *transaction)
+    let (stock_unit, stock_units_per_dose, scheduled_policy) =
+        if prescription.frequency.trim().eq_ignore_ascii_case("prn") {
+            let at = sqlx::query_scalar("SELECT clock_timestamp()")
+                .fetch_one(&mut *transaction)
+                .await?;
+            let policy = crate::ward::prn::validate_prn_source(
+                &mut transaction,
+                command.facility_id,
+                fulfillment.admission_case_id,
+                &prescription,
+                at,
+            )
             .await?;
-        let policy = crate::ward::prn::validate_prn_source(
-            &mut transaction,
-            command.facility_id,
-            fulfillment.admission_case_id,
-            &prescription,
-            at,
-        )
-        .await?;
-        // Supply is measured in doses; stock and dispensing evidence use the
-        // explicit inventory units captured by the prescriber.
-        command
-            .quantity
-            .checked_mul(policy.stock_units_per_dose)
-            .context("prn_stock_quantity_overflow")?
-    } else {
-        command.quantity
-    };
-    let item = sqlx::query_as::<_, (bool,)>(
-        "SELECT controlled FROM inventory_items WHERE facility_id = $1 AND id = $2",
-    )
-    .bind(command.facility_id)
-    .bind(command.item_id)
-    .fetch_optional(&mut *transaction)
-    .await?
-    .context("inventory_item_not_found")?;
-    if item.0 {
-        anyhow::bail!("controlled_item_requires_controlled_workflow");
-    }
-
+            (policy.stock_unit, policy.stock_units_per_dose, None)
+        } else {
+            let policy =
+                basis::source_policy(&mut transaction, command.facility_id, prescription.id)
+                    .await?;
+            let policy = basis::validate_policy(
+                &mut transaction,
+                command.facility_id,
+                prescription.inventory_item_id,
+                policy,
+            )
+            .await?;
+            (
+                policy.stock_unit.clone(),
+                policy.stock_units_per_dose,
+                Some(policy),
+            )
+        };
+    let stock_quantity = basis::stock_quantity(command.quantity, stock_units_per_dose)?;
+    basis::check_authorization(&mut transaction, &actor).await?;
     let (batch_id, quantity_on_hand) = sqlx::query_as::<_, (Uuid, i64)>(
         r#"
         SELECT id, quantity_on_hand
@@ -719,9 +789,9 @@ pub async fn dispense_fulfillment(
         r#"
         INSERT INTO stock_movements (
             id, facility_id, item_id, batch_id, location_id, movement_type,
-            quantity, balance_after, reason, created_by_user_id
+            quantity, balance_after, reason, created_by_user_id, stock_unit
         )
-        VALUES ($1, $2, $3, $4, $5, 'dispense', $6, $7, 'pharmacy_fulfillment', $8)
+        VALUES ($1, $2, $3, $4, $5, 'dispense', $6, $7, 'pharmacy_fulfillment', $8, $9)
         "#,
     )
     .bind(Uuid::new_v4())
@@ -732,15 +802,16 @@ pub async fn dispense_fulfillment(
     .bind(-stock_quantity)
     .bind(balance_after)
     .bind(command.actor_user_id)
+    .bind(&stock_unit)
     .execute(&mut *transaction)
     .await?;
 
     sqlx::query(
         r#"
         INSERT INTO pharmacy_dispenses (
-            id, facility_id, patient_id, item_id, location_id, quantity, status, dispensed_by_user_id
+            id, facility_id, patient_id, item_id, location_id, quantity, status, dispensed_by_user_id, stock_unit
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
         "#,
     )
     .bind(Uuid::new_v4())
@@ -751,6 +822,7 @@ pub async fn dispense_fulfillment(
     .bind(stock_quantity)
     .bind(codec::encode(DispenseStatus::Dispensed)?)
     .bind(command.actor_user_id)
+    .bind(&stock_unit)
     .execute(&mut *transaction)
     .await?;
 
@@ -762,6 +834,7 @@ pub async fn dispense_fulfillment(
           AND medication_administrations.pharmacy_fulfillment_id = $2
           AND medication_administrations.is_dispensed = false
           AND medication_administrations.status = 'scheduled'
+          AND ($4::jsonb IS NULL OR medication_administrations.scheduled_stock_policy=$4)
         ORDER BY medication_administrations.scheduled_at ASC, medication_administrations.id ASC
         LIMIT $3
         FOR UPDATE
@@ -770,6 +843,7 @@ pub async fn dispense_fulfillment(
     .bind(command.facility_id)
     .bind(command.fulfillment_id)
     .bind(command.quantity)
+    .bind(scheduled_policy.as_ref().map(sqlx::types::Json))
     .fetch_all(&mut *transaction)
     .await?;
     if medication_ids.len() < usize::try_from(command.quantity).unwrap_or(usize::MAX) {
@@ -783,6 +857,7 @@ pub async fn dispense_fulfillment(
         SET is_dispensed = true,
             dispensed_at = now(),
             dispensed_by_user_id = $3,
+            dispensed_stock_quantity=$4,dispensed_stock_unit=$5,
             updated_at = now()
         WHERE facility_id = $1 AND id = ANY($2)
         "#,
@@ -790,6 +865,8 @@ pub async fn dispense_fulfillment(
     .bind(command.facility_id)
     .bind(&medication_ids)
     .bind(command.actor_user_id)
+    .bind(stock_units_per_dose)
+    .bind(&stock_unit)
     .execute(&mut *transaction)
     .await?;
 
@@ -822,11 +899,14 @@ pub async fn dispense_fulfillment(
     .execute(&mut *transaction)
     .await?;
 
+    basis::check_authorization(&mut transaction, &actor).await?;
     transaction.commit().await?;
     let fulfillment = get_fulfillment(pool, command.facility_id, fulfillment.id)
         .await?
         .context("fulfillment_missing_after_dispense")?;
     Ok(PharmacyFulfillmentDispenseResult {
+        issued_stock_quantity: stock_quantity,
+        issued_stock_unit: stock_unit,
         remaining_dose_count: i64::from(fulfillment.requested_dose_count)
             - i64::from(fulfillment.dispensed_dose_count),
         fulfillment,
@@ -838,7 +918,7 @@ fn queue_query() -> QueryBuilder<'static, Postgres> {
     QueryBuilder::new(
         r#"
         SELECT stock.name AS inventory_item_name,stock.code AS inventory_item_code,stock.unit AS inventory_item_unit,
-               courses.prescription_prn_policy AS prn_policy, pharmacy_fulfillments.id,
+               courses.prescription_scheduled_stock_policy AS scheduled_stock_policy,courses.prescription_prn_policy AS prn_policy, pharmacy_fulfillments.id,
                pharmacy_fulfillments.patient_id,
                patients.patient_code,
                patients.first_name || ' ' || patients.last_name AS patient_display_name,
@@ -884,6 +964,7 @@ fn queue_query() -> QueryBuilder<'static, Postgres> {
 
 fn queue_item_from_row(row: QueueRow) -> anyhow::Result<PharmacyQueueItem> {
     Ok(PharmacyQueueItem {
+        scheduled_stock_policy: row.scheduled_stock_policy.map(|p| p.0),
         prn_policy: row.prn_policy.map(|p| p.0),
         id: row.id,
         patient_id: row.patient_id,

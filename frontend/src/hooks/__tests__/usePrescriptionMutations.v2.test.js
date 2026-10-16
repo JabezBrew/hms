@@ -31,6 +31,8 @@ vi.mock('@/lib/api-client', () => ({
 }));
 
 describe('Rust V2 prescription mutations bridge', () => {
+  const stockRequest = { inventory_item_id: 'item-1', scheduled_stock_policy: { expected_stock_unit: 'tablet', stock_units_per_dose: 2 } };
+  const stockSaved = { inventory_item_id: 'item-1', scheduled_stock_policy: { stock_unit: 'tablet', stock_units_per_dose: 2 } };
   const originalFetch = globalThis.fetch;
   const originalRuntimeConfig = globalThis.window.__HMS_RUNTIME_CONFIG__;
 
@@ -124,6 +126,7 @@ describe('Rust V2 prescription mutations bridge', () => {
               dose: '5 mg',
               route: 'oral',
               frequency: 'bid',
+              ...stockSaved,
               status: 'active',
               prescribed_at: '2026-05-12T08:30:00Z',
             },
@@ -155,6 +158,7 @@ describe('Rust V2 prescription mutations bridge', () => {
       frequency: 'bid',
       start_date: '2026-06-04',
       duration_days: 7,
+      ...stockRequest,
       generate_mar: 'yes',
       mar_days: 7,
       admission_case_id: 'admission-1',
@@ -175,6 +179,7 @@ describe('Rust V2 prescription mutations bridge', () => {
       start_date: '2026-06-04',
       duration_days: 7,
       admission_case_id: 'admission-1',
+      ...stockRequest,
     });
     expect(globalThis.fetch).toHaveBeenNthCalledWith(
       2,
@@ -264,14 +269,14 @@ describe('Rust V2 prescription mutations bridge', () => {
     ['aborted response', () => Promise.reject(new DOMException('Aborted', 'AbortError')), 'unconfirmed'],
   ])('returns the saved prescription after MAR %s without reporting a failed create', async (_label, marRequest, status) => {
     globalThis.fetch
-      .mockResolvedValueOnce(new Response(JSON.stringify({ data: { id: 'rx-saved', patient_id: 'patient-1' } }), {
+      .mockResolvedValueOnce(new Response(JSON.stringify({ data: { id: 'rx-saved', patient_id: 'patient-1', ...stockSaved } }), {
         status: 201, headers: { 'content-type': 'application/json' },
       }))
       .mockImplementationOnce(marRequest);
 
     await expect(createPrescription({
       patient: 'patient-1', medication_name: 'Medication', dose: '5 mg', frequency: 'daily',
-      generate_mar: true, admission_case_id: 'admission-1',
+      ...stockRequest, generate_mar: true, admission_case_id: 'admission-1',
     })).resolves.toMatchObject({ id: 'rx-saved', mar_generated: false, mar_generation_status: status });
     expect(globalThis.fetch).toHaveBeenCalledTimes(2);
     expect(globalThis.fetch.mock.calls.filter(([url]) => url.endsWith('/clinical/prescriptions'))).toHaveLength(1);
@@ -284,7 +289,7 @@ describe('Rust V2 prescription mutations bridge', () => {
     { prescription_id: 'rx-saved', created_count: -1, existing_count: 0, requested_dose_count: 2 },
   ])('keeps the saved prescription but never claims MAR generation from a malformed receipt', async (data) => {
     globalThis.fetch
-      .mockResolvedValueOnce(new Response(JSON.stringify({ data: { id: 'rx-saved', patient_id: 'patient-1' } }), {
+      .mockResolvedValueOnce(new Response(JSON.stringify({ data: { id: 'rx-saved', patient_id: 'patient-1', ...stockSaved } }), {
         status: 201, headers: { 'content-type': 'application/json' },
       }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ data }), {
@@ -292,7 +297,7 @@ describe('Rust V2 prescription mutations bridge', () => {
       }));
     await expect(createPrescription({
       patient: 'patient-1', medication_name: 'Medication', dose: '5 mg', frequency: 'daily',
-      generate_mar: true, admission_case_id: 'admission-1',
+      ...stockRequest, generate_mar: true, admission_case_id: 'admission-1',
     })).resolves.toMatchObject({ id: 'rx-saved', mar_generated: false, mar_generation_status: 'unconfirmed' });
     expect(globalThis.fetch).toHaveBeenCalledTimes(2);
   });
@@ -669,5 +674,20 @@ it('invalidates actual scoped PRN-order caches after a persisted lifecycle chang
   const client = new QueryClient({ defaultOptions: { mutations: { retry: false } } }); const key = nursingKeys.prnOrders('synthetic-admission', 'synthetic-authority'); const other = ['synthetic-unrelated-patient-detail']; client.setQueryData(key, { pages: [{ items: [{ prescription_id: 'rx-1', status: 'active' }] }] }); client.setQueryData(other, { unchanged: true });
   globalThis.fetch.mockResolvedValueOnce(new Response(JSON.stringify({ data: { id: 'rx-1', patient_id: 'patient-1', status: 'on_hold' } }), { status: 200, headers: { 'content-type': 'application/json' } })); const wrapper = ({ children }) => createElement(QueryClientProvider, { client }, children); const { result } = renderHook(() => useUpdatePrescription(), { wrapper }); await act(async () => { await result.current.mutateAsync({ prescriptionId: 'rx-1', data: { status: 'on_hold' } }); }); expect(client.getQueryState(key).isInvalidated).toBe(true); expect(client.getQueryState(other).isInvalidated).toBe(false); client.clear();
 });
+
+  it.each([undefined, { expected_stock_unit: 'tablet', stock_units_per_dose: 0 }, { expected_stock_unit: 'tablet', stock_units_per_dose: 1.5 }, { expected_stock_unit: 'tablet', stock_units_per_dose: 9007199254740992 }])('requires reviewed whole base units before a linked scheduled create (%j)', async (policy) => {
+    await expect(createPrescription({ patient: 'patient-1', medication_name: 'Synthetic', dose: '500 mg', frequency: 'daily', inventory_item_id: 'item-1', scheduled_stock_policy: policy })).rejects.toThrow(); expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+  it.each([null, { stock_unit: 'pack', stock_units_per_dose: 2 }, { stock_unit: 'tablet', stock_units_per_dose: 1 }])('does not schedule MAR when the server ignored or changed the reviewed stock policy (%j)', async (scheduled_stock_policy) => {
+    globalThis.fetch.mockResolvedValueOnce(new Response(JSON.stringify({ data: { id: 'rx-ignored-policy', patient_id: 'patient-1', inventory_item_id: 'item-1', scheduled_stock_policy } }), { status: 201, headers: { 'content-type': 'application/json' } }));
+    await expect(createPrescription({ patient: 'patient-1', medication_name: 'Synthetic', dose: '500 mg', frequency: 'daily', ...stockRequest, generate_mar: true, admission_case_id: 'admission-1' })).rejects.toMatchObject({ name: 'PrescriptionWriteUnconfirmedError' }); expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+  });
+  it.each([{ frequency: 'prn', inventory_item_id: 'item-1' }, { frequency: 'daily' }])('rejects a scheduled policy on a PRN or unlinked request before fetch', async (data) => {
+    await expect(createPrescription({ patient: 'patient-1', medication_name: 'Synthetic', dose: '1 dose', ...data, scheduled_stock_policy: stockRequest.scheduled_stock_policy })).rejects.toThrow(/linked scheduled/); expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
+  it('does not follow up with MAR when a create receipt echoes units for a different stock item', async () => {
+    globalThis.fetch.mockResolvedValueOnce(new Response(JSON.stringify({ data: { id: 'rx-wrong-stock', patient_id: 'patient-1', ...stockSaved, inventory_item_id: 'another-item' } }), { status: 201, headers: { 'content-type': 'application/json' } })); await expect(createPrescription({ patient: 'patient-1', medication_name: 'Synthetic', dose: '500 mg', frequency: 'daily', ...stockRequest, generate_mar: true, admission_case_id: 'admission-1' })).rejects.toMatchObject({ name: 'PrescriptionWriteUnconfirmedError' }); expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+  });
 
 });

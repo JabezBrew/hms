@@ -1,3 +1,4 @@
+import { useChronicleClinicalPermissions } from '@/features/patients/chronicle/clinicalPermissions';
 import MoreHorizontal from 'lucide-react/dist/esm/icons/ellipsis.js';
 import Edit from 'lucide-react/dist/esm/icons/square-pen.js';
 import XCircle from 'lucide-react/dist/esm/icons/circle-x.js';
@@ -53,8 +54,9 @@ const getStatusBadge = (status) => {
 
 export const MedicationContent = ({ medication, entry }) => {
   const auth = useContext(AuthContext); const rustV2 = isRustV2ApiMode();
-  const manage = !rustV2 || userHasCapability(auth?.user, 'clinical_documentation.manage');
-  const view = manage || userHasCapability(auth?.user, 'clinical_documentation.view');
+  const permissions = useChronicleClinicalPermissions();
+  const manage = !rustV2 || (permissions.can_prescribe && userHasCapability(auth?.user, 'clinical_documentation.manage'));
+  const view = !rustV2 || (permissions.can_view_full_clinical && (manage || userHasCapability(auth?.user, 'clinical_documentation.view')));
   const [actionDialogOpen, setActionDialogOpen] = useState(false);
   const [selectedAction, setSelectedAction] = useState(null);
   const prescriptionId = medication?.id || entry?.data?.id || entry?.id;
@@ -165,19 +167,19 @@ export const MedicationContent = ({ medication, entry }) => {
         </p>
       )}
 
-      {(medication.notes || medication.instructions) && (
+      {(!rustV2 || permissions.can_view_full_clinical) && (medication.notes || medication.instructions) && (
         <p className="text-sm text-muted-foreground mt-2 italic">
           {medication.notes || medication.instructions}
         </p>
       )}
 
-      {status === 'discontinued' && medication.discontinue_reason && (
+      {(!rustV2 || permissions.can_view_full_clinical) && status === 'discontinued' && medication.discontinue_reason && (
         <p className="text-xs text-rose-600 mt-2">
           Reason: {medication.discontinue_reason}
         </p>
       )}
 
-      {selectedAction && (
+      {selectedAction && view && (
         <Suspense fallback={null}>
           <PrescriptionActionsDialog
             open={actionDialogOpen}

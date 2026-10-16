@@ -8,8 +8,8 @@ use sqlx::{FromRow, Postgres, QueryBuilder};
 use uuid::Uuid;
 
 use super::{
-    apply_cursor, apply_forward_cursor, apply_stock_delta_tx, item_context,
-    ControlledRegisterFilters, InventoryCursor, NewControlledCount, NewControlledMovement,
+    apply_cursor, apply_forward_cursor, apply_stock_delta_tx, ControlledRegisterFilters,
+    InventoryCursor, NewControlledCount, NewControlledMovement,
 };
 use crate::codec;
 use crate::PgPool;
@@ -386,15 +386,18 @@ pub async fn create_controlled_movement(
     pool: &PgPool,
     movement: NewControlledMovement,
 ) -> anyhow::Result<ControlledSubstanceRegisterItem> {
-    let item = item_context(pool, movement.facility_id, movement.item_id).await?;
-    if !item.controlled {
+    let mut tx = pool.begin().await?;
+    // Hold the physical item basis before any first-entry metadata is read.
+    let controlled:Option<bool>=sqlx::query_scalar("SELECT controlled FROM inventory_items WHERE facility_id=$1 AND id=$2 AND is_active FOR SHARE")
+        .bind(movement.facility_id).bind(movement.item_id).fetch_optional(&mut *tx).await?;
+    if controlled != Some(true) {
         anyhow::bail!("controlled register requires a controlled item");
     }
     if movement.quantity_delta < 0 && movement.witness_user_id.is_none() {
         anyhow::bail!("negative controlled movement requires a witness");
     }
     let current_balance = current_controlled_balance(
-        pool,
+        &mut *tx,
         movement.facility_id,
         movement.item_id,
         movement.location_id,
@@ -405,7 +408,6 @@ pub async fn create_controlled_movement(
         anyhow::bail!("controlled balance cannot become negative");
     }
 
-    let mut tx = pool.begin().await?;
     insert_controlled_movement_tx(&mut tx, movement.clone(), current_balance).await?;
     insert_controlled_movement_audit_tx(&mut tx, &movement, next_balance).await?;
     tx.commit().await?;
@@ -512,12 +514,15 @@ async fn insert_controlled_movement_tx(
     .await
 }
 
-async fn current_controlled_balance(
-    pool: &PgPool,
+async fn current_controlled_balance<'e, E>(
+    executor: E,
     facility_id: Uuid,
     item_id: Uuid,
     location_id: Uuid,
-) -> anyhow::Result<i64> {
+) -> anyhow::Result<i64>
+where
+    E: sqlx::Executor<'e, Database = Postgres>,
+{
     Ok(hms_observability::observe_db_query(
         "inventory.controlled_register.current_balance",
         sqlx::query_scalar::<_, i64>(
@@ -532,7 +537,7 @@ async fn current_controlled_balance(
         .bind(facility_id)
         .bind(item_id)
         .bind(location_id)
-        .fetch_optional(pool),
+        .fetch_optional(executor),
     )
     .await?
     .unwrap_or(0))

@@ -9,6 +9,7 @@ Scope: shared UI, page metadata, search, visibility, and first-paint hooks.
 
 | File | Owns |
 | --- | --- |
+| `useScopedNotifications.js` | capture an async notification publisher bound to current authorization/transport/access and component lifetime. |
 | `usePageMeta.jsx` | page title and breadcrumb metadata. |
 | `useAfterInitialPaint.js` | route-shell-first deferral helper. |
 | `usePageVisibility.js` | browser visibility state. |

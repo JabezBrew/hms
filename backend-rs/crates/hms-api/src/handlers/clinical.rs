@@ -792,8 +792,9 @@ pub async fn create_prescription(
     State(state): State<AppState>,
     network: crate::extractors::NetworkContext,
     Path(patient_id): Path<Uuid>,
-    Json(payload): Json<CreatePrescriptionRequest>,
+    payload: Result<Json<CreatePrescriptionRequest>, axum::extract::rejection::JsonRejection>,
 ) -> Result<Json<ObjectResponse<hms_domain::clinical::PrescriptionDetail>>, ApiError> {
+    let Json(payload)=payload.map_err(|_|ApiError::bad_request("invalid_prescription_request","Provide every required reviewed field using the supported prescription request format."))?;
     Ok(Json(
         state
             .clinical_service()
@@ -851,8 +852,9 @@ pub async fn update_prescription(
     State(state): State<AppState>,
     RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
-    Json(payload): Json<UpdatePrescriptionRequest>,
+    payload: Result<Json<UpdatePrescriptionRequest>, axum::extract::rejection::JsonRejection>,
 ) -> Result<Json<ObjectResponse<PrescriptionListItem>>, ApiError> {
+    let Json(payload)=payload.map_err(|_|ApiError::bad_request("invalid_prescription_request","The prescription update has an invalid shape. Use the reviewed new-course workflow to change its stock policy."))?;
     Ok(Json(
         state
             .clinical_service()
@@ -880,14 +882,19 @@ pub async fn update_prescription(
 )]
 pub async fn generate_prescription_mar(
     State(state): State<AppState>,
-    RequestContext(user): RequestContext,
+    network: crate::extractors::NetworkContext,
     Path(id): Path<Uuid>,
     Json(payload): Json<GenerateMedicationAdministrationRequest>,
 ) -> Result<Json<ObjectResponse<GenerateMedicationAdministrationResponse>>, ApiError> {
     Ok(Json(
         state
             .clinical_service()
-            .generate_prescription_mar(&user, id, payload)
+            .generate_prescription_mar(
+                &network.context,
+                id,
+                payload,
+                network.authorization_deadline,
+            )
             .await?,
     ))
 }

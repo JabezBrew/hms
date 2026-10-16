@@ -1428,7 +1428,7 @@ pub async fn schedule_medication_administration(
 )]
 pub async fn administer_medication(
     State(state): State<AppState>,
-    RequestContext(user): RequestContext,
+    network: crate::extractors::NetworkContext,
     Path(id): Path<Uuid>,
     Json(payload): Json<AdministerMedicationRequest>,
 ) -> Result<Json<ObjectResponse<MedicationAdministrationListItem>>, ApiError> {
@@ -1436,7 +1436,12 @@ pub async fn administer_medication(
         state
             .ward_services()
             .mar()
-            .administer_medication(&user, id, payload)
+            .administer_medication(
+                &network.context,
+                id,
+                payload,
+                network.authorization_deadline,
+            )
             .await?,
     ))
 }
@@ -1460,7 +1465,7 @@ pub async fn administer_medication(
 )]
 pub async fn record_medication_outcome(
     State(state): State<AppState>,
-    RequestContext(user): RequestContext,
+    network: crate::extractors::NetworkContext,
     Path(id): Path<Uuid>,
     Json(payload): Json<RecordMedicationOutcomeRequest>,
 ) -> Result<Json<ObjectResponse<MedicationAdministrationListItem>>, ApiError> {
@@ -1468,7 +1473,12 @@ pub async fn record_medication_outcome(
         state
             .ward_services()
             .mar()
-            .record_medication_outcome(&user, id, payload)
+            .record_medication_outcome(
+                &network.context,
+                id,
+                payload,
+                network.authorization_deadline,
+            )
             .await?,
     ))
 }

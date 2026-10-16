@@ -1,4 +1,5 @@
 pub mod prescription_courses;
+mod visibility;
 
 use chrono::{DateTime, Utc};
 use hms_access::require_patient_demographics_access;
@@ -65,7 +66,7 @@ impl ClinicalService {
         query: hms_domain::clinical::MedicationCatalogQuery,
     ) -> Result<ListResponse<hms_domain::clinical::MedicationCatalogItem>, ApiError> {
         // Prescribers need a small medication projection, not inventory access.
-        require_clinical_write_access(ctx, self.facility_id())?;
+        require_template_write_access(ctx, self.facility_id())?;
         let search = normalize_optional_text(query.search, "search", MAX_TITLE_LEN)?;
         let page = page_request(CursorListQuery {
             cursor: query.cursor,
@@ -119,7 +120,7 @@ impl ClinicalService {
         ctx: &hms_access::RequestContext,
         payload: CreateClinicalNoteTemplateRequest,
     ) -> Result<ObjectResponse<ClinicalNoteTemplate>, ApiError> {
-        require_clinical_write_access(ctx, self.facility_id())?;
+        require_template_write_access(ctx, self.facility_id())?;
         let title = normalize_text(payload.title, "title", MAX_TITLE_LEN)?;
         let body_template =
             normalize_text(payload.body_template, "body_template", MAX_NOTE_BODY_LEN)?;
@@ -178,7 +179,7 @@ impl ClinicalService {
         id: Uuid,
         mut payload: UpdateClinicalNoteTemplateRequest,
     ) -> Result<ObjectResponse<ClinicalNoteTemplate>, ApiError> {
-        require_clinical_write_access(ctx, self.facility_id())?;
+        require_template_write_access(ctx, self.facility_id())?;
         payload.title = normalize_optional_text(payload.title, "title", MAX_TITLE_LEN)?;
         payload.body_template =
             normalize_optional_text(payload.body_template, "body_template", MAX_NOTE_BODY_LEN)?;
@@ -226,7 +227,7 @@ impl ClinicalService {
         ctx: &hms_access::RequestContext,
         id: Uuid,
     ) -> Result<ObjectResponse<ClinicalNoteTemplate>, ApiError> {
-        require_clinical_write_access(ctx, self.facility_id())?;
+        require_template_write_access(ctx, self.facility_id())?;
         let template =
             hms_db::clinical::deactivate_note_template(self.pool(), self.facility_id(), id)
                 .await
@@ -357,6 +358,7 @@ impl ClinicalService {
         ctx: &hms_access::RequestContext,
         note_id: Uuid,
     ) -> Result<ObjectResponse<ClinicalNoteDetail>, ApiError> {
+        visibility::full(ctx)?;
         let _note_context = load_note_for_access(
             &self.state,
             ctx,
@@ -384,6 +386,7 @@ impl ClinicalService {
         ctx: &hms_access::RequestContext,
         note_id: Uuid,
     ) -> Result<ListResponse<ClinicalNoteVersion>, ApiError> {
+        visibility::full(ctx)?;
         let note = load_note_for_access(
             &self.state,
             ctx,
@@ -638,8 +641,14 @@ impl ClinicalService {
         ctx: &hms_access::RequestContext,
         patient_id: Uuid,
     ) -> Result<ObjectResponse<PharmacyClinicalContext>, ApiError> {
-        require_action_permission(ctx, self.facility_id(), PermissionCode::PharmacyDispense)?;
-        let _patient = load_patient_for_access(&self.state, ctx, patient_id).await?;
+        hms_access::require_inventory_access(
+            ctx,
+            self.facility_id(),
+            PermissionCode::PharmacyDispense,
+        )
+        .map_err(ApiError::from)?;
+        visibility::prescription_context(ctx)?;
+        let _patient = load_patient_demographics_for_access(&self.state, ctx, patient_id).await?;
         let context = hms_db::clinical::pharmacy_clinical_context(
             self.pool(),
             self.facility_id(),
@@ -667,6 +676,7 @@ impl ClinicalService {
                 "You do not have permission to view laboratory clinical context.",
             )
         })?;
+        visibility::laboratory_context(ctx)?;
         let context = hms_db::clinical::laboratory_clinical_context(
             self.pool(),
             self.facility_id(),
@@ -680,7 +690,8 @@ impl ClinicalService {
             )
         })?
         .ok_or_else(|| ApiError::not_found("lab_order_not_found", "Lab order was not found."))?;
-        let _patient = load_patient_for_access(&self.state, ctx, context.patient_id).await?;
+        let _patient =
+            load_patient_demographics_for_access(&self.state, ctx, context.patient_id).await?;
 
         Ok(object(context))
     }
@@ -871,6 +882,12 @@ impl ClinicalService {
                 "PRN limits require an as-needed order linked to facility stock.",
             ));
         }
+        let scheduled_policy=payload.scheduled_stock_policy.map(|p|p.normalized().map_err(|_|validation_error("scheduled_stock_policy","Review positive whole stock units per dose and the current inventory unit."))).transpose()?;
+        if (!frequency.eq_ignore_ascii_case("prn") && payload.inventory_item_id.is_some())
+            != scheduled_policy.is_some()
+        {
+            return Err(validation_error("scheduled_stock_policy","A linked scheduled prescription requires an explicit reviewed stock-unit policy; PRN and unlinked prescriptions do not use this field."));
+        }
         let mut care_context = validate_care_context(
             self.pool(),
             self.facility_id(),
@@ -917,7 +934,7 @@ impl ClinicalService {
         } else {
             None
         };
-        let prescription = hms_db::clinical::prescription_courses::create_with_documentation(
+        let prescription = hms_db::clinical::prescription_courses::create_with_stock_policy(
             self.pool(),
             NewPrescription {
                 id: Uuid::new_v4(),
@@ -937,6 +954,7 @@ impl ClinicalService {
                 actor_user_id: ctx.user_id,
             },
             prn_policy,
+            scheduled_policy,
             documentation,
             Some(ctx.request_id.clone()),
             Some(prescription_courses::authorization(ctx,authorization_deadline)),
@@ -1046,6 +1064,7 @@ impl ClinicalService {
         ctx: &hms_access::RequestContext,
         id: Uuid,
         payload: GenerateMedicationAdministrationRequest,
+        authorization_deadline: chrono::DateTime<chrono::Utc>,
     ) -> Result<ObjectResponse<GenerateMedicationAdministrationResponse>, ApiError> {
         require_clinical_write_access(ctx, self.facility_id())?;
         let prescription = load_prescription_for_access(&self.state, ctx, id).await?;
@@ -1067,6 +1086,7 @@ impl ClinicalService {
         let result = hms_db::pharmacy::generate_mar_for_prescription(
             self.pool(),
             hms_db::pharmacy::GenerateMarCommand {
+ authorization: Some(crate::services::clinical::prescription_courses::authorization(ctx, authorization_deadline)),
                 facility_id: self.facility_id(),
                 prescription_id: id,
                 admission_case_id: payload.admission_case_id,
@@ -1077,6 +1097,8 @@ impl ClinicalService {
         )
         .await
         .map_err(|error| {
+            if error.is::<hms_db::clinical::stock_basis::StockBasisError>() || error.is::<hms_db::clinical::prescription_courses::PrescriptionCourseError>() {return crate::services::clinical::prescription_courses::write_error(error);}
+
             let message = error.to_string();
             if message.contains("unsupported_frequency") {
                 validation_error(
@@ -1217,6 +1239,15 @@ async fn load_note_for_access(
 }
 
 async fn load_patient_for_access(
+    state: &AppState,
+    ctx: &hms_access::RequestContext,
+    patient_id: Uuid,
+) -> Result<PatientRecord, ApiError> {
+    visibility::summary(ctx)?;
+    load_patient_demographics_for_access(state, ctx, patient_id).await
+}
+
+async fn load_patient_demographics_for_access(
     state: &AppState,
     ctx: &hms_access::RequestContext,
     patient_id: Uuid,
@@ -1370,6 +1401,14 @@ fn require_clinical_write_access(
     ctx: &hms_access::RequestContext,
     facility_id: Uuid,
 ) -> Result<(), ApiError> {
+    visibility::full(ctx)?;
+    hms_access::require_clinical_write_access(ctx, facility_id).map_err(ApiError::from)
+}
+
+fn require_template_write_access(
+    ctx: &hms_access::RequestContext,
+    facility_id: Uuid,
+) -> Result<(), ApiError> {
     hms_access::require_clinical_write_access(ctx, facility_id).map_err(ApiError::from)
 }
 
@@ -1378,6 +1417,9 @@ fn require_action_permission(
     facility_id: Uuid,
     permission: PermissionCode,
 ) -> Result<(), ApiError> {
+    if permission == PermissionCode::ClinicalDocumentationManage {
+        return require_clinical_write_access(ctx, facility_id);
+    }
     hms_access::require_patient_workflow_access(ctx, facility_id, permission).map_err(|_| {
         ApiError::forbidden(
             "permission_denied",

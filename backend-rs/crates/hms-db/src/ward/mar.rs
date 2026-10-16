@@ -7,6 +7,7 @@ use hms_observability::observe_db_query;
 use sqlx::{FromRow, Postgres, QueryBuilder};
 use uuid::Uuid;
 
+use crate::clinical::stock_basis as basis;
 use crate::codec;
 use crate::PgPool;
 
@@ -38,6 +39,9 @@ pub struct NewTreatmentSheet {
 
 #[derive(Clone, Debug, FromRow)]
 struct MedicationAdministrationRow {
+    scheduled_stock_policy: Option<sqlx::types::Json<hms_domain::clinical::ScheduledStockPolicy>>,
+    dispensed_stock_quantity: Option<i64>,
+    dispensed_stock_unit: Option<String>,
     prn_indication: Option<String>,
     prn_request_id: Option<Uuid>,
     id: Uuid,
@@ -68,6 +72,7 @@ struct MedicationAdministrationRow {
 
 #[derive(Clone, Debug)]
 pub struct RecordMedicationOutcome {
+    pub authorization: Option<crate::clinical::prescription_courses::PrescriptionAuthorization>,
     pub facility_id: Uuid,
     pub medication_id: Uuid,
     pub actor_user_id: Uuid,
@@ -109,6 +114,9 @@ impl std::error::Error for MedicationOutcomeError {}
 
 #[derive(FromRow)]
 struct LockedMedicationOutcomeRow {
+    scheduled_stock_policy: Option<sqlx::types::Json<hms_domain::clinical::ScheduledStockPolicy>>,
+    dispensed_stock_quantity: Option<i64>,
+    dispensed_stock_unit: Option<String>,
     frequency: Option<String>,
     prescription_id: Option<Uuid>,
     medication_course_id: Option<Uuid>,
@@ -281,6 +289,7 @@ pub async fn administer_medication(
     record_medication_outcome(
         pool,
         RecordMedicationOutcome {
+            authorization: None,
             facility_id,
             medication_id,
             actor_user_id,
@@ -323,14 +332,14 @@ pub async fn record_medication_outcome(
         return Err(MedicationOutcomeError::InvalidWitness.into());
     }
     let mut transaction = pool.begin().await?;
-    let source = sqlx::query_as::<_, (Option<Uuid>,)>(
-        "SELECT prescription_id FROM medication_administrations WHERE facility_id = $1 AND id = $2",
+    let source = sqlx::query_as::<_, (Option<Uuid>,Uuid,Uuid)>(
+        "SELECT prescription_id,patient_id,admission_case_id FROM medication_administrations WHERE facility_id = $1 AND id = $2",
     )
     .bind(command.facility_id)
     .bind(command.medication_id)
     .fetch_optional(&mut *transaction)
     .await?;
-    let Some((prescription_id,)) = source else {
+    let Some((prescription_id, patient_id, admission_id)) = source else {
         return Ok(None);
     };
     let prescription = if let Some(prescription_id) = prescription_id {
@@ -346,6 +355,13 @@ pub async fn record_medication_outcome(
     } else {
         None
     };
+    let actor = basis::authorize(
+        &mut transaction,
+        command.facility_id,
+        command.actor_user_id,
+        command.authorization.clone(),
+    )
+    .await?;
     let prn_safety_group = if let Some(source) = prescription
         .as_ref()
         .filter(|source| source.frequency.trim().eq_ignore_ascii_case("prn"))
@@ -365,7 +381,7 @@ pub async fn record_medication_outcome(
     // All source-based writers lock prescription and PRN group before child rows. Competing
     // dose outcomes then serialize on this row; a terminal decision is immutable.
     let existing = sqlx::query_as::<_, LockedMedicationOutcomeRow>(
-        r#"SELECT frequency, prescription_id, medication_course_id, pharmacy_fulfillment_id,
+        r#"SELECT scheduled_stock_policy,dispensed_stock_quantity,dispensed_stock_unit,frequency, prescription_id, medication_course_id, pharmacy_fulfillment_id,
             status, is_dispensed, scheduled_at <= clock_timestamp() AS is_due,
             administered_at, administered_by_user_id, witness_user_id,
             outcome_recorded_at, outcome_recorded_by_user_id,
@@ -389,6 +405,7 @@ pub async fn record_medication_outcome(
         && existing.administration_notes.as_deref() == notes
         && existing.witness_user_id == command.witness_user_id
     {
+        basis::check_authorization(&mut transaction, &actor).await?;
         transaction.commit().await?;
         return optional_medication_by_id(pool, command.facility_id, command.medication_id).await;
     }
@@ -418,6 +435,35 @@ pub async fn record_medication_outcome(
     }
     if administered && prescription_id.is_some() && !existing.is_dispensed {
         return Err(MedicationOutcomeError::NotDispensed.into());
+    }
+    if administered {
+        basis::lock_active_admission(
+            &mut transaction,
+            command.facility_id,
+            admission_id,
+            patient_id,
+        )
+        .await?;
+        if let Some(source) = prescription
+            .as_ref()
+            .filter(|p| !p.frequency.trim().eq_ignore_ascii_case("prn"))
+        {
+            let policy =
+                basis::source_policy(&mut transaction, command.facility_id, source.id).await?;
+            let policy = basis::validate_policy(
+                &mut transaction,
+                command.facility_id,
+                source.inventory_item_id,
+                policy,
+            )
+            .await?;
+            if existing.scheduled_stock_policy.as_ref().map(|p| &p.0) != Some(&policy)
+                || existing.dispensed_stock_quantity != Some(policy.stock_units_per_dose)
+                || existing.dispensed_stock_unit.as_deref() != Some(policy.stock_unit.as_str())
+            {
+                return Err(basis::StockBasisError::ReviewRequired.into());
+            }
+        }
     }
     if let Some(source) = prescription
         .as_ref()
@@ -459,6 +505,7 @@ pub async fn record_medication_outcome(
             return Err(MedicationOutcomeError::InvalidWitness.into());
         }
     }
+    basis::check_authorization(&mut transaction, &actor).await?;
     let result = observe_db_query(
         "ward.mar.medication_administrations.administer",
         sqlx::query(
@@ -486,6 +533,8 @@ pub async fn record_medication_outcome(
                 AND c.prescription_duration_days IS NOT DISTINCT FROM p.duration_days
                 AND c.prescription_first_dose_at IS NOT DISTINCT FROM p.first_dose_at
                 AND c.prescription_prn_policy IS NOT DISTINCT FROM p.prn_policy
+                AND c.prescription_scheduled_stock_policy IS NOT DISTINCT FROM p.scheduled_stock_policy
+                AND m.scheduled_stock_policy IS NOT DISTINCT FROM p.scheduled_stock_policy
           ))
         "#,
         )
@@ -525,6 +574,7 @@ pub async fn record_medication_outcome(
         .bind(Uuid::new_v4()).bind(command.facility_id).bind(command.actor_user_id)
         .bind(command.request_id).bind(command.medication_id)
         .bind(serde_json::json!({ "outcome": status })).execute(&mut *transaction).await?;
+    basis::check_authorization(&mut transaction, &actor).await?;
     transaction.commit().await?;
     optional_medication_by_id(pool, command.facility_id, command.medication_id).await
 }
@@ -684,7 +734,7 @@ pub async fn create_treatment_sheet(
 fn medication_query() -> QueryBuilder<'static, Postgres> {
     QueryBuilder::<Postgres>::new(
         r#"
-        SELECT medication_administrations.prn_indication, medication_administrations.prn_request_id, medication_administrations.id,
+        SELECT medication_administrations.scheduled_stock_policy,medication_administrations.dispensed_stock_quantity,medication_administrations.dispensed_stock_unit,medication_administrations.prn_indication, medication_administrations.prn_request_id, medication_administrations.id,
                medication_administrations.admission_case_id,
                medication_administrations.patient_id,
                medication_administrations.prescription_id,
@@ -819,6 +869,9 @@ fn medication_from_row(
     row: MedicationAdministrationRow,
 ) -> anyhow::Result<MedicationAdministrationListItem> {
     Ok(MedicationAdministrationListItem {
+        scheduled_stock_policy: row.scheduled_stock_policy.map(|p| p.0),
+        dispensed_stock_quantity: row.dispensed_stock_quantity,
+        dispensed_stock_unit: row.dispensed_stock_unit,
         prn_indication: row.prn_indication,
         prn_request_id: row.prn_request_id,
         id: row.id,

@@ -228,12 +228,42 @@ pub async fn create_batch(
     batch: NewStockBatch,
 ) -> anyhow::Result<StockBatchListItem> {
     let mut transaction = pool.begin().await?;
+    let actor = crate::clinical::stock_basis::authorize(
+        &mut transaction,
+        batch.facility_id,
+        batch.actor_user_id,
+        batch.authorization.clone(),
+    )
+    .await?;
+    if batch.quantity_received <= 0 || batch.quantity_received > 9_007_199_254_740_991 {
+        anyhow::bail!("invalid_stock_receipt_quantity");
+    }
+    let unit: Option<String> = sqlx::query_scalar(
+        "SELECT unit FROM inventory_items WHERE facility_id=$1 AND id=$2 AND is_active FOR SHARE",
+    )
+    .bind(batch.facility_id)
+    .bind(batch.item_id)
+    .fetch_optional(&mut *transaction)
+    .await?;
+    if unit.as_deref() != Some(batch.expected_unit.trim()) {
+        return Err(crate::clinical::stock_basis::StockBasisError::ReceiptUnitChanged.into());
+    }
+    let location: Option<Uuid> = sqlx::query_scalar(
+        "SELECT id FROM storage_locations WHERE facility_id=$1 AND id=$2 AND is_active FOR SHARE",
+    )
+    .bind(batch.facility_id)
+    .bind(batch.location_id)
+    .fetch_optional(&mut *transaction)
+    .await?;
+    if location.is_none() {
+        anyhow::bail!("stock_receipt_location_invalid");
+    }
     sqlx::query(
         r#"
         INSERT INTO stock_batches (
-            id, facility_id, item_id, location_id, batch_number, expires_on, quantity_on_hand
+            id, facility_id, item_id, location_id, batch_number, expires_on, quantity_on_hand, received_unit
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
         "#,
     )
     .bind(batch.id)
@@ -243,6 +273,7 @@ pub async fn create_batch(
     .bind(&batch.batch_number)
     .bind(batch.expires_on)
     .bind(batch.quantity_received)
+    .bind(batch.expected_unit.trim())
     .execute(&mut *transaction)
     .await?;
 
@@ -260,6 +291,14 @@ pub async fn create_batch(
     )
     .await?;
 
+    sqlx::query(
+        "UPDATE stock_movements SET stock_unit=$2 WHERE batch_id=$1 AND movement_type='receipt'",
+    )
+    .bind(batch.id)
+    .bind(batch.expected_unit.trim())
+    .execute(&mut *transaction)
+    .await?;
+    crate::clinical::stock_basis::check_authorization(&mut transaction, &actor).await?;
     transaction.commit().await?;
     fetch_batch_by_id(pool, batch.facility_id, batch.id)
         .await?

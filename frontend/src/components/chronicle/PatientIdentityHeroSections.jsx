@@ -179,6 +179,7 @@ function AllergyWarnings({ allergies }) {
 function PrimaryActions({ actions, activeAdmission, prefetchAction }) {
   return (
     <>
+      {actions.onAddNote && (
       <Button
         variant="outline"
         size="sm"
@@ -191,7 +192,9 @@ function PrimaryActions({ actions, activeAdmission, prefetchAction }) {
         <FileText className="size-3.5 mr-1.5" />
         Add Note
       </Button>
+      )}
 
+      {actions.onRecordVitals && (
       <Button
         variant="outline"
         size="sm"
@@ -203,7 +206,9 @@ function PrimaryActions({ actions, activeAdmission, prefetchAction }) {
         <Activity className="size-3.5 mr-1.5" />
         Vitals
       </Button>
+      )}
 
+      {actions.onPrescribe && (
       <Button
         variant="outline"
         size="sm"
@@ -216,6 +221,7 @@ function PrimaryActions({ actions, activeAdmission, prefetchAction }) {
         <Pill className="size-3.5 mr-1.5" />
         Prescribe
       </Button>
+      )}
 
       {actions.onOrderLabs && (
         <Button
@@ -282,20 +288,20 @@ function MoreActionsMenu({ actions, activeAdmission, prefetchAction }) {
             Ask Chronicle
           </DropdownMenuItem>
         )}
-        <DropdownMenuItem
+        {actions.onOrderLabs && (<DropdownMenuItem
           onClick={actions.onOrderLabs}
           onPointerEnter={() => prefetchAction('labs')}
           onFocus={() => prefetchAction('labs')}
         >
           Order Labs
-        </DropdownMenuItem>
-        <DropdownMenuItem
+        </DropdownMenuItem>)}
+        {actions.onRequestConsult && (<DropdownMenuItem
           onClick={actions.onRequestConsult}
           onPointerEnter={() => prefetchAction('referral')}
           onFocus={() => prefetchAction('referral')}
         >
           Request Consult
-        </DropdownMenuItem>
+        </DropdownMenuItem>)}
         {actions.onViewMedicationHistory && (
           <DropdownMenuItem
             onClick={actions.onViewMedicationHistory}
@@ -306,7 +312,7 @@ function MoreActionsMenu({ actions, activeAdmission, prefetchAction }) {
             Medication History
           </DropdownMenuItem>
         )}
-        <DropdownMenuItem onClick={actions.onScheduleFollowUp}>Schedule Follow-up</DropdownMenuItem>
+        {actions.onScheduleFollowUp && (<DropdownMenuItem onClick={actions.onScheduleFollowUp}>Schedule Follow-up</DropdownMenuItem>)}
         {actions.onRecordFluids && (
           <DropdownMenuItem
             onClick={actions.onRecordFluids}
@@ -317,6 +323,7 @@ function MoreActionsMenu({ actions, activeAdmission, prefetchAction }) {
             Fluid Balance
           </DropdownMenuItem>
         )}
+        {actions.onViewPatientHandover && <DropdownMenuItem onClick={actions.onViewPatientHandover}>Patient handover</DropdownMenuItem>}
         {activeAdmission && actions.onStartWardRound && (
           <>
             <DropdownMenuSeparator />

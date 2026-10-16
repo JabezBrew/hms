@@ -136,3 +136,12 @@ Run from `backend-rs/`:
 ```bash
 cargo test -p hms-api
 ```
+
+## Scheduled stock and care lifetime
+
+Public linked scheduled prescribing requires an explicit reviewed inventory-unit
+policy. MAR generation, physical issue, actual dose outcomes, stock receipt and
+catalog correction carry server-derived current authority proofs into their
+transactions. `tests/medication_stock_contract.rs` exercises real routes and
+lock-wait expiry/revocation. See the
+[scope and compatibility contract](../../../docs/v2/2026-10-16-scheduled-stock-basis-scope.md).

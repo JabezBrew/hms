@@ -7,10 +7,10 @@ vi.mock('../api/medicationCatalog', () => ({
   getMedicationCatalog: (...args) => getCatalog(...args),
   medicationCatalogKeys: { search: (request) => ['medication-catalog', request] },
 }));
-function setup() {
+function setup(props = {}) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const onSelect = vi.fn();
-  render(<QueryClientProvider client={client}><MedicationStockPicker onSelect={onSelect} /></QueryClientProvider>);
+  render(<QueryClientProvider client={client}><MedicationStockPicker onSelect={onSelect} {...props} /></QueryClientProvider>);
   fireEvent.click(screen.getByRole('button', { name: 'Choose facility medication' }));
   return { onSelect, client };
 }
@@ -42,4 +42,8 @@ describe('Facility medication stock picker', () => {
     await waitFor(() => expect(getCatalog).toHaveBeenLastCalledWith(expect.objectContaining({ search: 'Private typed search' })));
     expect(JSON.stringify(client.getQueryCache().getAll().map((query) => query.queryKey))).not.toContain('Private typed search');
   });
+});
+
+it('keeps controlled stock unavailable in the generic prescribing flow', async () => {
+  getCatalog.mockResolvedValue({ data: [{ id: 'controlled', name: 'Synthetic controlled', code: 'C-1', unit: 'tablet', controlled: true }], page: { has_next: false } }); const { onSelect, client } = setup({ allowControlled: false }); const choice = await screen.findByRole('button', { name: /Synthetic controlled/ }); expect(choice).toBeDisabled(); expect(screen.getByText('Controlled stock linking is unavailable here.')).toBeInTheDocument(); fireEvent.click(choice); expect(onSelect).not.toHaveBeenCalled(); client.clear();
 });

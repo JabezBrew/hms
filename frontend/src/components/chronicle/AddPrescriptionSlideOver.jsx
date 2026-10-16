@@ -1,3 +1,4 @@
+import { emptyScheduledStockForm, scheduledStockPolicyPayload, validateScheduledStockForm } from '@/features/pharmacy/prescribing/scheduledStockPolicy';
 import { useEffect, useReducer, useRef } from "react";
 import { cn } from "@/lib/utils";
 
@@ -39,6 +40,7 @@ const createPrescriptionFormData = () => ({
   inventory_item_unit: '',
   inventory_item_controlled: false,
   ...emptyPrnPolicyForm(),
+  ...emptyScheduledStockForm(),
   dosage: '',
   route: 'oral',
   frequency: 'daily',
@@ -81,8 +83,9 @@ const prescriptionReducer = (state, action) => {
         formData: {
           ...state.formData,
           [action.field]: action.value,
-          ...(action.field === 'medication_name' ? { inventory_item_id: null, inventory_item_name: '', inventory_item_unit: '', inventory_item_controlled: false, ...emptyPrnPolicyForm() } : {}),
+          ...(action.field === 'medication_name' ? { inventory_item_id: null, inventory_item_name: '', inventory_item_unit: '', inventory_item_controlled: false, ...emptyPrnPolicyForm(), ...emptyScheduledStockForm() } : {}),
           ...(action.field === 'frequency' && action.value !== 'prn' ? emptyPrnPolicyForm() : {}),
+          ...(action.field === 'frequency' && (action.value === 'prn') !== (state.formData.frequency === 'prn') ? emptyScheduledStockForm() : {}),
         },
         errors: withoutFieldError(state.errors, action.field),
       };
@@ -97,6 +100,7 @@ const prescriptionReducer = (state, action) => {
           inventory_item_unit: '',
           inventory_item_controlled: false,
           ...emptyPrnPolicyForm(),
+          ...emptyScheduledStockForm(),
         },
         selectedRxcui: action.rxcui,
         errors: withoutFieldError(state.errors, 'medication_name'),
@@ -112,7 +116,7 @@ const prescriptionReducer = (state, action) => {
           inventory_item_controlled: Boolean(action.item?.controlled),
           ...(action.item?.id !== state.formData.inventory_item_id
             || action.item?.unit !== state.formData.inventory_item_unit
-            || Boolean(action.item?.controlled) !== state.formData.inventory_item_controlled ? emptyPrnPolicyForm() : {}),
+            || Boolean(action.item?.controlled) !== state.formData.inventory_item_controlled ? { ...emptyPrnPolicyForm(), ...emptyScheduledStockForm() } : {}),
           ...(action.item ? { medication_name: action.item.name } : {}),
         },
         errors: withoutFieldError(withoutFieldError(state.errors, 'medication_name'), 'inventory_item_id'),
@@ -189,6 +193,7 @@ const buildPrescriptionPayload = ({
 
   if (formData.inventory_item_id) {
     data.inventory_item_id = formData.inventory_item_id;
+    if (prnPolicyAvailable && formData.frequency !== 'prn') data.scheduled_stock_policy = scheduledStockPolicyPayload(formData);
   }
 
   if (encounterId) {
@@ -359,6 +364,8 @@ const AddPrescriptionSlideOverContent = ({
       newErrors.duration_days = 'Enter a whole number of at least one day.';
     }
     if (rustV2Mode && formData.frequency === 'prn') Object.assign(newErrors, validatePrnPolicyForm(formData));
+    if (rustV2Mode && formData.frequency !== 'prn' && formData.inventory_item_id) Object.assign(newErrors, validateScheduledStockForm(formData));
+    if (rustV2Mode && formData.frequency !== 'prn' && generateMAR && !formData.inventory_item_id) newErrors.scheduled_stock_units_per_dose = 'Choose a stock item and review its units per dose, or turn off MAR generation to save an unlinked prescription.';
     if ([...formData.instructions.trim()].length > 4000) newErrors.instructions = 'Use 4000 characters or fewer.';
     if ([...formData.reason.trim()].length > 2000) newErrors.reason = 'Use 2000 characters or fewer.';
 

@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import CheckCircle2 from 'lucide-react/dist/esm/icons/circle-check.js';
 import Plus from 'lucide-react/dist/esm/icons/plus.js';
 import RotateCcw from 'lucide-react/dist/esm/icons/rotate-ccw.js';
-import { toast } from 'sonner';
+import { useScopedNotifications } from '@/shared/hooks/useScopedNotifications';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -79,6 +79,7 @@ function ProblemRow({ problem, onResolve }) {
  * actions flow through the problems API, which is feature-gated.
  */
 export default function ProblemListSidebar({ patientId, canEdit = true, className }) {
+  const captureNotifications = useScopedNotifications(patientId);
   const [showResolved, setShowResolved] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
 
@@ -96,14 +97,15 @@ export default function ProblemListSidebar({ patientId, canEdit = true, classNam
   }, [data]);
 
   const handleResolve = async (problem) => {
+    const notification = captureNotifications();
     try {
       await changeStatus.mutateAsync({
         id: problem.id,
         to_status: 'resolved',
       });
-      toast.success(`${problem.label} marked resolved.`);
+      notification.success(`${problem.label} marked resolved.`);
     } catch (err) {
-      toast.error(err?.message || 'Failed to resolve problem.');
+      notification.error(err?.message || 'Failed to resolve problem.');
     }
   };
 

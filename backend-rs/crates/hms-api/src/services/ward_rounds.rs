@@ -355,6 +355,12 @@ impl WardRoundsService {
         ctx: &hms_access::RequestContext,
         patient_id: Uuid,
     ) -> Result<(PatientRecord, ClinicalPatientAccessDecision), ApiError> {
+        if !ctx.has_patient_visibility(hms_domain::auth::PatientDataVisibility::FullClinical) {
+            return Err(ApiError::forbidden(
+                "patient_access_denied",
+                "Full clinical visibility is required to review a Ward Round narrative.",
+            ));
+        }
         let patient = hms_db::patients::get_patient(self.pool(), self.facility_id(), patient_id)
             .await
             .map_err(|_| ApiError::conflict("patient_load_failed", "Patient could not be loaded."))?

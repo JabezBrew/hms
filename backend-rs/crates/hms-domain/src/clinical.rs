@@ -351,8 +351,36 @@ impl PrnPolicy {
     }
 }
 
+/// Explicit inventory base units used by one scheduled clinical dose.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ScheduledStockPolicyRequest {
+    pub expected_stock_unit: String,
+    pub stock_units_per_dose: i64,
+}
+impl ScheduledStockPolicyRequest {
+    pub fn normalized(mut self) -> Result<Self, &'static str> {
+        self.expected_stock_unit = self.expected_stock_unit.trim().to_owned();
+        if self.expected_stock_unit.is_empty()
+            || self.expected_stock_unit.chars().count() > 100
+            || self.stock_units_per_dose <= 0
+            || self.stock_units_per_dose > 9_007_199_254_740_991
+        {
+            return Err("invalid_scheduled_stock_policy");
+        }
+        Ok(self)
+    }
+}
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
+pub struct ScheduledStockPolicy {
+    pub stock_unit: String,
+    pub stock_units_per_dose: i64,
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
 pub struct CreatePrescriptionRequest {
+    pub scheduled_stock_policy: Option<ScheduledStockPolicyRequest>,
     pub instructions: Option<String>,
     pub reason: Option<String>,
     pub prn_policy: Option<PrnPolicyRequest>,
@@ -373,6 +401,7 @@ pub struct CreatePrescriptionRequest {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
 pub struct UpdatePrescriptionRequest {
     pub medication_name: Option<String>,
     pub dose: Option<String>,
@@ -388,6 +417,7 @@ pub struct UpdatePrescriptionRequest {
 /// Full clinical detail; deliberately excluded from medication list/summary DTOs.
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
 pub struct PrescriptionDetail {
+    pub scheduled_stock_policy: Option<ScheduledStockPolicy>,
     #[serde(flatten)]
     pub prescription: PrescriptionListItem,
     pub instructions: String,
@@ -421,6 +451,7 @@ pub struct PrescriptionCourseProvenance {
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct NewPrescriptionCourseRequest {
+    pub scheduled_stock_policy: Option<ScheduledStockPolicyRequest>,
     pub client_request_id: Uuid,
     pub expected_snapshot_token: String,
     pub relation: PrescriptionCourseRelation,
@@ -451,6 +482,10 @@ impl NewPrescriptionCourseRequest {
         self.reason = self.reason.trim().to_owned();
         self.change_reason = self.change_reason.trim().to_owned();
         self.expected_stock_unit = self.expected_stock_unit.map(|v| v.trim().to_owned());
+        self.scheduled_stock_policy = self
+            .scheduled_stock_policy
+            .map(ScheduledStockPolicyRequest::normalized)
+            .transpose()?;
         self.prn_policy = self
             .prn_policy
             .map(PrnPolicyRequest::normalized)
@@ -481,6 +516,11 @@ impl NewPrescriptionCourseRequest {
                 .expected_stock_unit
                 .as_ref()
                 .is_some_and(|unit| unit.is_empty() || unit.chars().count() > 100)
+            || (!self.frequency.eq_ignore_ascii_case("prn") && self.inventory_item_id.is_some())
+                != self.scheduled_stock_policy.is_some()
+            || self.scheduled_stock_policy.as_ref().is_some_and(|p| {
+                Some(p.expected_stock_unit.as_str()) != self.expected_stock_unit.as_deref()
+            })
             || self.frequency.eq_ignore_ascii_case("prn") != self.prn_policy.is_some()
             || self.prn_policy.as_ref().is_some_and(|policy| {
                 self.inventory_item_id.is_none()

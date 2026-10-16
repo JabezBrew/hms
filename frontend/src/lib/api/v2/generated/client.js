@@ -1974,6 +1974,81 @@ export const operations = {
     "queryParamNames": [],
     "hasBody": false
   },
+  "getPatientHandover": {
+    "operationId": "getPatientHandover",
+    "method": "GET",
+    "path": "/api/v2/nursing/patient-handovers/{id}",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [],
+    "hasBody": false
+  },
+  "getPatientHandoverHistory": {
+    "operationId": "getPatientHandoverHistory",
+    "method": "GET",
+    "path": "/api/v2/nursing/patient-handovers/{id}/history",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [
+      "cursor",
+      "limit"
+    ],
+    "hasBody": false
+  },
+  "getPatientHandoverReceipt": {
+    "operationId": "getPatientHandoverReceipt",
+    "method": "GET",
+    "path": "/api/v2/nursing/patient-handovers/requests/{request_id}",
+    "pathParamNames": [
+      "request_id"
+    ],
+    "queryParamNames": [
+      "patient_id"
+    ],
+    "hasBody": false
+  },
+  "getPatientHandoverRecipients": {
+    "operationId": "getPatientHandoverRecipients",
+    "method": "GET",
+    "path": "/api/v2/nursing/patient-handovers/recipients",
+    "pathParamNames": [],
+    "queryParamNames": [
+      "patient_id",
+      "admission_case_id",
+      "handover_id",
+      "cursor",
+      "limit"
+    ],
+    "hasBody": false
+  },
+  "getPatientHandoverRevision": {
+    "operationId": "getPatientHandoverRevision",
+    "method": "GET",
+    "path": "/api/v2/nursing/patient-handovers/{id}/revisions/{revision_id}",
+    "pathParamNames": [
+      "id",
+      "revision_id"
+    ],
+    "queryParamNames": [],
+    "hasBody": false
+  },
+  "getPatientHandovers": {
+    "operationId": "getPatientHandovers",
+    "method": "GET",
+    "path": "/api/v2/nursing/patient-handovers",
+    "pathParamNames": [],
+    "queryParamNames": [
+      "patient_id",
+      "admission_case_id",
+      "shift_date",
+      "include_voided",
+      "cursor",
+      "limit"
+    ],
+    "hasBody": false
+  },
   "getPatientIdentityLookup": {
     "operationId": "getPatientIdentityLookup",
     "method": "GET",
@@ -4076,6 +4151,34 @@ export const operations = {
     "queryParamNames": [],
     "hasBody": true
   },
+  "postPatientHandover": {
+    "operationId": "postPatientHandover",
+    "method": "POST",
+    "path": "/api/v2/nursing/patient-handovers",
+    "pathParamNames": [],
+    "queryParamNames": [],
+    "hasBody": true
+  },
+  "postPatientHandoverAmend": {
+    "operationId": "postPatientHandoverAmend",
+    "method": "POST",
+    "path": "/api/v2/nursing/patient-handovers/{id}/amend",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [],
+    "hasBody": true
+  },
+  "postPatientHandoverVoid": {
+    "operationId": "postPatientHandoverVoid",
+    "method": "POST",
+    "path": "/api/v2/nursing/patient-handovers/{id}/void",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [],
+    "hasBody": true
+  },
   "postPatientIdentityLookup": {
     "operationId": "postPatientIdentityLookup",
     "method": "POST",
@@ -4781,6 +4884,12 @@ export function createGeneratedClient(request) {
     getPatientClinicalNotes: createOperation(request, operations.getPatientClinicalNotes),
     getPatientContextList: createOperation(request, operations.getPatientContextList),
     getPatientCurrentContexts: createOperation(request, operations.getPatientCurrentContexts),
+    getPatientHandover: createOperation(request, operations.getPatientHandover),
+    getPatientHandoverHistory: createOperation(request, operations.getPatientHandoverHistory),
+    getPatientHandoverReceipt: createOperation(request, operations.getPatientHandoverReceipt),
+    getPatientHandoverRecipients: createOperation(request, operations.getPatientHandoverRecipients),
+    getPatientHandoverRevision: createOperation(request, operations.getPatientHandoverRevision),
+    getPatientHandovers: createOperation(request, operations.getPatientHandovers),
     getPatientIdentityLookup: createOperation(request, operations.getPatientIdentityLookup),
     getPatientPharmacyClinicalContext: createOperation(request, operations.getPatientPharmacyClinicalContext),
     getPatientPrescriptions: createOperation(request, operations.getPatientPrescriptions),
@@ -4993,6 +5102,9 @@ export function createGeneratedClient(request) {
     postPatientChronicleWardRounds: createOperation(request, operations.postPatientChronicleWardRounds),
     postPatientClinicalNotes: createOperation(request, operations.postPatientClinicalNotes),
     postPatientContextSearch: createOperation(request, operations.postPatientContextSearch),
+    postPatientHandover: createOperation(request, operations.postPatientHandover),
+    postPatientHandoverAmend: createOperation(request, operations.postPatientHandoverAmend),
+    postPatientHandoverVoid: createOperation(request, operations.postPatientHandoverVoid),
     postPatientIdentityLookup: createOperation(request, operations.postPatientIdentityLookup),
     postPatientPrescriptions: createOperation(request, operations.postPatientPrescriptions),
     postPatientProblems: createOperation(request, operations.postPatientProblems),

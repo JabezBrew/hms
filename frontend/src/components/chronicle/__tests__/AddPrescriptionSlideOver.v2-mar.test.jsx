@@ -70,6 +70,14 @@ function renderPanel({ selectedPatient = patient, onPrescriptionCreated } = {}) 
   return { ...result, changePatient: (nextPatient) => result.rerender(panel(nextPatient)) };
 }
 
+async function reviewedScheduledStock(name = 'Medication') {
+  getMedicationCatalog.mockResolvedValue({ data: [{ id: 'stock-1', code: 'MED-1', name, unit: 'tablet', controlled: false }], page: { has_next: false } });
+  fireEvent.click(screen.getByRole('button', { name: 'Choose facility medication' }));
+  fireEvent.click(await screen.findByRole('button', { name: new RegExp(`${name}.*MED-1`, 'i') }));
+  expect(screen.getByLabelText('Stock units for one scheduled dose (tablet)')).toHaveValue(null);
+  fireEvent.change(screen.getByLabelText('Stock units for one scheduled dose (tablet)'), { target: { value: '2' } });
+}
+
 describe('AddPrescriptionSlideOver Rust V2 MAR guard', () => {
   afterEach(() => {
     delete window.__HMS_RUNTIME_CONFIG__;
@@ -119,6 +127,7 @@ describe('AddPrescriptionSlideOver Rust V2 MAR guard', () => {
     });
     fireEvent.change(screen.getByLabelText('Special Instructions'), { target: { value: 'Synthetic administration instruction' } });
     fireEvent.change(screen.getByLabelText('Reason for Prescription'), { target: { value: 'Synthetic prescribing reason' } });
+    await reviewedScheduledStock('Amoxicillin');
     fireEvent.click(screen.getByRole('button', { name: /create prescription/i }));
 
     await waitFor(() => expect(createPrescription).toHaveBeenCalledTimes(1));
@@ -136,6 +145,8 @@ describe('AddPrescriptionSlideOver Rust V2 MAR guard', () => {
       generate_mar: 'yes',
       mar_days: 7,
       admission_case_id: 'admission-1',
+      inventory_item_id: 'stock-1',
+      scheduled_stock_policy: { expected_stock_unit: 'tablet', stock_units_per_dose: 2 },
     });
     expect(onClose).toHaveBeenCalled();
   });
@@ -169,9 +180,10 @@ describe('AddPrescriptionSlideOver Rust V2 MAR guard', () => {
     expect(screen.getByLabelText('Medication')).toHaveValue('Synthetic catalog medication');
     expect(screen.getByText('Linked: MED-1 · Synthetic catalog medication')).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText('Dosage *'), { target: { value: '1 tablet' } });
+    fireEvent.change(screen.getByLabelText('Stock units for one scheduled dose (tablet)'), { target: { value: '2' } });
     fireEvent.click(screen.getByRole('button', { name: /create prescription/i }));
     await waitFor(() => expect(createPrescription).toHaveBeenCalledTimes(1));
-    expect(createPrescription.mock.calls[0][0]).toMatchObject({ inventory_item_id: 'stock-1', medication_name: 'Synthetic catalog medication', dosage: '1 tablet' });
+    expect(createPrescription.mock.calls[0][0]).toMatchObject({ inventory_item_id: 'stock-1', medication_name: 'Synthetic catalog medication', dosage: '1 tablet', scheduled_stock_policy: { expected_stock_unit: 'tablet', stock_units_per_dose: 2 } });
   });
 
   it('removes an old stock binding after editing the medication name', async () => {
@@ -195,6 +207,7 @@ describe('AddPrescriptionSlideOver Rust V2 MAR guard', () => {
     renderPanel();
     fireEvent.change(screen.getByLabelText('Medication'), { target: { value: 'Medication' } });
     fireEvent.change(screen.getByLabelText('Dosage *'), { target: { value: '5 mg' } });
+    await reviewedScheduledStock();
     const submit = screen.getByRole('button', { name: /create prescription/i });
     fireEvent.click(submit);
     await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
@@ -208,6 +221,7 @@ describe('AddPrescriptionSlideOver Rust V2 MAR guard', () => {
     window.__HMS_RUNTIME_CONFIG__ = { apiMode: 'rust-v2' };
     createPrescription.mockResolvedValueOnce({ id: 'prescription-saved', patient: 'patient-1' });
     renderPanel({ onPrescriptionCreated: () => { throw new Error('Refresh unavailable'); } });
+    fireEvent.click(screen.getByRole('checkbox'));
     fireEvent.change(screen.getByLabelText('Medication'), { target: { value: 'Medication' } });
     fireEvent.change(screen.getByLabelText('Dosage *'), { target: { value: '5 mg' } });
     fireEvent.click(screen.getByRole('button', { name: /create prescription/i }));
@@ -219,9 +233,7 @@ describe('AddPrescriptionSlideOver Rust V2 MAR guard', () => {
   it('explains as-needed schedule handling instead of claiming scheduled doses were generated', async () => {
     window.__HMS_RUNTIME_CONFIG__ = { apiMode: 'rust-v2' };
     createPrescription.mockResolvedValueOnce({ id: 'prescription-prn', mar_generated: false, mar_generation_status: 'skipped', mar_generation: { skipped_reason: 'prn' } });
-    renderPanel();
-    fireEvent.change(screen.getByLabelText('Medication'), { target: { value: 'Medication' } });
-    fireEvent.change(screen.getByLabelText('Dosage *'), { target: { value: '5 mg' } });
+    renderPanel(); await preparePrn(); await enterPrnLimits();
     fireEvent.click(screen.getByRole('button', { name: /create prescription/i }));
     await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
     expect(toast.success).toHaveBeenCalledWith('Prescription saved. As-needed doses are not automatically scheduled.');
@@ -258,7 +270,7 @@ describe('AddPrescriptionSlideOver Rust V2 MAR guard', () => {
     expect(createPrescription.mock.calls[0][0]).not.toHaveProperty('generate_mar');
     expect(safetyMutate).not.toHaveBeenCalled();
   });
-  it.each([{ cap: '5', units: '2' }, { cap: '3', units: '9007199254740992' }, { cap: '3', units: '2', controlled: true }])(
+  it.each([{ cap: '5', units: '2' }, { cap: '3', units: '9007199254740992' }])(
     'does not write an invalid or unsupported PRN order (%j)', async (values) => {
       window.__HMS_RUNTIME_CONFIG__ = { apiMode: 'rust-v2' }; renderPanel();
       await preparePrn(values); await enterPrnLimits(values);
@@ -275,6 +287,7 @@ describe('AddPrescriptionSlideOver Rust V2 MAR guard', () => {
   it('locks an uncertain prescription write until the medication list is reviewed', async () => {
     window.__HMS_RUNTIME_CONFIG__ = { apiMode: 'rust-v2' };
     createPrescription.mockRejectedValueOnce(Object.assign(new Error('Unconfirmed'), { name: 'PrescriptionWriteUnconfirmedError' })); renderPanel();
+    fireEvent.click(screen.getByRole('checkbox'));
     fireEvent.change(screen.getByLabelText('Medication'), { target: { value: 'Synthetic' } });
     fireEvent.change(screen.getByLabelText('Dosage *'), { target: { value: '1 tablet' } });
     fireEvent.click(screen.getByRole('button', { name: /create prescription/i }));
@@ -286,6 +299,7 @@ describe('AddPrescriptionSlideOver Rust V2 MAR guard', () => {
   it('remounts on a patient switch without closing the new draft when the old write settles', async () => {
     window.__HMS_RUNTIME_CONFIG__ = { apiMode: 'rust-v2' }; let completeOld;
     createPrescription.mockImplementationOnce(() => new Promise((resolve) => { completeOld = resolve; })); const panel = renderPanel();
+    fireEvent.click(screen.getByRole('checkbox'));
     fireEvent.change(screen.getByLabelText('Medication'), { target: { value: 'Synthetic old draft' } });
     fireEvent.change(screen.getByLabelText('Dosage *'), { target: { value: '1 tablet' } });
     fireEvent.click(screen.getByRole('button', { name: /create prescription/i }));
@@ -318,6 +332,16 @@ describe('AddPrescriptionSlideOver Rust V2 MAR guard', () => {
     expect(screen.getByLabelText('Maximum doses in any 24 hours')).toHaveValue(null);
     expect(screen.getByLabelText('Stock units used for one dose (pack)')).toHaveValue(null);
     expect(screen.getByLabelText('Ordered indication')).toHaveValue('');
+  });
+
+  it('requires stock review for scheduled MAR without deriving units from clinical dosage', async () => {
+    window.__HMS_RUNTIME_CONFIG__ = { apiMode: 'rust-v2' }; renderPanel();
+    fireEvent.change(screen.getByLabelText('Medication'), { target: { value: 'Synthetic' } }); fireEvent.change(screen.getByLabelText('Dosage *'), { target: { value: '500 mg' } }); fireEvent.click(screen.getByRole('button', { name: /create prescription/i })); expect(createPrescription).not.toHaveBeenCalled(); expect(screen.getByText(/Choose a stock item and review its units/)).toBeInTheDocument();
+    await reviewedScheduledStock('Synthetic'); fireEvent.change(screen.getByLabelText('Stock units for one scheduled dose (tablet)'), { target: { value: '' } }); fireEvent.click(screen.getByRole('button', { name: /create prescription/i })); expect(createPrescription).not.toHaveBeenCalled(); expect(screen.getByRole('alert')).toHaveTextContent(/positive whole number/);
+  });
+  it('clears scheduled units when the same catalog item is reselected with a changed unit', async () => {
+    window.__HMS_RUNTIME_CONFIG__ = { apiMode: 'rust-v2' }; renderPanel(); await reviewedScheduledStock();
+    getMedicationCatalog.mockResolvedValue({ data: [{ id: 'stock-1', code: 'MED-1', name: 'Medication', unit: 'pack', controlled: false }], page: { has_next: false } }); fireEvent.click(screen.getByRole('button', { name: 'Change stock link' })); fireEvent.click(await screen.findByRole('button', { name: /Medication.*MED-1/i })); expect(screen.getByLabelText('Stock units for one scheduled dose (pack)')).toHaveValue(null); expect(createPrescription).not.toHaveBeenCalled();
   });
 
 });

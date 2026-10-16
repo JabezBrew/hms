@@ -11,6 +11,7 @@ mod handoff;
 mod mar;
 mod nursing_task_board;
 mod observations_monitoring;
+pub mod patient_handover;
 pub(crate) mod prn;
 mod staff_assignments;
 mod ward_stock;

@@ -174,6 +174,7 @@ pub struct PatientChronicleTimelineEntry {
 #[derive(Clone, Debug, Serialize, ToSchema)]
 pub struct PatientChronicleActionAvailability {
     pub can_view_chronicle: bool,
+    pub can_view_full_clinical: bool,
     pub can_add_note: bool,
     pub can_record_vitals: bool,
     pub can_prescribe: bool,
@@ -1630,13 +1631,27 @@ fn chronicle_permissions(
     facility_id: Uuid,
     decision: &ClinicalPatientAccessDecision,
 ) -> PatientChronicleActionAvailability {
-    let can_write_clinical =
-        !decision.read_only && hms_access::require_clinical_write_access(ctx, facility_id).is_ok();
+    let full_visibility =
+        ctx.has_patient_visibility(hms_domain::auth::PatientDataVisibility::FullClinical);
+    let can_write_clinical = full_visibility
+        && !decision.read_only
+        && hms_access::require_clinical_write_access(ctx, facility_id).is_ok();
+    let can_record_vitals = full_visibility
+        && !decision.read_only
+        && hms_access::require_patient_workflow_access(
+            ctx,
+            facility_id,
+            PermissionCode::NursingTaskManage,
+        )
+        .is_ok()
+        && hms_access::require_offsite_write_allowed(ctx).is_ok();
 
     PatientChronicleActionAvailability {
         can_view_chronicle: true,
+        can_view_full_clinical: full_visibility
+            && hms_access::require_clinical_list_access(ctx, facility_id).is_ok(),
         can_add_note: can_write_clinical,
-        can_record_vitals: can_write_clinical,
+        can_record_vitals,
         can_prescribe: can_write_clinical,
         can_order_labs: !decision.read_only
             && hms_access::require_lab_access(

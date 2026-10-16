@@ -83,6 +83,7 @@ impl Fixture {
     async fn input(&self, relation: PrescriptionCourseRelation) -> NewPrescriptionCourseRequest {
         let source = self.detail().await;
         NewPrescriptionCourseRequest {
+            scheduled_stock_policy: None,
             client_request_id: Uuid::new_v4(),
             expected_snapshot_token: source.snapshot_token,
             relation,
@@ -390,6 +391,10 @@ async fn changed_source_stock_review_wrong_status_and_mixed_treatment_fail_witho
     let (item,unit):(Uuid,String)=sqlx::query_as("SELECT id,unit FROM inventory_items WHERE facility_id=$1 AND is_active AND item_type='medication' AND NOT controlled LIMIT 1").bind(f.db.facility_id()).fetch_one(f.db.pool()).await.unwrap();
     request.inventory_item_id = Some(item);
     request.expected_stock_unit = Some(format!("{unit}-stale"));
+    request.scheduled_stock_policy = Some(ScheduledStockPolicyRequest {
+        expected_stock_unit: format!("{unit}-stale"),
+        stock_units_per_dose: 1,
+    });
     assert_eq!(
         create_new_course(f.db.pool(), f.actor(), f.source, request)
             .await

@@ -51,7 +51,7 @@ impl Fixture {
         sqlx::query("INSERT INTO stock_batches (id, facility_id, item_id, location_id, batch_number, quantity_on_hand) VALUES ($1, $2, $3, $4, 'SYNTHETIC-LIFECYCLE', 100)")
             .bind(Uuid::new_v4()).bind(db.facility_id()).bind(item_id).bind(location_id).execute(db.pool()).await.expect("synthetic stock creates");
         let prescription_id = Uuid::new_v4();
-        hms_db::clinical::create_prescription(
+        create_reviewed_scheduled_fixture(
             db.pool(),
             NewPrescription {
                 id: prescription_id,
@@ -86,6 +86,7 @@ impl Fixture {
 
     fn generation(&self) -> GenerateMarCommand {
         GenerateMarCommand {
+            authorization: None,
             facility_id: self.db.facility_id(),
             prescription_id: self.prescription_id,
             admission_case_id: self.admission_id,
@@ -103,6 +104,7 @@ impl Fixture {
 
     fn dispense(&self, fulfillment_id: Uuid, quantity: i64) -> DispenseFulfillmentCommand {
         DispenseFulfillmentCommand {
+            authorization: None,
             facility_id: self.db.facility_id(),
             fulfillment_id,
             item_id: self.item_id,
@@ -526,16 +528,13 @@ async fn medication_timing_uses_future_start_and_stable_retry_and_rejects_overfl
     .is_err());
 
     let f = Fixture::new().await;
-    let mut change = patch(None);
-    change.duration_days = Some(i32::MAX);
-    hms_db::clinical::update_prescription(
-        f.db.pool(),
-        f.db.facility_id(),
-        f.prescription_id,
-        change,
-    )
-    .await
-    .unwrap();
+    // Deliberate imported drift fixture, bypassing the now-immutable reviewed policy.
+    sqlx::query("UPDATE prescriptions SET duration_days=$2 WHERE id=$1")
+        .bind(f.prescription_id)
+        .bind(i32::MAX)
+        .execute(f.db.pool())
+        .await
+        .unwrap();
     assert_eq!(
         hms_db::pharmacy::generate_mar_for_prescription(f.db.pool(), f.generation())
             .await
@@ -844,7 +843,7 @@ async fn medication_stock_binding_rejects_foreign_facility_items_on_create_and_u
         .await
         .unwrap_err()
         .to_string(),
-        "prescription_inventory_item_invalid"
+        "prescription_regimen_locked"
     );
     let created = hms_db::clinical::create_prescription(
         f.db.pool(),
@@ -959,6 +958,10 @@ async fn reviewed_replacement_preserves_given_and_supplied_evidence_and_does_not
         actor,
         f.prescription_id,
         NewPrescriptionCourseRequest {
+            scheduled_stock_policy: Some(hms_domain::clinical::ScheduledStockPolicyRequest {
+                expected_stock_unit: source.stock_unit.clone().unwrap(),
+                stock_units_per_dose: 1,
+            }),
             client_request_id: Uuid::new_v4(),
             expected_snapshot_token: source.snapshot_token,
             relation: PrescriptionCourseRelation::Replacement,
@@ -1001,4 +1004,31 @@ async fn reviewed_replacement_preserves_given_and_supplied_evidence_and_does_not
         receipt.prescription.prescription.status,
         PrescriptionStatus::Active
     );
+}
+
+// Synthetic scenario deliberately reviews one inventory unit per dose. This is
+// fixture input, never a default for existing or newly submitted prescriptions.
+async fn create_reviewed_scheduled_fixture(
+    pool: &hms_db::PgPool,
+    prescription: hms_db::clinical::NewPrescription,
+) -> anyhow::Result<hms_domain::clinical::PrescriptionDetail> {
+    let expected_stock_unit =
+        sqlx::query_scalar("SELECT unit FROM inventory_items WHERE facility_id=$1 AND id=$2")
+            .bind(prescription.facility_id)
+            .bind(prescription.inventory_item_id.unwrap())
+            .fetch_one(pool)
+            .await?;
+    hms_db::clinical::prescription_courses::create_with_stock_policy(
+        pool,
+        prescription,
+        None,
+        Some(hms_domain::clinical::ScheduledStockPolicyRequest {
+            expected_stock_unit,
+            stock_units_per_dose: 1,
+        }),
+        hms_db::clinical::prescription_courses::PrescriptionDocumentation::default(),
+        None,
+        None,
+    )
+    .await
 }

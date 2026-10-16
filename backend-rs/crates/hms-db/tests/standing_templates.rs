@@ -216,6 +216,8 @@ async fn fulfilled_manual_supply_cannot_repeat_stock_movements() {
     create_batch(
         f.db.pool(),
         NewStockBatch {
+            authorization: None,
+            expected_unit: f.unit.clone(),
             id: Uuid::new_v4(),
             facility_id: f.db.facility_id(),
             item_id: f.item,

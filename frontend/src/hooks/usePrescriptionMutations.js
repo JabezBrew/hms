@@ -1,3 +1,4 @@
+import { normalizeScheduledStockPolicy, scheduledPolicyMatches } from '@/features/pharmacy/prescribing/scheduledStockPolicy';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api-client';
 import { handleV2ApiError } from '@/lib/api/v2/errors';
@@ -77,9 +78,13 @@ function normalizeCreatePrescriptionPayload(data = {}) {
   if (data.inventory_item_id !== undefined) {
     payload.inventory_item_id = data.inventory_item_id;
   }
+  const scheduled = normalizeScheduledStockPolicy(data.scheduled_stock_policy);
+  if (scheduled && (data.frequency?.trim().toLowerCase() === 'prn' || !data.inventory_item_id || data.prn_policy)) throw new Error('Scheduled stock units require a linked scheduled prescription.');
+  if (data.inventory_item_id && data.frequency?.trim().toLowerCase() !== 'prn' && !scheduled) throw new Error('Review stock units for one scheduled dose before saving this linked prescription.');
+  if (scheduled) payload.scheduled_stock_policy = scheduled;
   const policy = normalizePrnPolicy(data.prn_policy);
   if (policy) {
-    if (data.frequency !== 'prn' || !data.inventory_item_id) throw new Error('As-needed limits require a linked facility medication and as-needed frequency.');
+    if (data.frequency?.trim().toLowerCase() !== 'prn' || !data.inventory_item_id) throw new Error('As-needed limits require a linked facility medication and as-needed frequency.');
     payload.prn_policy = policy;
   }
   if (data.start_date !== undefined) {
@@ -138,7 +143,7 @@ export async function createPrescription(data, options = {}) {
     if (!patientId) {
       throw new Error('Patient is required to create a prescription');
     }
-    const generateMar = data.frequency !== 'prn' && (data.generate_mar === 'yes' || data.generate_mar === true);
+    const generateMar = data.frequency?.trim().toLowerCase() !== 'prn' && (data.generate_mar === 'yes' || data.generate_mar === true);
     const admissionCaseId = normalizeIdentifier(data.admission_case_id || data.admissionCaseId || data.admission);
     const marDays = Number(data.mar_days ?? data.days ?? 7);
     if (generateMar && !admissionCaseId) {
@@ -150,6 +155,7 @@ export async function createPrescription(data, options = {}) {
     let prescription;
     let prescriptionResponse;
     const payload = normalizeCreatePrescriptionPayload(data);
+    if (generateMar && !payload.scheduled_stock_policy) throw new Error('A reviewed scheduled stock policy is required before generating MAR.');
     try {
       prescriptionResponse = await v2Api.postPatientPrescriptions(
         { patient_id: patientId },
@@ -162,6 +168,7 @@ export async function createPrescription(data, options = {}) {
         ...prescription.prn_policy,
         expected_stock_unit: prescription.prn_policy?.stock_unit,
       })) !== JSON.stringify(payload.prn_policy)) throw new Error('The saved as-needed limits and stock unit were not confirmed.');
+      if (payload.scheduled_stock_policy ? prescription.inventory_item_id !== payload.inventory_item_id || !scheduledPolicyMatches(prescription.scheduled_stock_policy, payload.scheduled_stock_policy) : prescription.scheduled_stock_policy != null) throw new Error('The saved scheduled stock units were not confirmed.');
       acknowledgeWriteResponse(prescriptionResponse);
     } catch (error) {
       rethrowAbortError(error);
@@ -172,7 +179,7 @@ export async function createPrescription(data, options = {}) {
         throw unconfirmed;
       }
       const rejected = new Error(handleV2ApiError(error, 'Failed to create prescription'));
-      if (error.data?.error?.code === 'prn_stock_unit_changed') rejected.name = 'PrescriptionStockUnitChangedError';
+      if (['prn_stock_unit_changed', 'prescription_stock_unit_changed'].includes(error.data?.error?.code)) rejected.name = 'PrescriptionStockUnitChangedError';
       throw rejected;
     }
     if (!generateMar) return prescription;

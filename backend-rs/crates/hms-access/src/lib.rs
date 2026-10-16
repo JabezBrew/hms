@@ -738,11 +738,18 @@ pub fn evaluate_clinical_patient_access(
 
     if let Some(reason) = evidence.workflow_reason {
         require_chronicle_read_access(ctx, patient.facility_id)?;
-        return Ok(ClinicalPatientAccessDecision {
-            source: ClinicalPatientAccessSource::Workflow,
-            reason,
-            read_only: ctx.offsite.is_read_only(),
-        });
+        if ctx.has_patient_visibility(PatientDataVisibility::ClinicalSummary)
+            || ctx.has_patient_visibility(PatientDataVisibility::FullClinical)
+        {
+            return Ok(ClinicalPatientAccessDecision {
+                source: ClinicalPatientAccessSource::Workflow,
+                reason,
+                read_only: ctx.offsite.is_read_only(),
+            });
+        }
+        // Relationship evidence does not turn demographic visibility into a
+        // clinical data grant. A separately governed emergency grant below
+        // retains its existing explicit, audited override semantics.
     }
 
     if let Some(grant) = evidence.break_glass_grant.as_ref() {
@@ -866,6 +873,7 @@ mod tests {
             features: vec![],
             patient_visibility: vec![
                 PatientDataVisibility::Demographics,
+                PatientDataVisibility::FullClinical,
                 PatientDataVisibility::Billing,
             ],
             session_version: 1,
@@ -1347,6 +1355,41 @@ mod tests {
     }
 
     #[test]
+    fn clinical_relationship_requires_explicit_clinical_summary_or_full_visibility() {
+        let mut ctx = make_ctx();
+        let patient = patient(ctx.facility_id);
+        let evidence = hms_domain::auth::ClinicalPatientAccessEvidence {
+            workflow_reason: Some(
+                hms_domain::auth::ClinicalPatientAccessReason::ActiveClinicalRelationship,
+            ),
+            break_glass_grant: None,
+        };
+        for visibility in [
+            PatientDataVisibility::Demographics,
+            PatientDataVisibility::OperationalSummary,
+            PatientDataVisibility::Laboratory,
+            PatientDataVisibility::Prescription,
+            PatientDataVisibility::Billing,
+        ] {
+            ctx.patient_visibility = vec![PatientDataVisibility::Demographics, visibility];
+            assert_eq!(
+                evaluate_clinical_patient_access(&ctx, &patient, &evidence, Utc::now()),
+                Err(AccessError::PatientAccessDenied),
+                "an unrelated data class must not authorize a clinical summary",
+            );
+        }
+        for visibility in [
+            PatientDataVisibility::ClinicalSummary,
+            PatientDataVisibility::FullClinical,
+        ] {
+            ctx.patient_visibility = vec![PatientDataVisibility::Demographics, visibility];
+            assert!(
+                evaluate_clinical_patient_access(&ctx, &patient, &evidence, Utc::now()).is_ok()
+            );
+        }
+    }
+
+    #[test]
     fn clinical_patient_access_reports_workflow_source_and_read_only_state() {
         let ctx = make_ctx();
         let patient = patient(ctx.facility_id);
@@ -1383,7 +1426,8 @@ mod tests {
 
     #[test]
     fn clinical_patient_access_accepts_active_break_glass_grant() {
-        let ctx = make_ctx();
+        let mut ctx = make_ctx();
+        ctx.patient_visibility = vec![PatientDataVisibility::Demographics];
         let patient = patient(ctx.facility_id);
         let now = Utc::now();
         let grant = hms_domain::auth::BreakGlassGrant {
@@ -1398,7 +1442,9 @@ mod tests {
             ended_at: None,
         };
         let evidence = hms_domain::auth::ClinicalPatientAccessEvidence {
-            workflow_reason: None,
+            workflow_reason: Some(
+                hms_domain::auth::ClinicalPatientAccessReason::ActiveClinicalRelationship,
+            ),
             break_glass_grant: Some(grant),
         };
 

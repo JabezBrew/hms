@@ -374,10 +374,17 @@ pub async fn apply_catalog_edit(
     edit: CatalogEditCommand,
 ) -> anyhow::Result<InventoryCatalogVersionItem> {
     let mut tx = pool.begin().await?;
+    let actor = crate::clinical::stock_basis::authorize(
+        &mut tx,
+        edit.facility_id,
+        edit.actor_user_id,
+        edit.authorization.clone(),
+    )
+    .await?;
     // Serialize version changes on the source item, including when no catalog
     // version exists yet. Locking only existing versions misses that case.
-    let item = sqlx::query_scalar::<_, Uuid>(
-        "SELECT id FROM inventory_items
+    let item = sqlx::query_as::<_, (String, bool, String)>(
+        "SELECT unit,controlled,item_type FROM inventory_items
          WHERE facility_id = $1 AND id = $2 AND is_active = TRUE
          FOR UPDATE",
     )
@@ -389,6 +396,19 @@ pub async fn apply_catalog_edit(
         anyhow::bail!("inventory item was not found");
     }
 
+    let (current_unit, controlled, kind) = item.expect("item checked above");
+    if current_unit != edit.unit {
+        if controlled || kind == "controlled_substance" {
+            return Err(
+                crate::clinical::stock_basis::StockBasisError::ControlledUnitImmutable.into(),
+            );
+        }
+        let in_use:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM stock_batches WHERE facility_id=$1 AND item_id=$2) OR EXISTS(SELECT 1 FROM stock_movements WHERE facility_id=$1 AND item_id=$2) OR EXISTS(SELECT 1 FROM pharmacy_dispenses WHERE facility_id=$1 AND item_id=$2)")
+            .bind(edit.facility_id).bind(edit.item_id).fetch_one(&mut *tx).await?;
+        if in_use {
+            return Err(crate::clinical::stock_basis::StockBasisError::InventoryUnitInUse.into());
+        }
+    }
     let previous_effective_to = edit
         .effective_from
         .pred_opt()
@@ -461,6 +481,7 @@ pub async fn apply_catalog_edit(
     .execute(&mut *tx)
     .await?;
 
+    crate::clinical::stock_basis::check_authorization(&mut tx, &actor).await?;
     tx.commit().await?;
     fetch_catalog_version_by_id(pool, edit.facility_id, edit.id)
         .await?

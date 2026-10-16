@@ -1100,9 +1100,11 @@ describe('Rust V2 nursing dashboard hooks', () => {
         new Response(
           JSON.stringify({
             data: {
-              fulfillment: { id: 'fulfillment-1', requested_dose_count: 14, dispensed_dose_count: 14 },
+              fulfillment: { id: 'fulfillment-1', inventory_item_id: 'item-1', requested_dose_count: 14, dispensed_dose_count: 14, frequency: 'daily', scheduled_stock_policy: { stock_unit: 'tablet', stock_units_per_dose: 2 } },
               dispensed_dose_count: 14,
               remaining_dose_count: 0,
+              issued_stock_quantity: 28,
+              issued_stock_unit: 'tablet',
             },
             meta: {},
           }),

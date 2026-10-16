@@ -76,11 +76,17 @@ New list keys hash the complete normalized query and include sanitized client
 scope. Patient/admission/ward/date/status filters go to Rust before pagination;
 invalid or out-of-scope rows fail the page instead of becoming an empty list.
 The urgent notification monitor is a newest-page preview, reports overflow or
-refresh failure and links to the ward-board urgency view. Treatment/supply lines
-and patient-narrative handoff remain separate parity gaps; see
+refresh failure and links to the ward-board urgency view. Treatment/supply lines remain a separate parity gap; see
 `docs/v2/2026-10-16-scoped-nursing-lists.md`.
 
 Handoff completion finalizes the sender's header only; it is not recipient
 acknowledgment or a saved patient narrative. Non-keyed header creates and
 finalization hooks never retry automatically. Server reference/feature guards
 and atomic audit must confirm writes before any saved status is displayed.
+
+`handover/` owns separately scoped patient narratives, append-only correction/void
+and actor-bound original receipt recovery. It launches from Chronicle with current
+authoritative FullClinical proof and requires original-ward assignment or existing
+all-ward authority on the server. Intended recipient is metadata only; existing
+ward header finalization is unchanged. See
+`docs/v2/2026-10-16-patient-handover-scope.md`.

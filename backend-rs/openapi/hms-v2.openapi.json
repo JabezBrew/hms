@@ -498,6 +498,48 @@
         ],
         "type": "string"
       },
+      "AmendPatientHandoverRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "client_request_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "expected_revision": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "intended_recipient_user_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "narrative": {
+            "$ref": "#/components/schemas/HandoverNarrative"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "shift_date": {
+            "format": "date",
+            "type": "string"
+          },
+          "shift_type": {
+            "$ref": "#/components/schemas/HandoverShift"
+          }
+        },
+        "required": [
+          "client_request_id",
+          "expected_revision",
+          "shift_date",
+          "shift_type",
+          "narrative",
+          "reason"
+        ],
+        "type": "object"
+      },
       "ApiErrorBody": {
         "properties": {
           "code": {
@@ -5248,6 +5290,49 @@
         ],
         "type": "object"
       },
+      "CreatePatientHandoverRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "admission_case_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "client_request_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "intended_recipient_user_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "narrative": {
+            "$ref": "#/components/schemas/HandoverNarrative"
+          },
+          "patient_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "shift_date": {
+            "format": "date",
+            "type": "string"
+          },
+          "shift_type": {
+            "$ref": "#/components/schemas/HandoverShift"
+          }
+        },
+        "required": [
+          "client_request_id",
+          "patient_id",
+          "admission_case_id",
+          "shift_date",
+          "shift_type",
+          "narrative"
+        ],
+        "type": "object"
+      },
       "CreatePatientRequest": {
         "properties": {
           "date_of_birth": {
@@ -5495,6 +5580,7 @@
         "type": "object"
       },
       "CreatePrescriptionRequest": {
+        "additionalProperties": false,
         "properties": {
           "admission_case_id": {
             "format": "uuid",
@@ -5587,6 +5673,16 @@
             "type": [
               "string",
               "null"
+            ]
+          },
+          "scheduled_stock_policy": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ScheduledStockPolicyRequest"
+              }
             ]
           },
           "start_date": {
@@ -5815,8 +5911,12 @@
         "type": "object"
       },
       "CreateStockBatchRequest": {
+        "additionalProperties": false,
         "properties": {
           "batch_number": {
+            "type": "string"
+          },
+          "expected_unit": {
             "type": "string"
           },
           "expires_on": {
@@ -5840,6 +5940,7 @@
           }
         },
         "required": [
+          "expected_unit",
           "item_id",
           "location_id",
           "batch_number",
@@ -8082,6 +8183,127 @@
         "enum": [
           "draft",
           "completed"
+        ],
+        "type": "string"
+      },
+      "HandoverNarrative": {
+        "additionalProperties": false,
+        "properties": {
+          "care_plan_updates": {
+            "type": "string"
+          },
+          "family_updates": {
+            "type": "string"
+          },
+          "key_events": {
+            "type": "string"
+          },
+          "medication_changes": {
+            "type": "string"
+          },
+          "ongoing_issues": {
+            "type": "string"
+          },
+          "patient_condition": {
+            "type": "string"
+          },
+          "pending_tasks": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "patient_condition",
+          "ongoing_issues",
+          "pending_tasks",
+          "medication_changes",
+          "key_events",
+          "care_plan_updates",
+          "family_updates"
+        ],
+        "type": "object"
+      },
+      "HandoverRecipient": {
+        "properties": {
+          "assigned_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "display_name": {
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "role_name": {
+            "type": "string"
+          },
+          "user_id": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "user_id",
+          "display_name",
+          "role_name",
+          "assigned_at"
+        ],
+        "type": "object"
+      },
+      "HandoverRecipientQuery": {
+        "additionalProperties": false,
+        "properties": {
+          "admission_case_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "handover_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "limit": {
+            "format": "int32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "patient_id": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "patient_id",
+          "admission_case_id"
+        ],
+        "type": "object"
+      },
+      "HandoverRevisionKind": {
+        "enum": [
+          "recorded",
+          "amended",
+          "voided"
+        ],
+        "type": "string"
+      },
+      "HandoverShift": {
+        "enum": [
+          "day",
+          "evening",
+          "night"
         ],
         "type": "string"
       },
@@ -12194,6 +12416,53 @@
         ],
         "type": "object"
       },
+      "ListResponse_HandoverRecipient": {
+        "properties": {
+          "data": {
+            "items": {
+              "properties": {
+                "assigned_at": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "display_name": {
+                  "type": "string"
+                },
+                "id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "role_name": {
+                  "type": "string"
+                },
+                "user_id": {
+                  "format": "uuid",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "user_id",
+                "display_name",
+                "role_name",
+                "assigned_at"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "meta": {},
+          "page": {
+            "$ref": "#/components/schemas/PageInfo"
+          }
+        },
+        "required": [
+          "data",
+          "page",
+          "meta"
+        ],
+        "type": "object"
+      },
       "ListResponse_InsurancePlanListItem": {
         "properties": {
           "data": {
@@ -12891,6 +13160,19 @@
                     "null"
                   ]
                 },
+                "dispensed_stock_quantity": {
+                  "format": "int64",
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "dispensed_stock_unit": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
                 "dose": {
                   "type": [
                     "string",
@@ -13002,6 +13284,16 @@
                 "scheduled_at": {
                   "format": "date-time",
                   "type": "string"
+                },
+                "scheduled_stock_policy": {
+                  "oneOf": [
+                    {
+                      "type": "null"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ScheduledStockPolicy"
+                    }
+                  ]
                 },
                 "status": {
                   "$ref": "#/components/schemas/MedicationAdministrationStatus"
@@ -13763,6 +14055,161 @@
         ],
         "type": "object"
       },
+      "ListResponse_PatientHandoverHistoryItem": {
+        "properties": {
+          "data": {
+            "items": {
+              "properties": {
+                "handover_id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "kind": {
+                  "$ref": "#/components/schemas/HandoverRevisionKind"
+                },
+                "recorded_at": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "recorded_by_display_name": {
+                  "type": "string"
+                },
+                "recorded_by_user_id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "revision": {
+                  "format": "int64",
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "id",
+                "handover_id",
+                "revision",
+                "kind",
+                "recorded_by_user_id",
+                "recorded_by_display_name",
+                "recorded_at"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "meta": {},
+          "page": {
+            "$ref": "#/components/schemas/PageInfo"
+          }
+        },
+        "required": [
+          "data",
+          "page",
+          "meta"
+        ],
+        "type": "object"
+      },
+      "ListResponse_PatientHandoverListItem": {
+        "properties": {
+          "data": {
+            "items": {
+              "properties": {
+                "admission_case_id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "author_display_name": {
+                  "type": "string"
+                },
+                "author_user_id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "created_at": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "intended_recipient_display_name": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "intended_recipient_user_id": {
+                  "format": "uuid",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "patient_id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "revision": {
+                  "format": "int64",
+                  "type": "integer"
+                },
+                "shift_date": {
+                  "format": "date",
+                  "type": "string"
+                },
+                "shift_type": {
+                  "$ref": "#/components/schemas/HandoverShift"
+                },
+                "status": {
+                  "$ref": "#/components/schemas/PatientHandoverStatus"
+                },
+                "updated_at": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "ward_id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "ward_name": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "patient_id",
+                "admission_case_id",
+                "ward_id",
+                "ward_name",
+                "author_user_id",
+                "author_display_name",
+                "shift_date",
+                "shift_type",
+                "status",
+                "revision",
+                "created_at",
+                "updated_at"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "meta": {},
+          "page": {
+            "$ref": "#/components/schemas/PageInfo"
+          }
+        },
+        "required": [
+          "data",
+          "page",
+          "meta"
+        ],
+        "type": "object"
+      },
       "ListResponse_PatientInsuranceListItem": {
         "properties": {
           "data": {
@@ -14468,6 +14915,16 @@
                 },
                 "route": {
                   "type": "string"
+                },
+                "scheduled_stock_policy": {
+                  "oneOf": [
+                    {
+                      "type": "null"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ScheduledStockPolicy"
+                    }
+                  ]
                 },
                 "status": {
                   "$ref": "#/components/schemas/PharmacyFulfillmentStatus"
@@ -17535,6 +17992,19 @@
               "null"
             ]
           },
+          "dispensed_stock_quantity": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "dispensed_stock_unit": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "dose": {
             "type": [
               "string",
@@ -17646,6 +18116,16 @@
           "scheduled_at": {
             "format": "date-time",
             "type": "string"
+          },
+          "scheduled_stock_policy": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ScheduledStockPolicy"
+              }
+            ]
           },
           "status": {
             "$ref": "#/components/schemas/MedicationAdministrationStatus"
@@ -18372,6 +18852,16 @@
           },
           "route": {
             "type": "string"
+          },
+          "scheduled_stock_policy": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ScheduledStockPolicyRequest"
+              }
+            ]
           },
           "start_date": {
             "format": "date",
@@ -23184,6 +23674,19 @@
                   "null"
                 ]
               },
+              "dispensed_stock_quantity": {
+                "format": "int64",
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "dispensed_stock_unit": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
               "dose": {
                 "type": [
                   "string",
@@ -23295,6 +23798,16 @@
               "scheduled_at": {
                 "format": "date-time",
                 "type": "string"
+              },
+              "scheduled_stock_policy": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/ScheduledStockPolicy"
+                  }
+                ]
               },
               "status": {
                 "$ref": "#/components/schemas/MedicationAdministrationStatus"
@@ -25087,6 +25600,144 @@
         ],
         "type": "object"
       },
+      "ObjectResponse_PatientHandoverDetail": {
+        "properties": {
+          "data": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PatientHandoverListItem"
+              },
+              {
+                "properties": {
+                  "current": {
+                    "$ref": "#/components/schemas/PatientHandoverRevision"
+                  }
+                },
+                "required": [
+                  "current"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "meta": {}
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "type": "object"
+      },
+      "ObjectResponse_PatientHandoverReceipt": {
+        "properties": {
+          "data": {
+            "properties": {
+              "client_request_id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "handover": {
+                "$ref": "#/components/schemas/PatientHandoverDetail"
+              },
+              "replayed": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "client_request_id",
+              "handover",
+              "replayed"
+            ],
+            "type": "object"
+          },
+          "meta": {}
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "type": "object"
+      },
+      "ObjectResponse_PatientHandoverRevision": {
+        "properties": {
+          "data": {
+            "properties": {
+              "handover_id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "intended_recipient_display_name": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "intended_recipient_user_id": {
+                "format": "uuid",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "kind": {
+                "$ref": "#/components/schemas/HandoverRevisionKind"
+              },
+              "narrative": {
+                "$ref": "#/components/schemas/HandoverNarrative"
+              },
+              "reason": {
+                "type": "string"
+              },
+              "recorded_at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "recorded_by_display_name": {
+                "type": "string"
+              },
+              "recorded_by_user_id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "revision": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "shift_date": {
+                "format": "date",
+                "type": "string"
+              },
+              "shift_type": {
+                "$ref": "#/components/schemas/HandoverShift"
+              }
+            },
+            "required": [
+              "id",
+              "handover_id",
+              "revision",
+              "kind",
+              "shift_date",
+              "shift_type",
+              "narrative",
+              "reason",
+              "recorded_by_user_id",
+              "recorded_by_display_name",
+              "recorded_at"
+            ],
+            "type": "object"
+          },
+          "meta": {}
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "type": "object"
+      },
       "ObjectResponse_PatientIdentityLookupResponse": {
         "properties": {
           "data": {
@@ -25527,12 +26178,21 @@
               "fulfillment": {
                 "$ref": "#/components/schemas/PharmacyQueueItem"
               },
+              "issued_stock_quantity": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "issued_stock_unit": {
+                "type": "string"
+              },
               "remaining_dose_count": {
                 "format": "int64",
                 "type": "integer"
               }
             },
             "required": [
+              "issued_stock_quantity",
+              "issued_stock_unit",
               "fulfillment",
               "dispensed_dose_count",
               "remaining_dose_count"
@@ -25661,6 +26321,16 @@
               },
               "route": {
                 "type": "string"
+              },
+              "scheduled_stock_policy": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/ScheduledStockPolicy"
+                  }
+                ]
               },
               "status": {
                 "$ref": "#/components/schemas/PharmacyFulfillmentStatus"
@@ -25898,6 +26568,16 @@
                   },
                   "reason": {
                     "type": "string"
+                  },
+                  "scheduled_stock_policy": {
+                    "oneOf": [
+                      {
+                        "type": "null"
+                      },
+                      {
+                        "$ref": "#/components/schemas/ScheduledStockPolicy"
+                      }
+                    ]
                   },
                   "snapshot_token": {
                     "type": "string"
@@ -29722,12 +30402,16 @@
           "can_view_chronicle": {
             "type": "boolean"
           },
+          "can_view_full_clinical": {
+            "type": "boolean"
+          },
           "read_only": {
             "type": "boolean"
           }
         },
         "required": [
           "can_view_chronicle",
+          "can_view_full_clinical",
           "can_add_note",
           "can_record_vitals",
           "can_prescribe",
@@ -30648,6 +31332,322 @@
           "updated_at"
         ],
         "type": "object"
+      },
+      "PatientHandoverDetail": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/PatientHandoverListItem"
+          },
+          {
+            "properties": {
+              "current": {
+                "$ref": "#/components/schemas/PatientHandoverRevision"
+              }
+            },
+            "required": [
+              "current"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "PatientHandoverHistoryItem": {
+        "properties": {
+          "handover_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/HandoverRevisionKind"
+          },
+          "recorded_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "recorded_by_display_name": {
+            "type": "string"
+          },
+          "recorded_by_user_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "revision": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "handover_id",
+          "revision",
+          "kind",
+          "recorded_by_user_id",
+          "recorded_by_display_name",
+          "recorded_at"
+        ],
+        "type": "object"
+      },
+      "PatientHandoverHistoryQuery": {
+        "additionalProperties": false,
+        "properties": {
+          "cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "limit": {
+            "format": "int32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "PatientHandoverListItem": {
+        "properties": {
+          "admission_case_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "author_display_name": {
+            "type": "string"
+          },
+          "author_user_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "intended_recipient_display_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "intended_recipient_user_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "patient_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "revision": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "shift_date": {
+            "format": "date",
+            "type": "string"
+          },
+          "shift_type": {
+            "$ref": "#/components/schemas/HandoverShift"
+          },
+          "status": {
+            "$ref": "#/components/schemas/PatientHandoverStatus"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "ward_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "ward_name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "patient_id",
+          "admission_case_id",
+          "ward_id",
+          "ward_name",
+          "author_user_id",
+          "author_display_name",
+          "shift_date",
+          "shift_type",
+          "status",
+          "revision",
+          "created_at",
+          "updated_at"
+        ],
+        "type": "object"
+      },
+      "PatientHandoverListQuery": {
+        "additionalProperties": false,
+        "properties": {
+          "admission_case_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "include_voided": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "limit": {
+            "format": "int32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "patient_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "shift_date": {
+            "format": "date",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "patient_id"
+        ],
+        "type": "object"
+      },
+      "PatientHandoverReceipt": {
+        "properties": {
+          "client_request_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "handover": {
+            "$ref": "#/components/schemas/PatientHandoverDetail"
+          },
+          "replayed": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "client_request_id",
+          "handover",
+          "replayed"
+        ],
+        "type": "object"
+      },
+      "PatientHandoverReceiptQuery": {
+        "additionalProperties": false,
+        "properties": {
+          "patient_id": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "patient_id"
+        ],
+        "type": "object"
+      },
+      "PatientHandoverRevision": {
+        "properties": {
+          "handover_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "intended_recipient_display_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "intended_recipient_user_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "kind": {
+            "$ref": "#/components/schemas/HandoverRevisionKind"
+          },
+          "narrative": {
+            "$ref": "#/components/schemas/HandoverNarrative"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "recorded_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "recorded_by_display_name": {
+            "type": "string"
+          },
+          "recorded_by_user_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "revision": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "shift_date": {
+            "format": "date",
+            "type": "string"
+          },
+          "shift_type": {
+            "$ref": "#/components/schemas/HandoverShift"
+          }
+        },
+        "required": [
+          "id",
+          "handover_id",
+          "revision",
+          "kind",
+          "shift_date",
+          "shift_type",
+          "narrative",
+          "reason",
+          "recorded_by_user_id",
+          "recorded_by_display_name",
+          "recorded_at"
+        ],
+        "type": "object"
+      },
+      "PatientHandoverStatus": {
+        "enum": [
+          "recorded",
+          "voided"
+        ],
+        "type": "string"
       },
       "PatientIdentityCandidate": {
         "properties": {
@@ -31913,12 +32913,21 @@
           "fulfillment": {
             "$ref": "#/components/schemas/PharmacyQueueItem"
           },
+          "issued_stock_quantity": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "issued_stock_unit": {
+            "type": "string"
+          },
           "remaining_dose_count": {
             "format": "int64",
             "type": "integer"
           }
         },
         "required": [
+          "issued_stock_quantity",
+          "issued_stock_unit",
           "fulfillment",
           "dispensed_dose_count",
           "remaining_dose_count"
@@ -32047,6 +33056,16 @@
           },
           "route": {
             "type": "string"
+          },
+          "scheduled_stock_policy": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ScheduledStockPolicy"
+              }
+            ]
           },
           "status": {
             "$ref": "#/components/schemas/PharmacyFulfillmentStatus"
@@ -32354,6 +33373,16 @@
               },
               "reason": {
                 "type": "string"
+              },
+              "scheduled_stock_policy": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/ScheduledStockPolicy"
+                  }
+                ]
               },
               "snapshot_token": {
                 "type": "string"
@@ -34223,6 +35252,40 @@
         "required": [
           "starts_at",
           "ends_at"
+        ],
+        "type": "object"
+      },
+      "ScheduledStockPolicy": {
+        "properties": {
+          "stock_unit": {
+            "type": "string"
+          },
+          "stock_units_per_dose": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "stock_unit",
+          "stock_units_per_dose"
+        ],
+        "type": "object"
+      },
+      "ScheduledStockPolicyRequest": {
+        "additionalProperties": false,
+        "description": "Explicit inventory base units used by one scheduled clinical dose.",
+        "properties": {
+          "expected_stock_unit": {
+            "type": "string"
+          },
+          "stock_units_per_dose": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "expected_stock_unit",
+          "stock_units_per_dose"
         ],
         "type": "object"
       },
@@ -36443,6 +37506,7 @@
         "type": "object"
       },
       "UpdatePrescriptionRequest": {
+        "additionalProperties": false,
         "properties": {
           "dose": {
             "type": [
@@ -36902,6 +37966,28 @@
         },
         "required": [
           "client_request_id",
+          "reason"
+        ],
+        "type": "object"
+      },
+      "VoidPatientHandoverRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "client_request_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "expected_revision": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "client_request_id",
+          "expected_revision",
           "reason"
         ],
         "type": "object"
@@ -59997,6 +61083,663 @@
               }
             },
             "description": "Admission not found"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "nursing"
+        ]
+      }
+    },
+    "/api/v2/nursing/patient-handovers": {
+      "get": {
+        "operationId": "getPatientHandovers",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "patient_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "admission_case_id",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "shift_date",
+            "required": false,
+            "schema": {
+              "format": "date",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "include_voided",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "minimum": 0,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListResponse_PatientHandoverListItem"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "nursing"
+        ]
+      },
+      "post": {
+        "operationId": "postPatientHandover",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreatePatientHandoverRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_PatientHandoverReceipt"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "nursing"
+        ]
+      }
+    },
+    "/api/v2/nursing/patient-handovers/recipients": {
+      "get": {
+        "operationId": "getPatientHandoverRecipients",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "patient_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "admission_case_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "handover_id",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "minimum": 0,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListResponse_HandoverRecipient"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "nursing"
+        ]
+      }
+    },
+    "/api/v2/nursing/patient-handovers/requests/{request_id}": {
+      "get": {
+        "operationId": "getPatientHandoverReceipt",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "patient_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_PatientHandoverReceipt"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "nursing"
+        ]
+      }
+    },
+    "/api/v2/nursing/patient-handovers/{id}": {
+      "get": {
+        "operationId": "getPatientHandover",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_PatientHandoverDetail"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "nursing"
+        ]
+      }
+    },
+    "/api/v2/nursing/patient-handovers/{id}/amend": {
+      "post": {
+        "operationId": "postPatientHandoverAmend",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AmendPatientHandoverRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_PatientHandoverReceipt"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "nursing"
+        ]
+      }
+    },
+    "/api/v2/nursing/patient-handovers/{id}/history": {
+      "get": {
+        "operationId": "getPatientHandoverHistory",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "minimum": 0,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListResponse_PatientHandoverHistoryItem"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "nursing"
+        ]
+      }
+    },
+    "/api/v2/nursing/patient-handovers/{id}/revisions/{revision_id}": {
+      "get": {
+        "operationId": "getPatientHandoverRevision",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "revision_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_PatientHandoverRevision"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "nursing"
+        ]
+      }
+    },
+    "/api/v2/nursing/patient-handovers/{id}/void": {
+      "post": {
+        "operationId": "postPatientHandoverVoid",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VoidPatientHandoverRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_PatientHandoverReceipt"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
           }
         },
         "security": [

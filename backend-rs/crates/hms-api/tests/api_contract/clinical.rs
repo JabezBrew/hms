@@ -219,6 +219,11 @@ async fn prescription_mar_generation_creates_interval_doses_and_pharmacy_queue()
         .find(|item| item["controlled"] == false)
         .and_then(|item| item["id"].as_str())
         .expect("normal inventory item exists");
+    let reviewed_unit = items
+        .iter()
+        .find(|item| item["id"] == item_id)
+        .and_then(|item| item["unit"].as_str())
+        .expect("selected catalog unit is reviewed");
     let wrong_item_id = items
         .iter()
         .filter_map(|item| item["id"].as_str())
@@ -242,6 +247,7 @@ async fn prescription_mar_generation_creates_interval_doses_and_pharmacy_queue()
                         "route": "oral",
                         "frequency": "bid",
                         "inventory_item_id": item_id,
+                        "scheduled_stock_policy":{"expected_stock_unit":reviewed_unit,"stock_units_per_dose":1},
                         "start_date": "2026-06-04",
                         "duration_days": 2,
                         "first_dose_at": "2026-06-04T10:00:00Z"
@@ -417,6 +423,7 @@ async fn prescription_mar_generation_creates_interval_doses_and_pharmacy_queue()
                     json!({
                         "item_id": item_id,
                         "location_id": location_id,
+                        "expected_unit":reviewed_unit,
                         "batch_number": "MAR-FULFILL-001",
                         "expires_on": "2027-01-31",
                         "quantity_received": 10

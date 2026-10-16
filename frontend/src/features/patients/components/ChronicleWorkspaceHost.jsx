@@ -1,39 +1,48 @@
 import { lazy, Suspense, useEffect, useState } from 'react';
-
-import {
-  buildChronicleWorkspaceProps,
-  chronicleWorkspaceLoaders,
-} from '@/features/patients/chronicle/workspaceRegistry';
+import { buildChronicleWorkspaceProps, canMountChronicleWorkspace, chronicleWorkspaceLoaders } from '@/features/patients/chronicle/workspaceRegistry';
 import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
 import MobileWorkspaceContextDock from '@/features/patients/components/MobileWorkspaceContextDock';
 
-const chronicleWorkspaceComponents = Object.freeze(
-  Object.fromEntries(
-    Object.entries(chronicleWorkspaceLoaders).map(([workspaceId, loader]) => [
-      workspaceId,
-      lazy(loader),
-    ]),
-  ),
-);
-
+const chronicleWorkspaceComponents = Object.freeze(Object.fromEntries(
+  Object.entries(chronicleWorkspaceLoaders).map(([id, loader]) => [id, lazy(loader)]),
+));
+const retainedIds = ['fluids', 'handover'];
+function useRetainedClinicalWorkspaces(activeWorkspace, context) {
+  const [visited, setVisited] = useState([]);
+  const active = isRustV2ApiMode() && retainedIds.includes(activeWorkspace)
+    && canMountChronicleWorkspace(activeWorkspace, context) ? activeWorkspace : null;
+  // A first authorized visit loads the panel; ordinary close keeps only its
+  // controller. Revoked proof unmounts it immediately. No form loads before visit.
+  useEffect(() => {
+    if (active) setVisited((old) => old.includes(active) ? old : [...old, active]);
+  }, [active]);
+  return retainedIds.filter((id) => isRustV2ApiMode() && canMountChronicleWorkspace(id, context)
+    && (visited.includes(id) || active === id));
+}
+function RetainedWorkspace({ id, activeWorkspace, context }) {
+  const Component = chronicleWorkspaceComponents[id];
+  const props = buildChronicleWorkspaceProps(id, context);
+  return props ? <Component {...props} open={activeWorkspace === id} /> : null;
+}
+function DeniedWorkspace({ onClose }) {
+  return <Dialog open onOpenChange={(next) => { if (!next) onClose?.(); }}>
+    <DialogContent><DialogHeader><DialogTitle>Clinical workspace unavailable</DialogTitle><DialogDescription>Current patient clinical access and permission for this action could not be confirmed. Close this panel and refresh your access.</DialogDescription></DialogHeader><Button variant="outline" onClick={onClose}>Close</Button></DialogContent>
+  </Dialog>;
+}
 const ChronicleWorkspaceHost = ({ activeWorkspace, workspaceContext }) => {
-  const [fluidVisited, setFluidVisited] = useState(false);
-  useEffect(() => { if (activeWorkspace === 'fluids') setFluidVisited(true); }, [activeWorkspace]);
-  // Keep an uncertain fluid command in memory across a normal workspace close.
-  // Its own patient/admission/auth boundary still removes stale copied forms.
-  const keepFluid = isRustV2ApiMode() && (fluidVisited || activeWorkspace === 'fluids');
-  const FluidWorkspace = chronicleWorkspaceComponents.fluids;
-  const fluidProps = keepFluid ? buildChronicleWorkspaceProps('fluids', workspaceContext) : null;
-  const WorkspaceComponent = activeWorkspace ? chronicleWorkspaceComponents[activeWorkspace] : null;
-  const workspaceProps = WorkspaceComponent ? buildChronicleWorkspaceProps(activeWorkspace, workspaceContext) : null;
-  if (!keepFluid && !workspaceProps) return null;
-  return (
-    <Suspense fallback={null}>
-      {fluidProps && <FluidWorkspace {...fluidProps} open={activeWorkspace === 'fluids'} />}
-      {WorkspaceComponent && workspaceProps && !(keepFluid && activeWorkspace === 'fluids') && <WorkspaceComponent {...workspaceProps} />}
-      {activeWorkspace && <MobileWorkspaceContextDock key={activeWorkspace} activeWorkspace={activeWorkspace} context={workspaceContext.mobileContext} />}
-    </Suspense>
-  );
+  const retained = useRetainedClinicalWorkspaces(activeWorkspace, workspaceContext);
+  const denied = activeWorkspace && !canMountChronicleWorkspace(activeWorkspace, workspaceContext);
+  const active = !denied && !retained.includes(activeWorkspace) ? activeWorkspace : null;
+  const Component = chronicleWorkspaceComponents[active];
+  const props = Component ? buildChronicleWorkspaceProps(active, workspaceContext) : null;
+  if (!denied && !retained.length && !props) return null;
+  return <Suspense fallback={null}>
+    {denied && <DeniedWorkspace onClose={workspaceContext.onClose} />}
+    {retained.map((id) => <RetainedWorkspace key={id} id={id} activeWorkspace={activeWorkspace} context={workspaceContext} />)}
+    {Component && props && <Component {...props} />}
+    {activeWorkspace && !denied && <MobileWorkspaceContextDock key={activeWorkspace} activeWorkspace={activeWorkspace} context={workspaceContext.mobileContext} />}
+  </Suspense>;
 };
-
 export default ChronicleWorkspaceHost;

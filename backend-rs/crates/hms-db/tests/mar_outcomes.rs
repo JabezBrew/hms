@@ -51,7 +51,7 @@ impl Fixture {
         sqlx::query("INSERT INTO stock_batches (id,facility_id,item_id,location_id,batch_number,quantity_on_hand) VALUES ($1,$2,$3,$4,'SYNTHETIC-OUTCOMES',100)").bind(Uuid::new_v4()).bind(db.facility_id()).bind(item).bind(location).execute(db.pool()).await.unwrap();
         let prescription = Uuid::new_v4();
         let first = Utc::now() - Duration::hours(13);
-        hms_db::clinical::create_prescription(
+        create_reviewed_scheduled_fixture(
             db.pool(),
             NewPrescription {
                 id: prescription,
@@ -76,6 +76,7 @@ impl Fixture {
         let generated = hms_db::pharmacy::generate_mar_for_prescription(
             db.pool(),
             GenerateMarCommand {
+                authorization: None,
                 facility_id: db.facility_id(),
                 prescription_id: prescription,
                 admission_case_id: care.admission.id,
@@ -98,6 +99,7 @@ impl Fixture {
     }
     fn command(&self, index: usize, status: Outcome) -> RecordMedicationOutcome {
         RecordMedicationOutcome {
+            authorization: None,
             facility_id: self.db.facility_id(),
             medication_id: self.doses[index],
             actor_user_id: self.db.owner_user_id(),
@@ -123,6 +125,7 @@ impl Fixture {
         hms_db::pharmacy::dispense_fulfillment(
             self.db.pool(),
             DispenseFulfillmentCommand {
+                authorization: None,
                 facility_id: self.db.facility_id(),
                 fulfillment_id: self.fulfillment,
                 item_id: self.item,
@@ -413,4 +416,31 @@ async fn outcome_migration_only_backfills_real_historical_administration_evidenc
     assert_eq!(administered.2, Some(f.db.owner_user_id()));
     let held:(Option<DateTime<Utc>>,Option<Uuid>,Option<String>)=sqlx::query_as("SELECT outcome_recorded_at,outcome_recorded_by_user_id,reason_not_given FROM medication_administrations WHERE id=$1").bind(f.doses[1]).fetch_one(f.db.pool()).await.unwrap();
     assert_eq!(held, (None, None, None));
+}
+
+// Synthetic scenario deliberately reviews one inventory unit per dose. This is
+// fixture input, never a default for existing or newly submitted prescriptions.
+async fn create_reviewed_scheduled_fixture(
+    pool: &hms_db::PgPool,
+    prescription: hms_db::clinical::NewPrescription,
+) -> anyhow::Result<hms_domain::clinical::PrescriptionDetail> {
+    let expected_stock_unit =
+        sqlx::query_scalar("SELECT unit FROM inventory_items WHERE facility_id=$1 AND id=$2")
+            .bind(prescription.facility_id)
+            .bind(prescription.inventory_item_id.unwrap())
+            .fetch_one(pool)
+            .await?;
+    hms_db::clinical::prescription_courses::create_with_stock_policy(
+        pool,
+        prescription,
+        None,
+        Some(hms_domain::clinical::ScheduledStockPolicyRequest {
+            expected_stock_unit,
+            stock_units_per_dose: 1,
+        }),
+        hms_db::clinical::prescription_courses::PrescriptionDocumentation::default(),
+        None,
+        None,
+    )
+    .await
 }

@@ -1,5 +1,5 @@
 /* oxlint-disable react-doctor/prefer-useReducer -- These components keep independent UI states; a reducer would add dispatch indirection without a shared transition invariant. */
-import { useState, useMemo, useCallback, useEffect } from "react";
+import { useState, useMemo, useCallback, useEffect, useSyncExternalStore } from "react";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "@/lib/auth";
 import { useQueryClient } from "@tanstack/react-query";
@@ -25,6 +25,10 @@ import { useChronicleWorkspaceActions } from "@/features/patients/chronicle/useC
 import { useSystemCapabilities } from "@/hooks/useSystemQueries";
 import { isRustV2ApiMode } from "@/lib/api/v2/runtime";
 import { useDebounce } from "@/hooks/use-debounce";
+
+import { authorizationScope } from '@/shared/lib/authorizationScope';
+import { getV2ClientScopeKey, subscribeV2ClientScope } from '@/lib/api/v2/client';
+import { chronicleClinicalPermissions } from '@/features/patients/chronicle/clinicalPermissions';
 
 const DISCHARGE_CASE_ROLES = new Set([
   'admin',
@@ -146,6 +150,7 @@ function usePatientChroniclePageModel(defaultAction) {
     rustV2ActiveAdmissionId,
     startupError,
   } = useChroniclePatientRecord({ id, rustV2Mode });
+  const clinicalPermissions = useMemo(() => chronicleClinicalPermissions(chronicleContext, rustV2Mode), [chronicleContext, rustV2Mode]);
   const {
     clearQueryParams,
     openChronicleWorkspace,
@@ -340,6 +345,7 @@ function usePatientChroniclePageModel(defaultAction) {
     setRequestedTreatmentSheetAdmissionId,
     slideOvers,
     workspaceOptions,
+    clinicalPermissions,
   });
 
   const dischargeCaseAdmissionId = resolveDischargeCaseAdmissionId({
@@ -497,7 +503,7 @@ function usePatientChroniclePageModel(defaultAction) {
  *
  * @param {string} defaultAction - Optional action to trigger on mount (e.g., 'ward_round')
  */
-const PatientChroniclePage = ({ defaultAction }) => {
+const PatientChroniclePageBody = ({ defaultAction }) => {
   const {
     accessDenied,
     accessDeniedProps,
@@ -523,4 +529,9 @@ const PatientChroniclePage = ({ defaultAction }) => {
   return <PatientChroniclePageContent {...contentProps} />;
 };
 
-export default PatientChroniclePage;
+export default function PatientChroniclePage(props) {
+  const { user } = useAuth();
+  const { id } = useParams();
+  const transport = useSyncExternalStore(subscribeV2ClientScope, getV2ClientScopeKey, getV2ClientScopeKey);
+  return <PatientChroniclePageBody key={JSON.stringify([id, authorizationScope(user, transport)])} {...props} />;
+}

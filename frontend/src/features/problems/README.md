@@ -20,3 +20,13 @@ belongs in Chronicle/clinical context.
 
 - Patient problem data is clinical data and must remain patient-access scoped.
 - Problem links should preserve same-patient constraints and audit behavior.
+
+## Asynchronous clinical notifications
+
+Problem resolution captures a scoped notification publisher before the mutation.
+Its success and error messages are suppressed if the originating component,
+authorization, patient context, transport or current network proof changes before
+completion. Normal same-scope messages remain visible. This affects publication
+only: it does not retry, abort or acknowledge a write, and it leaves the shared
+unknown-write barrier intact. Other asynchronous callers should adopt the shared
+hook when separately reviewed; this is not a claim that every HMS toast is scoped.

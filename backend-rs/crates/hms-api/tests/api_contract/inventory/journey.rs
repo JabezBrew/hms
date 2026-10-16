@@ -82,6 +82,11 @@ async fn inventory_controlled_substances_and_pharmacy_dispensing_follow_access_r
         .find(|item| item["controlled"] == false)
         .and_then(|item| item["id"].as_str())
         .expect("normal item exists");
+    let reviewed_unit = items
+        .iter()
+        .find(|item| item["id"] == paracetamol_id)
+        .and_then(|item| item["unit"].as_str())
+        .expect("selected receipt unit is reviewed");
     let morphine_id = items
         .iter()
         .find(|item| item["controlled"] == true)
@@ -241,6 +246,7 @@ async fn inventory_controlled_substances_and_pharmacy_dispensing_follow_access_r
                     json!({
                         "item_id": paracetamol_id,
                         "location_id": pharmacy_location_id,
+                        "expected_unit":reviewed_unit,
                         "batch_number": "B-001",
                         "expires_on": "2027-01-31",
                         "quantity_received": 100
@@ -273,6 +279,7 @@ async fn inventory_controlled_substances_and_pharmacy_dispensing_follow_access_r
                         json!({
                             "item_id": paracetamol_id,
                             "location_id": pharmacy_location_id,
+                            "expected_unit":reviewed_unit,
                             "batch_number": batch_number,
                             "expires_on": expires_on,
                             "quantity_received": 5

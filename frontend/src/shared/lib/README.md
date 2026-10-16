@@ -9,6 +9,7 @@ Scope: shared frontend utilities for access, features, query keys, invalidation,
 
 | File | Owns |
 | --- | --- |
+| `authorizationScope.js` | shared actor/facility/profile/permission/visibility identity and opaque transport scope. |
 | `access.js` | frontend access helper utilities for UI gating. |
 | `features.js` | feature/capability helpers. |
 | `queryKeys.js`, `privateQueryKey.js`, `omniSearchKeys.js` | shared query-key factories. |

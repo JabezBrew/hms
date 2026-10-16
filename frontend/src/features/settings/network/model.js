@@ -1,4 +1,3 @@
-import { hashQueryValue } from '@/shared/lib/privateQueryKey';
 import { userHasCapability } from '@/shared/lib/access';
 
 export const NETWORK_ADMIN_CAPABILITY = 'admin.authority.manage';
@@ -9,15 +8,7 @@ export const NETWORK_MODES = [
 ];
 export const NETWORK_REASONS = new Set(['onsite', 'offsite_readonly', 'offsite_denied', 'offsite_fresh_reauth', 'reauth_required', 'policy_unconfigured', 'client_unknown']);
 
-// A normal credential confirmation rotates the token. Keep that operation
-// mounted while resetting copied drafts when the actor or authority changes.
-export function networkEditorIdentity(user) {
-  return JSON.stringify([user?.id, user?.facilityCode, user?.accessContext?.facility_id, user?.accessContext?.active_profile,
-    user?.accessContext?.session_version, user?.accessContext?.permission_version,
-    hashQueryValue(JSON.stringify([[...(user?.adminAccess?.capabilities || [])].sort(), [...(user?.accessContext?.features || [])].sort(),
-      [...(user?.accessContext?.patient_visibility || [])].sort(), user?.accessContext?.auth_security]))]);
-}
-export const networkAccessScope = (user, clientScope) => hashQueryValue(JSON.stringify([clientScope, networkEditorIdentity(user)]));
+export { authorizationIdentity as networkEditorIdentity, authorizationScope as networkAccessScope } from '@/shared/lib/authorizationScope';
 export function assertNetworkSession(current, authenticated) {
   if (!current?.id || !current.email || !current.facilityCode || !current.accessContext?.facility_id || !current.accessContext?.active_profile
     || authenticated?.mfaRequired || authenticated?.id !== current.id || authenticated.facilityCode !== current.facilityCode

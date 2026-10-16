@@ -14,6 +14,7 @@ pub mod inventory;
 pub mod inventory_standing;
 pub mod laboratory;
 pub mod network;
+pub mod patient_handover;
 pub mod patients;
 pub mod pharmacy;
 pub mod referrals;

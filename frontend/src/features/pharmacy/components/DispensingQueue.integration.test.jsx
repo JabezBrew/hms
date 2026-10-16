@@ -10,14 +10,14 @@ const row = { id: 'fulfillment-opaque', patient_id: 'patient-opaque', patient_di
 const actor = { id: 'actor-1', facilityCode: 'HMS', accessContext: { facility_id: 'facility-1', active_profile: 'pharmacy-1' }, adminAccess: { capabilities: ['pharmacy.dispense'] } };
 const json = (data, status = 200) => new Response(JSON.stringify(data), { status, headers: { 'content-type': 'application/json' } });
 const page = (data, cursor = null) => ({ data, page: { limit: 25, has_next: Boolean(cursor), next_cursor: cursor } });
-let client; let locationsFail; let saved; let unknown;
+let client; let locationsFail; let saved; let unknown; let stockReceipt;
 beforeEach(() => {
-  row.inventory_item_unit = 'tablet';
-  window.__HMS_RUNTIME_CONFIG__ = { apiMode: 'rust-v2', v2ApiBaseUrl: 'http://localhost:8080/api/v2' }; __resetV2ApiClientForTests(); configureV2ApiClient({ getAccessToken: () => 'synthetic-token', getFacilityCode: () => 'HMS', canRefreshSession: () => false }); client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: 1 } } }); locationsFail = false; saved = false; unknown = false;
+  row.requested_dose_count = 1; row.dispensed_dose_count = 0; row.inventory_item_unit = 'tablet'; row.frequency = 'prn'; row.prn_policy = { stock_units_per_dose: 2, stock_unit: 'tablet' }; row.scheduled_stock_policy = null;
+  window.__HMS_RUNTIME_CONFIG__ = { apiMode: 'rust-v2', v2ApiBaseUrl: 'http://localhost:8080/api/v2' }; __resetV2ApiClientForTests(); configureV2ApiClient({ getAccessToken: () => 'synthetic-token', getFacilityCode: () => 'HMS', canRefreshSession: () => false }); client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: 1 } } }); locationsFail = false; saved = false; unknown = false; stockReceipt = {};
   globalThis.fetch = vi.fn(async (url) => {
     const parsed = new URL(url); const path = parsed.pathname;
     if (path.endsWith('/dispensing-locations')) return locationsFail ? json({ error: { code: 'unavailable', message: 'Locations unavailable' } }, 503) : json(page(parsed.searchParams.get('cursor') ? [{ id: 'location-2', name: 'Ward pharmacy', code: 'WARD' }] : [{ id: 'location-1', name: 'Main pharmacy', code: 'MAIN' }], parsed.searchParams.get('cursor') ? null : 'next-location'));
-    if (path.endsWith('/fulfillment-opaque/dispense')) { saved = true; if (unknown) throw new TypeError('Lost supply response'); return json({ data: { fulfillment: { ...row, status: 'dispensed', dispensed_dose_count: 1 }, dispensed_dose_count: 1, remaining_dose_count: 0 } }); }
+    if (path.endsWith('/fulfillment-opaque/dispense')) { saved = true; if (unknown) throw new TypeError('Lost supply response'); return json({ data: { fulfillment: { ...row, status: 'dispensed', dispensed_dose_count: 1 }, dispensed_dose_count: 1, remaining_dose_count: 0, issued_stock_quantity: 2, issued_stock_unit: 'tablet', ...stockReceipt } }); }
     if (path.endsWith('/dispensing-queue')) return json(page(saved ? [] : [row]));
     throw new Error('Unexpected pharmacy picker test request');
   });
@@ -52,4 +52,21 @@ describe('real queue dispensing with named locations', () => {
   it.each([{ active_profile: 'pharmacy-2' }, { facility_id: 'facility-2' }])('clears the selected location when authorization scope changes to %j', async (changedScope) => {
     const view = render(tree()); fireEvent.click(await open()); expect(screen.getByRole('button', { name: 'Confirm Dispense' })).not.toBeDisabled(); view.rerender(tree({ ...actor, accessContext: { ...actor.accessContext, ...changedScope } })); expect(screen.queryByRole('dialog')).not.toBeInTheDocument(); await open(); expect(screen.getByRole('button', { name: 'Confirm Dispense' })).toBeDisabled();
   });
+  it('separates scheduled doses from the exact physical stock quantity and saved unit in the confirmed receipt', async () => {
+    row.frequency = 'daily'; row.prn_policy = null; row.scheduled_stock_policy = { stock_unit: 'tablet', stock_units_per_dose: 2 }; render(tree()); fireEvent.click(await open()); expect(screen.getByText('Each dose uses 2 tablet of linked stock.')).toBeInTheDocument(); expect(screen.getByText(/This supply uses 2 tablet/)).toBeInTheDocument(); fireEvent.click(screen.getByRole('button', { name: 'Confirm Dispense' })); await screen.findByText('Supply confirmed'); expect(screen.getByRole('status')).toHaveTextContent('1 dose supplied'); expect(screen.getByRole('status')).toHaveTextContent('server recorded 2 tablet issued'); expect(JSON.parse(issues()[0][1].body).quantity).toBe(1);
+  });
+  it('does not infer one stock unit for an old scheduled course with no reviewed policy', async () => {
+    row.frequency = 'daily'; row.prn_policy = null; row.scheduled_stock_policy = null; render(tree()); fireEvent.click(await open()); expect(screen.getByText(/saved stock basis is unconfigured/)).toBeInTheDocument(); expect(screen.getByRole('button', { name: 'Confirm Dispense' })).toBeDisabled(); fireEvent.click(screen.getByRole('button', { name: 'Confirm Dispense' })); expect(issues()).toHaveLength(0);
+  });
+  it.each([{ issued_stock_quantity: 1 }, { issued_stock_unit: 'pack' }, { issued_stock_quantity: undefined }])('keeps malformed physical issue evidence unknown (%j)', async (fault) => {
+    stockReceipt = fault; render(tree()); fireEvent.click(await open()); fireEvent.click(screen.getByRole('button', { name: 'Confirm Dispense' })); await screen.findByText('Supply status unknown'); expect(screen.queryByText('Supply confirmed')).not.toBeInTheDocument(); expect(screen.getByRole('button', { name: 'Confirm Dispense' })).toBeDisabled(); expect(issues()).toHaveLength(1);
+  });
+  it('refuses an overflowing scheduled stock calculation before dispatch', async () => {
+    row.requested_dose_count = 2; row.frequency = 'daily'; row.prn_policy = null; row.scheduled_stock_policy = { stock_unit: 'tablet', stock_units_per_dose: Number.MAX_SAFE_INTEGER }; render(tree()); fireEvent.click(await open()); fireEvent.change(screen.getByLabelText('Doses to supply'), { target: { value: '2' } }); expect(screen.getByText(/exceeds the supported whole-stock range/)).toBeInTheDocument(); expect(screen.getByRole('button', { name: 'Confirm Dispense' })).toBeDisabled(); expect(issues()).toHaveLength(0);
+  });
+
+  it('does not confirm matching units returned for a different linked stock item', async () => {
+    stockReceipt = { fulfillment: { ...row, inventory_item_id: 'different-stock', status: 'dispensed', dispensed_dose_count: 1 } }; render(tree()); fireEvent.click(await open()); fireEvent.click(screen.getByRole('button', { name: 'Confirm Dispense' })); await screen.findByText('Supply status unknown'); expect(screen.queryByText('Supply confirmed')).not.toBeInTheDocument(); expect(issues()).toHaveLength(1);
+  });
+
 });

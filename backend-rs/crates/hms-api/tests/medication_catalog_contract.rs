@@ -157,7 +157,7 @@ async fn prescribing_catalog_is_minimal_scoped_searchable_and_cursor_bounded() {
         let response = app.clone().oneshot(Request::builder().method(Method::POST)
             .uri(format!("/api/v2/patients/{patient}/clinical/prescriptions"))
             .header(AUTHORIZATION, owner.bearer()).header("content-type", "application/json")
-            .body(Body::from(json!({"medication_name":"Synthetic catalog medication","dose":"1 tablet","frequency":"daily","inventory_item_id":id}).to_string())).unwrap()).await.unwrap();
+            .body(Body::from(json!({"medication_name":"Synthetic catalog medication","dose":"1 tablet","frequency":"daily","inventory_item_id":id,"scheduled_stock_policy":{"expected_stock_unit":"tablet","stock_units_per_dose":1}}).to_string())).unwrap()).await.unwrap();
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
         let body = json_body(response).await;
         assert!(body["error"]["details"]["inventory_item_id"].is_array());

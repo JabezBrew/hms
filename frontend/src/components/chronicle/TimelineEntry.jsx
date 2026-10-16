@@ -1,3 +1,4 @@
+import { useChronicleClinicalPermissions } from '@/features/patients/chronicle/clinicalPermissions';
 import { useEffect, useRef, useState } from 'react';
 
 import {
@@ -42,6 +43,7 @@ const TimelineEntry = ({
   isNoteExpanded,
   onToggleNoteExpanded,
 }) => {
+  const permissions = useChronicleClinicalPermissions();
   const [isFallbackNoteExpanded, setIsFallbackNoteExpanded] = useState(false);
 
   const hasAnimatedRef = useRef(false);
@@ -49,7 +51,7 @@ const TimelineEntry = ({
 
   const config = getTimelineEntryConfig(entry.type);
   const entryTimestamp = getTimelineEntryTimestamp(entry);
-  const hasDetailContent = hasEntryDetailContent(entry);
+  const hasDetailContent = permissions.can_view_full_clinical && hasEntryDetailContent(entry);
   const canInlineExpand = isInlineExpandableNoteEntry(entry);
   const noteBodyId = normalizeExpansionId(entry?.id)
     ? `chronicle-note-body-${normalizeExpansionId(entry.id)}`
@@ -57,8 +59,8 @@ const TimelineEntry = ({
   const noteExpanded = typeof isNoteExpanded === 'boolean'
     ? isNoteExpanded
     : isFallbackNoteExpanded;
-  const canCopyNote = isCopyableTimelineNote(entry);
-  const canEditNote = Boolean(onEditNote) && isEditableTimelineNote(entry, currentUserId);
+  const canCopyNote = permissions.can_add_note && isCopyableTimelineNote(entry);
+  const canEditNote = permissions.can_add_note && Boolean(onEditNote) && isEditableTimelineNote(entry, currentUserId);
   const actionCapabilities = {
     canCopyNote,
     canEditNote,
@@ -86,8 +88,14 @@ const TimelineEntry = ({
     setIsFallbackNoteExpanded((previous) => !previous);
   };
 
+  if (!permissions.can_view_full_clinical && !['vitals', 'lab_result', 'medication', 'prescription'].includes(entry.type)) {
+    const summary = { id: entry.id, type: entry.type, title: entry.title, author: entry.author, timestamp: entryTimestamp };
+    return <TimelineEntryFrame key="summary" capabilities={{ canCopyNote: false, canEditNote: false, canInlineExpand: false, hasDetailContent: false }} config={config} entry={summary} entryTimestamp={entryTimestamp} index={index} className={className} isRecent={isRecent} hasAnimated={hasAnimatedRef.current}><p className="font-medium">{entry.title || config.label}</p>{(entry.status || entry.data?.status) && <p className="text-sm text-muted-foreground">{entry.status || entry.data.status}</p>}<p className="text-sm text-muted-foreground">Full clinical access is required to read this record.</p></TimelineEntryFrame>;
+  }
+
   return (
     <TimelineEntryFrame
+      key={permissions.can_view_full_clinical ? 'full' : 'summary'}
       capabilities={actionCapabilities}
       className={className}
       config={config}

@@ -1,3 +1,4 @@
+import { physicalStockBasis } from '@/features/pharmacy/prescribing/scheduledStockPolicy';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api-client';
 import { getV2ClientScopeKey, v2Api, v2Request } from '@/lib/api/v2/client';
@@ -1002,7 +1003,8 @@ export const useDispenseMedication = () => {
         const fulfillmentId = request.fulfillmentId || request.fulfillment_id || request.id || request.mar_entry_id;
         const itemId = request.itemId || request.item_id || request.inventory_item_id;
         const locationId = request.locationId || request.location_id || request.dispensing_location_id;
-        const quantity = Number(request.quantity || request.dose_count || 1);
+        const requestedQuantity = request.quantity ?? request.dose_count;
+        const quantity = ['number', 'string'].includes(typeof requestedQuantity) ? Number(requestedQuantity) : NaN;
         if (!fulfillmentId || !itemId || !locationId || !Number.isSafeInteger(quantity) || quantity <= 0) {
           throw new Error('Stock item, location, and positive quantity are required to dispense in Rust V2.');
         }
@@ -1018,6 +1020,9 @@ export const useDispenseMedication = () => {
         });
           const result = response?.data;
           const saved = result?.fulfillment;
+          const basis = physicalStockBasis(saved); const expected = request.stockPolicy;
+          const physical = basis ? quantity * basis.stock_units_per_dose : NaN;
+          if (saved?.inventory_item_id !== itemId || !basis || !Number.isSafeInteger(physical) || result.issued_stock_quantity !== physical || result.issued_stock_unit !== basis.stock_unit || (expected && (basis.stock_unit !== expected.stock_unit || basis.stock_units_per_dose !== expected.stock_units_per_dose))) throw new Error('The supply response did not confirm the physical stock quantity and unit.');
           if (saved?.id !== fulfillmentId || !Number.isSafeInteger(result?.dispensed_dose_count) || result.dispensed_dose_count !== quantity || !Number.isSafeInteger(result?.remaining_dose_count) || result.remaining_dose_count < 0 || !Number.isSafeInteger(saved?.dispensed_dose_count) || !Number.isSafeInteger(saved?.requested_dose_count) || saved.dispensed_dose_count < quantity || saved.requested_dose_count < saved.dispensed_dose_count || saved.requested_dose_count - saved.dispensed_dose_count !== result.remaining_dose_count) {
             throw new Error('The supply response did not confirm the requested stock issue.');
           }

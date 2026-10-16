@@ -14,7 +14,7 @@ if (!HTMLElement.prototype.setPointerCapture) HTMLElement.prototype.setPointerCa
 if (!HTMLElement.prototype.releasePointerCapture) HTMLElement.prototype.releasePointerCapture=()=>{};
 if (!HTMLElement.prototype.scrollIntoView) HTMLElement.prototype.scrollIntoView=()=>{};
 const response=(data,page)=>new Response(JSON.stringify({data,page}),{status:200,headers:{'content-type':'application/json'}});
-const initialDose=()=>({id:'dose-one',prescription_id:'source-one',patient_id:'selected-patient',admission_case_id:'selected-admission',medication_name:'Synthetic medication',dose:'1 tablet',route:'oral',frequency:'daily',scheduled_at:`${new Date().toISOString().slice(0,10)}T00:00:00Z`,status:'scheduled',is_dispensed:true});
+const initialDose=()=>({id:'dose-one',prescription_id:'source-one',patient_id:'selected-patient',admission_case_id:'selected-admission',medication_name:'Synthetic medication',dose:'1 tablet',route:'oral',frequency:'daily',scheduled_at:`${new Date().toISOString().slice(0,10)}T00:00:00Z`,status:'scheduled',is_dispensed:true,scheduled_stock_policy:{stock_unit:'tablet',stock_units_per_dose:2},dispensed_stock_quantity:2,dispensed_stock_unit:'tablet'});
 function renderGrid(client=new QueryClient({defaultOptions:{queries:{retry:false},mutations:{retry:1,retryDelay:0}}})) {
   return {client,...render(<QueryClientProvider client={client}><MemoryRouter><TreatmentSheetContent admissionId="selected-admission" /></MemoryRouter></QueryClientProvider>)};
 }
@@ -76,4 +76,15 @@ describe('reachable Chronicle grid dose decisions',()=>{
     expect(await screen.findByRole('button',{name:/Record outcome: Synthetic admission-B/})).toBeEnabled();
     expect(screen.queryByRole('button',{name:'Record outcome'})).not.toBeInTheDocument();expect(writes).toBe(0);client.clear();
   });
+  it.each(['missing-policy','missing-evidence','different-quantity','different-unit'])('keeps scheduled Given unavailable for %s but permits a reasoned non-Given outcome',async(fault)=>{
+    let saved=initialDose();if(fault==='missing-policy')saved.scheduled_stock_policy=null;if(fault==='missing-evidence'){saved.dispensed_stock_quantity=null;saved.dispensed_stock_unit=null;}if(fault==='different-quantity')saved.dispensed_stock_quantity=1;if(fault==='different-unit')saved.dispensed_stock_unit='pack';let writes=0;
+    globalThis.fetch.mockImplementation(async(_url,options)=>{if(options.method==='POST'){writes+=1;saved={...saved,...JSON.parse(options.body),outcome_recorded_at:new Date().toISOString()};return response(saved);}return response([saved],{has_next:false,next_cursor:null});});
+    const user=userEvent.setup();const {client}=renderGrid();await user.click(await screen.findByRole('button',{name:/Record outcome: Synthetic medication/}));expect(screen.getByRole('alert')).toHaveTextContent(/review|Review/);await user.click(screen.getByRole('combobox',{name:'Dose outcome'}));expect(screen.getByRole('option',{name:'Administered'})).toHaveAttribute('data-disabled');await user.click(screen.getByRole('option',{name:'Patient refused'}));await user.type(screen.getByLabelText('Reason the dose was not given'),'Synthetic refusal');await user.click(screen.getByRole('button',{name:'Record outcome'}));await waitFor(()=>expect(screen.queryByRole('dialog')).not.toBeInTheDocument());expect(writes).toBe(1);expect(saved.status).toBe('refused');expect(saved.administered_at).toBeUndefined();client.clear();
+  });
+  it.each(['scheduled','prior-configured-prn'])('allows Given with %s evidence without fabricating prior PRN stock fields',async(kind)=>{
+    let saved=initialDose();if(kind==='prior-configured-prn'){saved={...saved,frequency:'prn',prn_request_id:'request-one',scheduled_stock_policy:null,dispensed_stock_quantity:null,dispensed_stock_unit:null};}let writes=0;
+    globalThis.fetch.mockImplementation(async(_url,options)=>{if(options.method==='POST'){writes+=1;saved={...saved,...JSON.parse(options.body),outcome_recorded_at:new Date().toISOString(),administered_at:new Date().toISOString()};return response(saved);}return response([saved],{has_next:false,next_cursor:null});});
+    const user=userEvent.setup();const {client}=renderGrid();await user.click(await screen.findByRole('button',{name:/Record outcome: Synthetic medication/}));await choose(user,'Administered');await user.click(screen.getByRole('button',{name:'Record outcome'}));await waitFor(()=>expect(screen.queryByRole('dialog')).not.toBeInTheDocument());expect(writes).toBe(1);expect(saved.status).toBe('administered');client.clear();
+  });
+
 });

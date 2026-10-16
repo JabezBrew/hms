@@ -683,6 +683,9 @@ pub struct CreateNursingTaskRequest {
 
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
 pub struct MedicationAdministrationListItem {
+    pub scheduled_stock_policy: Option<crate::clinical::ScheduledStockPolicy>,
+    pub dispensed_stock_quantity: Option<i64>,
+    pub dispensed_stock_unit: Option<String>,
     pub prn_indication: Option<String>,
     pub prn_request_id: Option<Uuid>,
     pub id: Uuid,

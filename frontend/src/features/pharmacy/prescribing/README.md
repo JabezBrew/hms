@@ -45,3 +45,13 @@ views show authorized patient identity and clinical values rather than internal 
 Verification lives in __tests__/course-api.test.js, course-model.test.js and
 course-workflow.test.jsx, plus affected create/actions/PRN integration tests. Tests
 use the actual v2 fetch boundary. Browser rendering remains a separate release gate.
+
+Linked scheduled prescriptions also require a separately reviewed positive whole
+number of the selected catalog's base units for each dose. Dose text, strength and
+pack size never determine this quantity, and source reuse does not copy it. The
+saved policy is immutable course evidence; changing it requires a reviewed new
+course. The typed create/new-course receipt must echo the exact reviewed unit and
+quantity before confirmation or automatic MAR generation. An ignored/malformed
+policy is an uncertain save and never triggers follow-up MAR or a second create.
+Old linked courses with no policy remain explicitly unconfigured. Generic stock
+linking excludes controlled items; a separate governed workflow is required.

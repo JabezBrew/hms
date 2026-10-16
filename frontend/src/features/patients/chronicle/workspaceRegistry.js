@@ -1,3 +1,4 @@
+import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
 import { laboratoryApi } from '@/features/laboratory/api';
 import { labKeys } from '@/features/laboratory/hooks';
 import { drugSafetyKeys } from '@/hooks/useDrugSafetyQueries';
@@ -16,6 +17,7 @@ export const chronicleWorkspaceIds = Object.freeze([
   'medicationHistory',
   'treatmentSheet',
   'fluids',
+  'handover',
   'trends',
   'insurance',
   'wardRound',
@@ -35,6 +37,7 @@ export const chronicleWorkspaceLoaders = Object.freeze({
   medicationHistory: () => import('@/components/chronicle/MedicationHistorySlideOver'),
   treatmentSheet: () => import('@/components/chronicle/TreatmentSheetSlideOver'),
   fluids: () => import('@/components/chronicle/AddFluidBalanceSlideOver'),
+  handover: () => import('@/features/nursing/handover/PatientHandoverPanel'),
   trends: () => import('@/components/chronicle/TrendReviewSlideOver'),
   insurance: () => import('@/components/chronicle/PatientInsuranceSlideOver'),
   wardRound: () => import('@/components/chronicle/WardRoundSlideOver'),
@@ -217,6 +220,8 @@ export function buildChronicleWorkspaceProps(workspaceId, context) {
         allowEntry: Boolean(activeEncounter?.id || getChronicleAdmissionReference(patient)),
         onFluidRecorded,
       };
+    case 'handover':
+      return { open: true, onClose, patient, admission: getChronicleAdmissionReference(patient, selectedAdmissionId), clinicalPermissions: context.clinicalPermissions };
     case 'trends':
       return {
         open: true,
@@ -226,6 +231,7 @@ export function buildChronicleWorkspaceProps(workspaceId, context) {
         admissionId: selectedAdmissionId || null,
         allHistory: chronicleAllHistory,
         initialTab: initialTrendTab || 'vitals',
+        clinicalPermissions: context.clinicalPermissions,
       };
     case 'insurance':
       return {
@@ -261,4 +267,12 @@ export function buildChronicleWorkspaceProps(workspaceId, context) {
     default:
       return null;
   }
+}
+
+const actionPermissions = { note: 'can_add_note', vitals: 'can_record_vitals', prescription: 'can_prescribe' };
+export function canMountChronicleWorkspace(workspaceId, context) {
+  if (!isRustV2ApiMode() || workspaceId === 'insurance') return true;
+  if (workspaceId === 'trends' && (!context?.initialTrendTab || context.initialTrendTab === 'vitals')) return true;
+  const proof = context?.clinicalPermissions;
+  return proof?.can_view_full_clinical === true && (!actionPermissions[workspaceId] || proof[actionPermissions[workspaceId]] === true);
 }

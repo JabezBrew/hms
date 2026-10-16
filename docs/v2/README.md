@@ -17,6 +17,11 @@ Scope: Rust V2 backend architecture, seed behavior, cutover scope, and productio
 | `2026-10-15-parity-ledger.md` | expanded Python-to-Rust and UI parity phases, concrete gaps, acceptance rules, and implementation state. |
 | `2026-10-15-phase-two-verification.md` | first parity increment and exact staged-source local acceptance. |
 | `2026-10-15-phase-two-b-verification.md` | scoped fluid/emergency access, NHIS UI, reset lifecycle and exact-source acceptance. |
+| `2026-10-16-phase-eight-verification.md` | explicit scheduled stock units, inpatient narrative handover, clinical visibility and scoped notifications; frozen acceptance evidence. |
+| `2026-10-16-scheduled-stock-basis-scope.md` | reviewed stock units, physical supply evidence, care-context and authority lifetime contracts. |
+| `2026-10-16-patient-handover-scope.md` | inpatient handover, protected immutable revisions, ward scope and exact command recovery. |
+| `2026-10-16-clinical-data-visibility-scope.md` | clinical data classes, purpose projections and authoritative UI action flags. |
+| `2026-10-16-scoped-clinical-notifications.md` | obsolete-workspace notification suppression and regression evidence. |
 | `2026-10-16-phase-seven-verification.md` | prescription documentation/new courses, PRN continuity, scoped nursing and exact-source acceptance. |
 | `2026-10-16-prescribing-course-scope.md` | explicit prescription documentation and renewal/replacement contracts, provenance and safety boundaries. |
 | `2026-10-16-scoped-nursing-lists.md` | bounded treatment/alert/shift lists, critical preview and guarded immutable acknowledgments/finalization. |

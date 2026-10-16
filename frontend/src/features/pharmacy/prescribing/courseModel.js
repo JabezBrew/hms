@@ -1,3 +1,4 @@
+import { emptyScheduledStockForm, scheduledStockPolicyPayload, validateScheduledStockForm } from './scheduledStockPolicy';
 import { hashQueryValue } from '@/shared/lib/privateQueryKey';
 import { emptyPrnPolicyForm, prnPolicyPayload, validatePrnPolicyForm } from './prnPolicy';
 
@@ -10,7 +11,7 @@ export function prescribingScope(user, transport) { const context = user?.access
 export const isPrnSource = (source) => Boolean(source.prn_policy) || source.frequency?.trim().toLowerCase() === 'prn';
 export const documentationAllowed = (source) => ['active', 'on_hold'].includes(source?.status) && !source.has_generated_course && !isPrnSource(source);
 export const courseAllowed = (source, relation) => !source?.successor_prescription_id && (relation === 'renewal' ? ['stopped', 'completed'].includes(source?.status) : ['active', 'on_hold'].includes(source?.status));
-export function emptyCourseDraft() { return { medication_name: '', dose: '', route: '', frequency: '', start_date: '', duration_days: '', first_dose_at: '', instructions: '', reason: '', change_reason: '', inventory_item_id: null, inventory_item_name: '', inventory_item_unit: '', inventory_item_controlled: false, ...emptyPrnPolicyForm() }; }
+export function emptyCourseDraft() { return { medication_name: '', dose: '', route: '', frequency: '', start_date: '', duration_days: '', first_dose_at: '', instructions: '', reason: '', change_reason: '', inventory_item_id: null, inventory_item_name: '', inventory_item_unit: '', inventory_item_controlled: false, ...emptyPrnPolicyForm(), ...emptyScheduledStockForm() }; }
 export function reuseCourseDraft(source) {
   const draft = emptyCourseDraft();
   for (const key of ['medication_name', 'dose', 'route', 'frequency', 'instructions', 'reason']) draft[key] = source[key] || '';
@@ -39,7 +40,7 @@ export function coursePayload(form, source, relation, id) {
   Object.assign(payload, { client_request_id: id, expected_snapshot_token: source.snapshot_token, relation, instructions, reason, start_date: form.start_date });
   if (form.duration_days !== '') { const days = Number(form.duration_days); if (!Number.isSafeInteger(days) || days < 1 || days > 2147483647) throw new Error('Duration must be a whole number of at least one day.'); payload.duration_days = days; }
   if (form.first_dose_at) { const time = new Date(`${form.first_dose_at}:00Z`); if (!Number.isFinite(time.getTime()) || time < new Date(`${form.start_date}T00:00:00Z`)) throw new Error('The first dose time must be at or after the new start date (UTC).'); payload.first_dose_at = time.toISOString(); }
-  if (form.inventory_item_id) { if (!form.inventory_item_unit) throw new Error('Choose the stock item again to confirm its current unit.'); payload.inventory_item_id = form.inventory_item_id; payload.expected_stock_unit = form.inventory_item_unit; }
+  if (form.inventory_item_id) { if (!form.inventory_item_unit) throw new Error('Choose the stock item again to confirm its current unit.'); payload.inventory_item_id = form.inventory_item_id; payload.expected_stock_unit = form.inventory_item_unit; if (!isPrnSource(source)) { const errors = validateScheduledStockForm(form); if (Object.keys(errors).length) throw new Error(Object.values(errors)[0]); payload.scheduled_stock_policy = scheduledStockPolicyPayload(form); } }
   if (isPrnSource(source)) { const errors = validatePrnPolicyForm(form); if (Object.keys(errors).length) throw new Error(Object.values(errors)[0]); payload.prn_policy = prnPolicyPayload(form); }
   return payload;
 }

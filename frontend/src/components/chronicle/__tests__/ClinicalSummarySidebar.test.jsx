@@ -1,3 +1,4 @@
+import { ChronicleClinicalPermissionsContext } from '@/features/patients/chronicle/clinicalPermissions';
 import { render, screen, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -29,7 +30,7 @@ describe('ClinicalSummarySidebar', () => {
   it('uses the active admission for the Rust fluid summary', () => {
     window.__HMS_RUNTIME_CONFIG__ = { apiMode: 'rust-v2' };
     try {
-      render(<ClinicalSummarySidebar patient={{ id: 'patient-fluid', current_admission_id: 'current-fluid-admission' }} />);
+      render(<ChronicleClinicalPermissionsContext.Provider value={{ can_view_full_clinical: true }}><ClinicalSummarySidebar patient={{ id: 'patient-fluid', current_admission_id: 'current-fluid-admission' }} /></ChronicleClinicalPermissionsContext.Provider>);
       expect(useTodayFluidBalance).toHaveBeenLastCalledWith('patient-fluid', { admission_case_id: 'current-fluid-admission' });
     } finally {
       delete window.__HMS_RUNTIME_CONFIG__;
@@ -164,4 +165,8 @@ describe('ProblemsSection', () => {
     expect(screen.getByText('Hypertension')).toBeInTheDocument();
     expect(container.querySelectorAll('li')).toHaveLength(1);
   });
+});
+
+it('does not mount or query full fluid balance inside a summary-only sidebar', () => {
+  useTodayFluidBalance.mockClear(); render(<ChronicleClinicalPermissionsContext.Provider value={{ can_view_full_clinical: false }}><ClinicalSummarySidebar patient={{ id: 'synthetic-patient', current_admission_id: 'synthetic-admission' }} vitals={[{ name: 'HR', value: '88', unit: 'bpm' }]} /></ChronicleClinicalPermissionsContext.Provider>); expect(useTodayFluidBalance).not.toHaveBeenCalled(); expect(screen.queryByText(/Fluid Balance/)).not.toBeInTheDocument(); expect(screen.getByText('88')).toBeInTheDocument();
 });

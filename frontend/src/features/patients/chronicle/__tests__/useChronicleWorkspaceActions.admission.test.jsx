@@ -29,3 +29,10 @@ describe('Chronicle treatment sheet admission routing', () => {
     expect(props.setRequestedTreatmentSheetAdmissionId).toHaveBeenCalledWith('encounter-id');
   });
 });
+
+it.each([undefined, { can_add_note: false, can_record_vitals: false, can_prescribe: false }])('does not open a direct write or copy a note without current server action proof (%j)', (clinicalPermissions) => {
+  const open = vi.fn(); const { result } = renderHook(() => useChronicleWorkspaceActions({ rustV2Mode: true, clinicalPermissions, openChronicleWorkspace: open })); act(() => { result.current.handleAddNote(); result.current.handleRecordVitals(); result.current.handlePrescribe(); result.current.handleCopyNote({ template: { id: 'synthetic' }, data: { assessment: 'SYNTHETIC-PRIVATE' } }); result.current.handleEditNote({ template: { id: 'synthetic' }, data: {} }); }); expect(open).not.toHaveBeenCalled(); expect(result.current.workspaceContext.copyForwardData).toBeNull(); expect(result.current.workspaceContext.editNoteData).toBeNull();
+});
+it('uses each current authoritative write flag independently', () => {
+  const open = vi.fn(); const { result } = renderHook(() => useChronicleWorkspaceActions({ rustV2Mode: true, clinicalPermissions: { can_add_note: true, can_record_vitals: false, can_prescribe: false }, openChronicleWorkspace: open })); act(() => { result.current.handleAddNote(); result.current.handleRecordVitals(); result.current.handlePrescribe(); }); expect(open.mock.calls).toEqual([['note']]);
+});

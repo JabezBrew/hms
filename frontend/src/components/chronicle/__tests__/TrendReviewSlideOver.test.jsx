@@ -1,3 +1,4 @@
+import { ChronicleClinicalPermissionsContext } from '@/features/patients/chronicle/clinicalPermissions';
 import { render, screen } from '@testing-library/react';
 
 import TrendReviewSlideOver from '@/components/chronicle/TrendReviewSlideOver';
@@ -67,4 +68,15 @@ describe('TrendReviewSlideOver', () => {
     expect(screen.getByRole('alert')).toHaveTextContent('could not be fully loaded');
     expect(screen.queryByText('No fluid-balance data in this scope')).not.toBeInTheDocument();
   });
+});
+
+it('keeps scalar vital trends available without fetching or offering full fluid history for summary access', () => {
+  render(<ChronicleClinicalPermissionsContext.Provider value={{ can_view_full_clinical: false }}><TrendReviewSlideOver open onClose={vi.fn()} patient={patient} admissionId="synthetic-admission" allHistory initialTab="vitals" /></ChronicleClinicalPermissionsContext.Provider>); expect(screen.getByRole('tab', { name: /vitals/i })).toHaveAttribute('data-state', 'active'); expect(screen.queryByRole('tab', { name: /fluid balance/i })).not.toBeInTheDocument(); expect(useFluidBalanceTrends.mock.calls.at(-1)[2].enabled).toBe(false);
+});
+it('removes the fluid panel and stops its query when an existing full-clinical trend view loses permission', () => {
+  const tree = (full) => <ChronicleClinicalPermissionsContext.Provider value={{ can_view_full_clinical: full }}><TrendReviewSlideOver open onClose={vi.fn()} patient={patient} admissionId="synthetic-admission" initialTab="fluids" /></ChronicleClinicalPermissionsContext.Provider>; const view = render(tree(true)); expect(screen.getByRole('tab', { name: /fluid balance/i })).toHaveAttribute('data-state', 'active'); expect(useFluidBalanceTrends.mock.calls.at(-1)[2].enabled).toBe(true); view.rerender(tree(false)); expect(screen.queryByRole('tab', { name: /fluid balance/i })).not.toBeInTheDocument(); expect(screen.getByRole('tab', { name: /vitals/i })).toHaveAttribute('data-state', 'active'); expect(useFluidBalanceTrends.mock.calls.at(-1)[2].enabled).toBe(false);
+});
+
+it('honors explicit summary-only server proof when the trend component is mounted directly outside the Chronicle provider', () => {
+  render(<TrendReviewSlideOver open onClose={vi.fn()} patient={patient} admissionId="synthetic-admission" initialTab="vitals" clinicalPermissions={{ can_view_full_clinical: false }} />); expect(screen.getByRole('tab', { name: /vitals/i })).toBeInTheDocument(); expect(screen.queryByRole('tab', { name: /fluid balance/i })).not.toBeInTheDocument(); expect(useFluidBalanceTrends.mock.calls.at(-1)[2].enabled).toBe(false);
 });

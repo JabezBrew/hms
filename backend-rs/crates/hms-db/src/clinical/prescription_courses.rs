@@ -77,6 +77,12 @@ pub struct PrescriptionAuthorization {
     pub active_profile: hms_domain::deployment::DeploymentProfile,
     pub valid_until: DateTime<Utc>,
 }
+impl std::fmt::Debug for PrescriptionAuthorization {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PrescriptionAuthorization")
+            .finish_non_exhaustive()
+    }
+}
 #[derive(Clone)]
 pub struct PrescriptionActor {
     pub facility_id: Uuid,
@@ -86,6 +92,7 @@ pub struct PrescriptionActor {
 }
 #[derive(FromRow)]
 struct DetailRow {
+    scheduled_stock_policy: Option<sqlx::types::Json<hms_domain::clinical::ScheduledStockPolicy>>,
     #[sqlx(flatten)]
     prescription: PrescriptionRow,
     instructions: String,
@@ -102,7 +109,7 @@ struct DetailRow {
 }
 const DETAIL_SELECT: &str = r#"SELECT p.id,p.patient_id,p.encounter_id,p.visit_id,p.discharge_case_id,p.medication_name,p.dose,p.route,p.frequency,
  p.inventory_item_id,p.start_date,p.duration_days,p.first_dose_at,p.prn_policy,p.status,p.prescribed_at,
- p.instructions,p.reason,p.updated_at,p.created_by_user_id,p.prn_safety_group_id,
+ p.scheduled_stock_policy,p.instructions,p.reason,p.updated_at,p.created_by_user_id,p.prn_safety_group_id,
  i.unit AS stock_unit,i.is_active AS stock_active,i.updated_at AS stock_updated_at,
  EXISTS(SELECT 1 FROM medication_courses c WHERE c.facility_id=p.facility_id AND c.prescription_id=p.id) AS has_generated_course,
  (SELECT jsonb_build_object('source_prescription_id',v.source_prescription_id,'relation',v.relation,'change_reason',v.change_reason,
@@ -124,6 +131,7 @@ fn detail(row: DetailRow) -> anyhow::Result<PrescriptionDetail> {
     let prescription = prescription_from_row(row.prescription)?;
     let evidence = json!([
         &prescription,
+        &row.scheduled_stock_policy,
         &row.instructions,
         &row.reason,
         row.updated_at,
@@ -135,6 +143,7 @@ fn detail(row: DetailRow) -> anyhow::Result<PrescriptionDetail> {
         row.prn_safety_group_id
     ]);
     Ok(PrescriptionDetail {
+        scheduled_stock_policy: row.scheduled_stock_policy.map(|p| p.0),
         snapshot_token: token(&evidence)?,
         prescription,
         instructions: row.instructions,
@@ -174,7 +183,7 @@ async fn detail_tx(
             .ok_or(PrescriptionCourseError::NotFound)?,
     )
 }
-async fn verify_actor(
+pub(crate) async fn verify_actor(
     tx: &mut Transaction<'_, Postgres>,
     actor: &mut PrescriptionActor,
 ) -> anyhow::Result<()> {
@@ -202,7 +211,7 @@ async fn verify_actor(
     }
     check_authorization(tx, actor).await
 }
-async fn check_authorization(
+pub(crate) async fn check_authorization(
     tx: &mut Transaction<'_, Postgres>,
     actor: &PrescriptionActor,
 ) -> anyhow::Result<()> {
@@ -290,6 +299,26 @@ pub async fn create_with_documentation(
     request_id: Option<String>,
     authorization: Option<PrescriptionAuthorization>,
 ) -> anyhow::Result<PrescriptionDetail> {
+    create_with_stock_policy(
+        pool,
+        prescription,
+        policy,
+        None,
+        documentation,
+        request_id,
+        authorization,
+    )
+    .await
+}
+pub async fn create_with_stock_policy(
+    pool: &PgPool,
+    mut prescription: NewPrescription,
+    policy: Option<PrnPolicyRequest>,
+    scheduled_policy: Option<hms_domain::clinical::ScheduledStockPolicyRequest>,
+    documentation: PrescriptionDocumentation,
+    request_id: Option<String>,
+    authorization: Option<PrescriptionAuthorization>,
+) -> anyhow::Result<PrescriptionDetail> {
     let mut actor = PrescriptionActor {
         facility_id: prescription.facility_id,
         user_id: prescription.actor_user_id,
@@ -299,7 +328,16 @@ pub async fn create_with_documentation(
     let id = prescription.id;
     let mut tx = pool.begin().await?;
     verify_actor(&mut tx, &mut actor).await?;
-    insert_prescription_in_transaction(&mut tx, prescription, policy, documentation, None).await?;
+    validate_create_care_context(&mut tx, &mut prescription).await?;
+    insert_prescription_in_transaction(
+        &mut tx,
+        prescription,
+        policy,
+        documentation,
+        None,
+        scheduled_policy,
+    )
+    .await?;
     let result = detail_tx(&mut tx, actor.facility_id, id).await?;
     audit(&mut tx, &actor, id, "prescription.created", json!({})).await?;
     check_authorization(&mut tx, &actor).await?;
@@ -445,6 +483,40 @@ async fn validate_care_context_tx(
         }
     }
     Ok(visit)
+}
+
+async fn validate_create_care_context(
+    tx: &mut Transaction<'_, Postgres>,
+    prescription: &mut NewPrescription,
+) -> anyhow::Result<()> {
+    if let Some(id) = prescription.discharge_case_id {
+        let discharge:Option<(Uuid,Option<Uuid>,Option<Uuid>)>=sqlx::query_as("SELECT admission_case_id,encounter_id,visit_id FROM discharge_cases WHERE facility_id=$1 AND id=$2 AND patient_id=$3 AND status='requested' FOR SHARE")
+            .bind(prescription.facility_id).bind(id).bind(prescription.patient_id).fetch_optional(&mut **tx).await?;
+        let discharge = discharge.ok_or(PrescriptionCourseError::InvalidContext)?;
+        // Match discharge writers' case -> admission order. Legacy null case
+        // context must not conceal the owning admission's closed care context.
+        let admission:Option<(Option<Uuid>,Option<Uuid>)>=sqlx::query_as("SELECT encounter_id,visit_id FROM admission_cases WHERE facility_id=$1 AND id=$2 AND patient_id=$3 AND status IN ('admitted','discharge_pending') FOR SHARE")
+            .bind(prescription.facility_id).bind(discharge.0).bind(prescription.patient_id).fetch_optional(&mut **tx).await?;
+        let admission = admission.ok_or(super::stock_basis::StockBasisError::AdmissionInactive)?;
+        for (selected, inherited) in [
+            (&mut prescription.encounter_id, discharge.1.or(admission.0)),
+            (&mut prescription.visit_id, discharge.2.or(admission.1)),
+        ] {
+            if selected.zip(inherited).is_some_and(|(a, b)| a != b) {
+                return Err(PrescriptionCourseError::InvalidContext.into());
+            }
+            *selected = selected.or(inherited);
+        }
+    }
+    prescription.visit_id = validate_care_context_tx(
+        tx,
+        prescription.facility_id,
+        prescription.patient_id,
+        prescription.encounter_id,
+        prescription.visit_id,
+    )
+    .await?;
+    Ok(())
 }
 
 pub async fn create_new_course(
@@ -594,6 +666,7 @@ pub async fn create_new_course(
             reason: input.reason.clone(),
         },
         safety_group,
+        input.scheduled_stock_policy.clone(),
     )
     .await?;
     let relation = codec::encode(input.relation)?;

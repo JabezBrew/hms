@@ -21,6 +21,7 @@ export function useChronicleWorkspaceActions({
   canUseStandaloneClinicalWorkflows,
   chartContextAdmissionId,
   chartContextEncounter,
+  clinicalPermissions,
   copilotPatientName,
   id,
   invalidateTimeline,
@@ -50,6 +51,7 @@ export function useChronicleWorkspaceActions({
   const [copyForwardData, setCopyForwardData] = useState(null);
   const [editNoteData, setEditNoteData] = useState(null);
   const [trendReviewTab, setTrendReviewTab] = useState('vitals');
+  const handleViewPatientHandover = useCallback(() => openChronicleWorkspace('handover'), [openChronicleWorkspace]);
 
   const refreshData = useCallback(() => {
     if (rustV2Mode) {
@@ -76,16 +78,19 @@ export function useChronicleWorkspaceActions({
   }, [canUseAiAssistant, openChronicleWorkspace]);
 
   const handleAddNote = useCallback(() => {
+    if (rustV2Mode && clinicalPermissions?.can_add_note !== true) return;
     openChronicleWorkspace('note');
-  }, [openChronicleWorkspace]);
+  }, [clinicalPermissions?.can_add_note, openChronicleWorkspace, rustV2Mode]);
 
   const handleRecordVitals = useCallback(() => {
+    if (rustV2Mode && clinicalPermissions?.can_record_vitals !== true) return;
     openChronicleWorkspace('vitals');
-  }, [openChronicleWorkspace]);
+  }, [clinicalPermissions?.can_record_vitals, openChronicleWorkspace, rustV2Mode]);
 
   const handlePrescribe = useCallback(() => {
+    if (rustV2Mode && clinicalPermissions?.can_prescribe !== true) return;
     openChronicleWorkspace('prescription');
-  }, [openChronicleWorkspace]);
+  }, [clinicalPermissions?.can_prescribe, openChronicleWorkspace, rustV2Mode]);
 
   const handleOrderLabs = useCallback(() => {
     openChronicleWorkspace('labs');
@@ -147,6 +152,7 @@ export function useChronicleWorkspaceActions({
   }, [refreshData, slideOvers]);
 
   const handleCopyNote = useCallback((copyData) => {
+    if (rustV2Mode && clinicalPermissions?.can_add_note !== true) return;
     if (!copyData.template) {
       toast.error("Cannot copy note", { description: "Template information is missing" });
       return;
@@ -162,9 +168,10 @@ export function useChronicleWorkspaceActions({
     toast.success("Note copied", {
       description: `${copyData.sectionsCopied?.length || 0} sections ready to edit`,
     });
-  }, [openChronicleWorkspace]);
+  }, [clinicalPermissions?.can_add_note, openChronicleWorkspace, rustV2Mode]);
 
   const handleEditNote = useCallback((editData) => {
+    if (rustV2Mode && clinicalPermissions?.can_add_note !== true) return;
     if (!editData.template) {
       toast.error("Cannot edit note", { description: "Template information is missing" });
       return;
@@ -177,7 +184,7 @@ export function useChronicleWorkspaceActions({
     });
     setCopyForwardData(null);
     openChronicleWorkspace('note');
-  }, [openChronicleWorkspace]);
+  }, [clinicalPermissions?.can_add_note, openChronicleWorkspace, rustV2Mode]);
 
   const closeAfterRefresh = useCallback(() => {
     refreshData();
@@ -256,6 +263,7 @@ export function useChronicleWorkspaceActions({
 
   const workspaceContext = useMemo(() => ({
     patientId: id,
+    clinicalPermissions,
     patient: patientForChronicle,
     activeEncounter,
     selectedEncounter: chartContextEncounter,
@@ -284,6 +292,7 @@ export function useChronicleWorkspaceActions({
     onDischargeCompleted: handleDischargeCompleted,
   }), [
     id,
+    clinicalPermissions,
     patientForChronicle,
     activeEncounter,
     chartContextEncounter,
@@ -325,6 +334,7 @@ export function useChronicleWorkspaceActions({
     handleStartDischarge,
     handleViewMedicationHistory,
     handleViewTreatmentSheet,
+    handleViewPatientHandover,
     handleViewTrends,
     refreshData,
     workspaceContext,

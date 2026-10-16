@@ -106,6 +106,7 @@ impl Fixture {
         hms_db::pharmacy::dispense_fulfillment(
             self.db.pool(),
             DispenseFulfillmentCommand {
+                authorization: None,
                 facility_id: self.db.facility_id(),
                 fulfillment_id: fulfillment,
                 item_id: self.item,
@@ -124,6 +125,7 @@ impl Fixture {
         hms_db::ward::record_medication_outcome(
             self.db.pool(),
             RecordMedicationOutcome {
+                authorization: None,
                 facility_id: self.db.facility_id(),
                 medication_id: id,
                 actor_user_id: self.db.owner_user_id(),
@@ -463,6 +465,7 @@ async fn configured_prn_generator_retry_and_course_snapshot_are_safe() {
     let generated = hms_db::pharmacy::generate_mar_for_prescription(
         f.db.pool(),
         hms_db::pharmacy::GenerateMarCommand {
+            authorization: None,
             facility_id: f.db.facility_id(),
             prescription_id: f.source,
             admission_case_id: f.admission,
@@ -534,7 +537,10 @@ async fn prn_same_key_concurrency_replays_one_record_and_overflow_never_changes_
     }
     assert_eq!(created, 1);
     let error = f.supply(fulfillment.unwrap(), i64::MAX).await.unwrap_err();
-    assert_eq!(error.to_string(), "prn_stock_quantity_overflow");
+    assert_eq!(
+        error.downcast_ref::<hms_db::clinical::stock_basis::StockBasisError>(),
+        Some(&hms_db::clinical::stock_basis::StockBasisError::QuantityOverflow)
+    );
     assert_eq!(f.stock().await, 100);
 }
 
@@ -744,6 +750,7 @@ async fn reviewed_prn_successor(
     .unwrap()
     .unwrap();
     NewPrescriptionCourseRequest {
+        scheduled_stock_policy: None,
         client_request_id: Uuid::new_v4(),
         expected_snapshot_token: detail.snapshot_token,
         relation,
@@ -941,6 +948,10 @@ async fn prn_group_cannot_be_reset_or_cross_patient_and_mixed_successor_is_expli
     let mut mixed = reviewed_prn_successor(&f, PrescriptionCourseRelation::Replacement).await;
     mixed.frequency = "daily".into();
     mixed.prn_policy = None;
+    mixed.scheduled_stock_policy = Some(hms_domain::clinical::ScheduledStockPolicyRequest {
+        expected_stock_unit: mixed.expected_stock_unit.clone().unwrap(),
+        stock_units_per_dose: 2,
+    });
     assert_eq!(
         hms_db::clinical::prescription_courses::create_new_course(
             f.db.pool(),
@@ -1005,6 +1016,7 @@ async fn prn_ancestor_admin_and_successor_request_serialize_on_group_history() {
     let pending = tokio::spawn(async move { hms_db::ward::request_prn_dose(&pool, next).await });
     let pool = f.db.pool().clone();
     let outcome = RecordMedicationOutcome {
+        authorization: None,
         facility_id: f.db.facility_id(),
         medication_id: dose.medication_administration_id,
         actor_user_id: f.db.owner_user_id(),
@@ -1290,4 +1302,19 @@ async fn imported_trimmed_prn_keeps_explicit_policy_stock_multiplier_and_actual_
     .unwrap();
     assert_eq!(state, ("scheduled".into(), true, None));
     assert_eq!(f.stock().await, 96);
+}
+
+#[tokio::test]
+async fn configured_historical_prn_supply_remains_actionable_without_new_scheduled_evidence() {
+    let f = Fixture::new(Some(policy())).await;
+    let dose = hms_db::ward::request_prn_dose(f.db.pool(), f.request(Uuid::new_v4()))
+        .await
+        .unwrap();
+    f.supply(dose.pharmacy_fulfillment_id, 1).await.unwrap();
+    // Reproduce a configured, already supplied pre-016 PRN row. Its policy was
+    // explicitly captured before this migration; no scheduled policy is invented.
+    sqlx::query("UPDATE medication_administrations SET dispensed_stock_quantity=NULL,dispensed_stock_unit=NULL WHERE id=$1").bind(dose.medication_administration_id).execute(f.db.pool()).await.unwrap();
+    f.outcome(dose.medication_administration_id, Outcome::Administered)
+        .await
+        .unwrap();
 }

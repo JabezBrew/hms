@@ -21,7 +21,8 @@ query details.
 | `bed_management.rs` | bed status, assignment, layout, transfer, and occupancy queries. |
 | `admission_cases.rs` | admission-case state, active admissions, and admission workflow queries. |
 | `discharge_cases.rs` | discharge planning and discharge completion persistence. |
-| `handoff.rs` | shift handoff records and acknowledgement state. |
+| `handoff.rs` | ward shift headers and immutable sender finalization. |
+| `patient_handover.rs` | protected patient narrative roots, revisions, exact commands and scoped recipient pages. |
 | `mar.rs` | medication administration record persistence. |
 | `nursing_task_board.rs` | nursing tasks and board projections. |
 | `observations_monitoring.rs` | observation/vital monitoring projections. |
@@ -71,3 +72,9 @@ before deterministic timestamp/ID cursors. Patient-bearing source joins require
 same-facility patient/admission consistency. Priority alert status/severity is a
 SQL predicate, never a filter of a truncated facility preview. One repository
 query supplies each page; migration014 adds matching scoped cursor indexes.
+
+Patient narratives use migration015 separate from shift headers. Root→actor/session
+→ward-assignment locks fence protected reads and revisions; all API reads carry a
+DB-clock deadline. Root/revision/hashed command/PHI-free audit persist atomically.
+Selected-patient and recipient pages use one shaped data query plus a constant
+proof cost. See `docs/v2/2026-10-16-patient-handover-scope.md`.

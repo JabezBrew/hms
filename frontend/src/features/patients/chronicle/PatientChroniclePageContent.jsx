@@ -1,13 +1,16 @@
+import { ChronicleClinicalPermissionsContext, chronicleClinicalPermissions } from './clinicalPermissions';
 import ClipboardList from 'lucide-react/dist/esm/icons/clipboard-list.js';
-import { lazy, Suspense, useCallback, useLayoutEffect, useState } from 'react';
+import { lazy, Suspense, useCallback, useLayoutEffect, useMemo, useState } from 'react';
 
 import PatientIdentityHero from '@/components/chronicle/PatientIdentityHero';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
 import { useAfterInitialPaint } from '@/shared/hooks/useAfterInitialPaint';
 import { ChronicleEmergencyAccess } from './ChronicleEmergencyAccess';
 import { PrescriptionPatientProvider } from '@/features/pharmacy/prescribing/PrescriptionPatientProvider';
+import { userHasCapability } from '@/shared/lib/access';
 
 const ClinicalSummarySidebar = lazy(() => import('@/components/chronicle/ClinicalSummarySidebar'));
 const ChronicleTimelinePanel = lazy(() => import('@/features/patients/chronicle/ChronicleTimelinePanel'));
@@ -121,6 +124,7 @@ function ChronicleSidebar({
   activeEncounter,
   allergies,
   contentHeight,
+  canViewNursingClinical,
   isAnySlideOverOpen,
   labResults,
   medications,
@@ -161,6 +165,7 @@ function ChronicleSidebar({
           encounter={activeEncounter}
           onViewVitalsTrends={onViewVitalsTrends}
           onViewFluidTrends={onViewFluidTrends}
+          showFluidBalance={!rustV2Mode || canViewNursingClinical}
           style={sidebarBoundaryStyle}
         />
       </Suspense>
@@ -265,6 +270,7 @@ export function PatientChroniclePageContent({
     handleStartDischarge,
     handleViewMedicationHistory,
     handleViewTreatmentSheet,
+    handleViewPatientHandover,
     handleViewTrends,
     refreshData,
     workspaceContext,
@@ -289,6 +295,9 @@ export function PatientChroniclePageContent({
     toggleEncounter,
     toggleNoteExpanded,
   } = timelineExpansion;
+  const clinicalPermissions = useMemo(() => chronicleClinicalPermissions(chronicleContext, rustV2Mode), [chronicleContext, rustV2Mode]);
+  const fullClinical = clinicalPermissions.can_view_full_clinical;
+  const nursing = !rustV2Mode || (userHasCapability(user, 'nursing.task.manage') && user?.accessContext?.features?.includes('nursing'));
   const contentMeasure = useMeasuredElementHeight();
   const showChronicleBody = useAfterInitialPaint({
     minimumDelayMs: 200,
@@ -296,31 +305,33 @@ export function PatientChroniclePageContent({
   });
 
   return (
-    <>
+    <ChronicleClinicalPermissionsContext.Provider value={clinicalPermissions}>
       {pageMeta}
       <div className="min-h-screen max-w-full overflow-x-clip bg-background">
         {emergencyAccess && <div className="px-4 pt-4 sm:px-6"><ChronicleEmergencyAccess {...emergencyAccess} /></div>}
+        {rustV2Mode && !fullClinical && <Alert className="mx-4 mt-4 w-auto sm:mx-6"><AlertDescription>Summary access: medication, vital and laboratory summaries remain available. Full clinical access is required for clinical notes, detailed records and clinical changes.</AlertDescription></Alert>}
         <div data-perf-ready="patient-chronicle">
           <PatientIdentityHero
             patient={patientForChronicle}
             allergies={allergies}
             onActionIntent={rustV2Mode ? undefined : prefetchActionResources}
             onAskChronicle={canUseAiAssistant ? handleAskChronicle : undefined}
-            onAddNote={handleAddNote}
-            onRecordVitals={handleRecordVitals}
-            onPrescribe={handlePrescribe}
-            onOrderLabs={handleOrderLabs}
-            onRequestConsult={handleRequestConsult}
-            onShareRecord={handleShareRecord}
-            onReceiveRecord={handleReceiveRecord}
+            onAddNote={clinicalPermissions.can_add_note ? handleAddNote : undefined}
+            onRecordVitals={clinicalPermissions.can_record_vitals ? handleRecordVitals : undefined}
+            onPrescribe={clinicalPermissions.can_prescribe ? handlePrescribe : undefined}
+            onOrderLabs={!rustV2Mode || (fullClinical && chronicleContext?.permissions?.can_order_labs === true) ? handleOrderLabs : undefined}
+            onRequestConsult={!rustV2Mode ? handleRequestConsult : undefined}
+            onShareRecord={fullClinical ? handleShareRecord : undefined}
+            onReceiveRecord={fullClinical ? handleReceiveRecord : undefined}
             onScheduleFollowUp={handleScheduleFollowUp}
-            onViewTreatmentSheet={handleViewTreatmentSheet}
-            onViewMedicationHistory={handleViewMedicationHistory}
-            onRecordFluids={handleRecordFluids}
-            onStartWardRound={handleStartWardRound}
+            onViewTreatmentSheet={fullClinical && nursing ? handleViewTreatmentSheet : undefined}
+            onViewPatientHandover={rustV2Mode && fullClinical && userHasCapability(user, 'nursing.task.manage') && user?.accessContext?.features?.includes('nursing') ? handleViewPatientHandover : undefined}
+            onViewMedicationHistory={fullClinical && nursing ? handleViewMedicationHistory : undefined}
+            onRecordFluids={fullClinical && nursing ? handleRecordFluids : undefined}
+            onStartWardRound={fullClinical ? handleStartWardRound : undefined}
             onStartDischarge={canUseStandaloneClinicalWorkflows ? handleStartDischarge : undefined}
             onManageInsurance={handleManageInsurance}
-            onPrintSummary={handlePrintSummary}
+            onPrintSummary={fullClinical ? handlePrintSummary : undefined}
             insurance={patientInsurance}
             activeAdmission={chronicleActiveAdmission}
           />
@@ -348,6 +359,7 @@ export function PatientChroniclePageContent({
                 activeEncounter={activeEncounter}
                 allergies={allergies}
                 contentHeight={contentMeasure.height}
+                canViewNursingClinical={fullClinical && nursing}
                 isAnySlideOverOpen={isAnySlideOverOpen}
                 labResults={labResults}
                 medications={medications}
@@ -356,12 +368,12 @@ export function PatientChroniclePageContent({
                 problems={problemSummaries}
                 recentVitals={recentVitals}
                 rustV2Mode={rustV2Mode}
-                onViewVitalsTrends={() => handleViewTrends('vitals')}
-                onViewFluidTrends={() => handleViewTrends('fluids')}
+                onViewVitalsTrends={nursing ? () => handleViewTrends('vitals') : undefined}
+                onViewFluidTrends={fullClinical && nursing ? () => handleViewTrends('fluids') : undefined}
               />
               <div className="min-w-0 flex-1 p-4 pb-[calc(5rem+env(safe-area-inset-bottom))] transition-all duration-300 sm:p-6">
                 <div ref={contentMeasure.ref}>
-                  {isWardRoundMode ? (
+                  {isWardRoundMode && fullClinical ? (
                     <WardRoundChronicleMode
                       activeEncounter={activeEncounter}
                       admission={chronicleActiveAdmission}
@@ -399,20 +411,20 @@ export function PatientChroniclePageContent({
                         visitScopeOptions={visitScopeOptions}
                         onClearSearch={handleClearTimelineSearch}
                         onCollapseAll={collapseAll}
-                        onCopyNote={handleCopyNote}
-                        onEditNote={handleEditNote}
+                        onCopyNote={clinicalPermissions.can_add_note ? handleCopyNote : undefined}
+                        onEditNote={clinicalPermissions.can_add_note ? handleEditNote : undefined}
                         onExpandAll={expandAll}
                         onFetchNextPage={fetchNextPage}
                         onFilterChange={setActiveFilter}
                         onNoteUpdated={refetchTimeline}
-                        onRecordFluids={handleRecordFluids}
+                        onRecordFluids={fullClinical && nursing ? handleRecordFluids : undefined}
                         onRefresh={refetchTimeline}
                         onSearchInputChange={setSearchInput}
                         onToggleEncounter={toggleEncounter}
                         onToggleNoteExpanded={toggleNoteExpanded}
                         onViewAllHistory={handleViewAllHistory}
                         onViewCurrentVisit={handleViewCurrentVisit}
-                        onViewMedicationHistory={handleViewMedicationHistory}
+                        onViewMedicationHistory={fullClinical && nursing ? handleViewMedicationHistory : undefined}
                         onVisitScopeChange={handleVisitScopeChange}
                       /></PrescriptionPatientProvider>
                     </Suspense>
@@ -432,6 +444,6 @@ export function PatientChroniclePageContent({
           <ChronicleDeferredBodyPlaceholder />
         )}
       </div>
-    </>
+    </ChronicleClinicalPermissionsContext.Provider>
   );
 }

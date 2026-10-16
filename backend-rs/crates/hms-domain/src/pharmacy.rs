@@ -39,6 +39,7 @@ pub struct PharmacyDispensingLocation {
 
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
 pub struct PharmacyQueueItem {
+    pub scheduled_stock_policy: Option<crate::clinical::ScheduledStockPolicy>,
     pub prn_policy: Option<crate::clinical::PrnPolicy>,
     pub id: Uuid,
     pub patient_id: Uuid,
@@ -75,6 +76,8 @@ pub struct DispensePharmacyFulfillmentRequest {
 
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
 pub struct PharmacyFulfillmentDispenseResult {
+    pub issued_stock_quantity: i64,
+    pub issued_stock_unit: String,
     pub fulfillment: PharmacyQueueItem,
     pub dispensed_dose_count: i64,
     pub remaining_dose_count: i64,

@@ -8,7 +8,7 @@ import { Label } from '@/components/ui/label';
 import { useDebounce } from '@/hooks/use-debounce';
 import { getMedicationCatalog, medicationCatalogKeys } from '../api/medicationCatalog';
 
-function CatalogResults({ onSelect, required }) {
+function CatalogResults({ onSelect, required, allowControlled }) {
   const inputId = useId();
   // Cache keys contain an opaque request nonce, never the entered clinical text.
   const [search, setSearch] = useState(() => ({ text: '', nonce: crypto.randomUUID() }));
@@ -53,11 +53,11 @@ function CatalogResults({ onSelect, required }) {
         <ul className="flex max-h-64 flex-col gap-2 overflow-y-auto" aria-label="Facility medication choices">
           {items.map((item) => (
             <li key={item.id}>
-              <Button type="button" variant="outline" className="h-auto w-full justify-start whitespace-normal text-left" onClick={() => onSelect(item)}>
+              <Button type="button" variant="outline" className="h-auto w-full justify-start whitespace-normal text-left" disabled={!allowControlled && item.controlled} onClick={() => onSelect(item)}>
                 <span className="flex min-w-0 flex-col gap-1">
                   <span>{item.name}</span>
                   <span className="text-xs text-muted-foreground">{item.code} · {item.unit}</span>
-                  {item.controlled ? <Badge variant="secondary">Controlled medication</Badge> : null}
+                  {item.controlled ? <><Badge variant="secondary">Controlled medication</Badge>{!allowControlled && <span className="text-xs text-muted-foreground">Controlled stock linking is unavailable here.</span>}</> : null}
                 </span>
               </Button>
             </li>
@@ -73,7 +73,7 @@ function CatalogResults({ onSelect, required }) {
   );
 }
 
-export function MedicationStockPicker({ itemId, itemName, onSelect, required = false }) {
+export function MedicationStockPicker({ itemId, itemName, onSelect, required = false, allowControlled = true }) {
   const [expanded, setExpanded] = useState(false);
   const regionId = useId();
   return (
@@ -92,7 +92,7 @@ export function MedicationStockPicker({ itemId, itemName, onSelect, required = f
         </div>
       ) : null}
       <div id={regionId}>
-        {expanded ? <CatalogResults required={required} onSelect={(item) => { onSelect(item); setExpanded(false); }} /> : null}
+        {expanded ? <CatalogResults required={required} allowControlled={allowControlled} onSelect={(item) => { onSelect(item); setExpanded(false); }} /> : null}
       </div>
     </section>
   );

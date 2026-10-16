@@ -1,0 +1,5 @@
+import { HANDOVER_FIELDS } from './model';
+
+export function HandoverEvidence({ revision, title = 'Recorded handover' }) {
+  return <section aria-label={title} className="grid gap-4 rounded-xl border bg-muted/20 p-4"><h3 className="font-medium">{title}</h3><p className="text-sm">{revision.shift_date} · {revision.shift_type} shift · Revision {revision.revision} · {revision.kind}</p><p className="text-sm">Recorded by {revision.recorded_by_display_name} · {new Date(revision.recorded_at).toLocaleString()}</p><p className="text-sm">Intended recipient: {revision.intended_recipient_display_name || 'Not recorded'}. This does not confirm delivery or acknowledgment.</p><dl className="grid gap-4 text-sm">{HANDOVER_FIELDS.map(([key, label]) => <div key={key}><dt className="font-medium">{label}</dt><dd className="mt-1 whitespace-pre-wrap break-words text-muted-foreground">{revision.narrative[key] || 'Not recorded'}</dd></div>)}</dl>{revision.reason && <p className="whitespace-pre-wrap break-words text-sm">Reason: {revision.reason}</p>}</section>;
+}

@@ -131,6 +131,12 @@ async fn stock_batch_lists_can_filter_expired_and_expiring_ranges() {
     let expired = hms_db::inventory::create_batch(
         &pool,
         NewStockBatch {
+            authorization: None,
+            expected_unit: sqlx::query_scalar("SELECT unit FROM inventory_items WHERE id=$1")
+                .bind(item_id)
+                .fetch_one(&pool)
+                .await
+                .unwrap(),
             id: Uuid::new_v4(),
             facility_id,
             item_id,
@@ -146,6 +152,12 @@ async fn stock_batch_lists_can_filter_expired_and_expiring_ranges() {
     let expiring = hms_db::inventory::create_batch(
         &pool,
         NewStockBatch {
+            authorization: None,
+            expected_unit: sqlx::query_scalar("SELECT unit FROM inventory_items WHERE id=$1")
+                .bind(item_id)
+                .fetch_one(&pool)
+                .await
+                .unwrap(),
             id: Uuid::new_v4(),
             facility_id,
             item_id,
@@ -161,6 +173,12 @@ async fn stock_batch_lists_can_filter_expired_and_expiring_ranges() {
     let later = hms_db::inventory::create_batch(
         &pool,
         NewStockBatch {
+            authorization: None,
+            expected_unit: sqlx::query_scalar("SELECT unit FROM inventory_items WHERE id=$1")
+                .bind(item_id)
+                .fetch_one(&pool)
+                .await
+                .unwrap(),
             id: Uuid::new_v4(),
             facility_id,
             item_id,
@@ -365,6 +383,12 @@ async fn inventory_dashboard_summary_uses_facility_scoped_aggregates() {
     hms_db::inventory::create_batch(
         &pool,
         NewStockBatch {
+            authorization: None,
+            expected_unit: sqlx::query_scalar("SELECT unit FROM inventory_items WHERE id=$1")
+                .bind(item_id)
+                .fetch_one(&pool)
+                .await
+                .unwrap(),
             id: Uuid::new_v4(),
             facility_id,
             item_id,
@@ -380,6 +404,12 @@ async fn inventory_dashboard_summary_uses_facility_scoped_aggregates() {
     let empty_batch = hms_db::inventory::create_batch(
         &pool,
         NewStockBatch {
+            authorization: None,
+            expected_unit: sqlx::query_scalar("SELECT unit FROM inventory_items WHERE id=$1")
+                .bind(item_id)
+                .fetch_one(&pool)
+                .await
+                .unwrap(),
             id: Uuid::new_v4(),
             facility_id,
             item_id,
@@ -605,6 +635,7 @@ async fn effective_dated_catalog_edit_records_version_updates_item_and_audits() 
     let version = hms_db::inventory::apply_catalog_edit(
         pool,
         CatalogEditCommand {
+            authorization: None,
             id: Uuid::new_v4(),
             facility_id,
             item_id,
@@ -652,7 +683,7 @@ async fn concurrent_catalog_corrections_keep_a_single_open_version() {
     let db = provisioned_inventory_db().await;
     let pool = db.pool();
     let item_id: Uuid = sqlx::query_scalar(
-        "SELECT id FROM inventory_items WHERE facility_id = $1 ORDER BY code LIMIT 1",
+        "SELECT id FROM inventory_items WHERE facility_id = $1 AND NOT controlled AND item_type='medication' ORDER BY code LIMIT 1",
     )
     .bind(db.facility_id())
     .fetch_one(pool)
@@ -660,6 +691,7 @@ async fn concurrent_catalog_corrections_keep_a_single_open_version() {
     .unwrap();
     let today = Utc::now().date_naive();
     let command = |days: i64| CatalogEditCommand {
+        authorization: None,
         id: Uuid::new_v4(),
         facility_id: db.facility_id(),
         item_id,
@@ -725,6 +757,12 @@ async fn standing_orders_supply_dispense_and_stock_check_queue_have_explicit_sta
     hms_db::inventory::create_batch(
         pool,
         NewStockBatch {
+            authorization: None,
+            expected_unit: sqlx::query_scalar("SELECT unit FROM inventory_items WHERE id=$1")
+                .bind(item_id)
+                .fetch_one(pool)
+                .await
+                .unwrap(),
             id: Uuid::new_v4(),
             facility_id,
             item_id,

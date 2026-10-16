@@ -76,6 +76,8 @@ impl Fixture {
         create_batch(
             self.db.pool(),
             NewStockBatch {
+                authorization: None,
+                expected_unit: self.unit.clone(),
                 id: Uuid::new_v4(),
                 facility_id: self.db.facility_id(),
                 item_id: self.item,

@@ -29,7 +29,7 @@ Scope: pharmacy dispensing and Chronicle prescribing UI.
 ## Dispensing location choice
 
 Rust queue confirmation shows the actual linked stock name, code and current
-unit, alongside the immutable PRN stock basis. Internal item/location identifiers
+unit, alongside the immutable scheduled or PRN stock basis. Internal item/location identifiers
 remain inside API payloads. Staff explicitly choose a named active location from
 the bounded, searchable `/api/v2/pharmacy/dispensing-locations` projection under
 pharmacy permission; inventory access is not required. A previously recorded
@@ -47,3 +47,10 @@ instruction/reason editing, and explicitly reviewed renewal/replacement courses.
 See [prescribing/README.md](prescribing/README.md) for eligibility, source continuity,
 PRN linked-dose limits and uncertain-save handling. These actions do not schedule
 nursing doses or move stock automatically.
+
+Supply is entered in doses and displays the separately calculated physical stock
+quantity. Success requires the server's exact issued quantity and captured unit,
+matching the saved policy and requested dose count. Missing/unsafe/mismatched
+physical evidence stays uncertain and blocks another issue, including after the
+shared uncertainty barrier remounts. Legacy scheduled courses without reviewed
+stock units cannot be supplied; earlier stock quantities are never fabricated.
