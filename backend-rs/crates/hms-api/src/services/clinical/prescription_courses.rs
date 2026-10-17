@@ -10,6 +10,7 @@ pub(crate) fn authorization(
     deadline: DateTime<Utc>,
 ) -> repository::PrescriptionAuthorization {
     repository::PrescriptionAuthorization {
+        resolved_network_policy_version: ctx.resolved_network_policy_version,
         session_id: ctx.session_id,
         session_version: ctx.session_version,
         permission_version: ctx.permission_version,
@@ -31,6 +32,17 @@ fn actor(
         request_id: Some(ctx.request_id.clone()),
         authorization: deadline.map(|at| authorization(ctx, at)),
     }
+}
+pub(super) fn read_actor(
+    ctx: &hms_access::RequestContext,
+) -> Result<repository::PrescriptionActor, ApiError> {
+    let deadline = ctx.authorization_deadline.ok_or_else(|| {
+        ApiError::forbidden(
+            "prescription_authorization_expired",
+            "Current prescribing read authority is required.",
+        )
+    })?;
+    Ok(actor(ctx, Some(deadline)))
 }
 
 pub(super) fn require_full_clinical_detail(
@@ -56,7 +68,7 @@ impl ClinicalService {
         require_clinical_write_access(ctx, self.facility_id())?;
         require_full_clinical_detail(ctx)?;
         let _source = load_prescription_for_access(&self.state, ctx, id).await?;
-        let result = repository::update_documentation(
+        let result = repository::update_documentation_authorized(
             self.pool(),
             actor(ctx, Some(authorization_deadline)),
             id,
@@ -77,7 +89,7 @@ impl ClinicalService {
         require_clinical_write_access(ctx, self.facility_id())?;
         require_full_clinical_detail(ctx)?;
         let _source = load_prescription_for_access(&self.state, ctx, id).await?;
-        let result = repository::create_new_course(
+        let result = repository::create_new_course_authorized(
             self.pool(),
             actor(ctx, Some(authorization_deadline)),
             id,
@@ -101,15 +113,20 @@ impl ClinicalService {
         )?;
         require_full_clinical_detail(ctx)?;
         let _source = load_prescription_for_access(&self.state, ctx, id).await?;
-        let result = repository::get_documentation_receipt(self.pool(), &actor(ctx, None), id, key)
-            .await
-            .map_err(write_error)?
-            .ok_or_else(|| {
-                ApiError::not_found(
-                    "prescription_receipt_not_found",
-                    "A confirmed prescription action was not found for this account and reference.",
-                )
-            })?;
+        let result = repository::get_documentation_receipt_authorized(
+            self.pool(),
+            read_actor(ctx)?,
+            id,
+            key,
+        )
+        .await
+        .map_err(write_error)?
+        .ok_or_else(|| {
+            ApiError::not_found(
+                "prescription_receipt_not_found",
+                "A confirmed prescription action was not found for this account and reference.",
+            )
+        })?;
         Ok(object(result))
     }
     pub async fn get_prescription_course_receipt(
@@ -125,19 +142,26 @@ impl ClinicalService {
         )?;
         require_full_clinical_detail(ctx)?;
         let _source = load_prescription_for_access(&self.state, ctx, id).await?;
-        let result = repository::get_new_course_receipt(self.pool(), &actor(ctx, None), id, key)
-            .await
-            .map_err(write_error)?
-            .ok_or_else(|| {
-                ApiError::not_found(
+        let result =
+            repository::get_new_course_receipt_authorized(self.pool(), read_actor(ctx)?, id, key)
+                .await
+                .map_err(write_error)?
+                .ok_or_else(|| {
+                    ApiError::not_found(
                     "prescription_receipt_not_found",
                     "A confirmed prescription action was not found for this account and reference.",
                 )
-            })?;
+                })?;
         Ok(object(result))
     }
 }
 pub(crate) fn write_error(error: anyhow::Error) -> ApiError {
+    if let Some(error) = ApiError::network_publication(&error) {
+        return error;
+    }
+    if error.is::<hms_db::clinical::medication_access::MedicationAccessError>() {
+        return super::medication_access::error(error, false);
+    }
     if let Some(value) = error.downcast_ref::<hms_db::clinical::stock_basis::StockBasisError>() {
         return if *value == hms_db::clinical::stock_basis::StockBasisError::InvalidPolicy {
             ApiError::bad_request(value.code(), value.message())

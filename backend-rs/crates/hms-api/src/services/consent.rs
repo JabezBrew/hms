@@ -89,15 +89,12 @@ impl ConsentService {
         )
         .await
         .map_err(|error| {
-            if error
-                .downcast_ref::<hms_db::auth::assurance::FactorError>()
-                .is_some()
-            {
+            if crate::services::auth_factor::is_authority_error(&error) {
                 return crate::services::auth_factor::error(error);
             }
             ApiError::conflict(
-                "consent_create_failed",
-                "Consent grant could not be created.",
+                "consent_create_write_unconfirmed",
+                "Consent grant could not be confirmed. Review existing grants before trying again.",
             )
         })?;
 
@@ -128,15 +125,12 @@ impl ConsentService {
         )
         .await
         .map_err(|error| {
-            if error
-                .downcast_ref::<hms_db::auth::assurance::FactorError>()
-                .is_some()
-            {
+            if crate::services::auth_factor::is_authority_error(&error) {
                 return crate::services::auth_factor::error(error);
             }
             ApiError::conflict(
-                "consent_revoke_failed",
-                "Consent grant could not be revoked.",
+                "consent_revoke_write_unconfirmed",
+                "Consent revocation could not be confirmed. Review its saved status before trying again.",
             )
         })?
         .ok_or_else(|| ApiError::not_found("consent_not_found", "Consent grant was not found."))?;

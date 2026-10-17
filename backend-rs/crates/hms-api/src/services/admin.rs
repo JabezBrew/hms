@@ -31,6 +31,28 @@ const MAX_NAME_LEN: usize = 160;
 const MAX_TEXT_LEN: usize = 240;
 const MAX_EMAIL_LEN: usize = 254;
 
+fn privileged_write_error(
+    error: anyhow::Error,
+    definite_code: &'static str,
+    definite_message: &'static str,
+    unconfirmed_code: &'static str,
+) -> ApiError {
+    if super::auth_factor::is_authority_error(&error) {
+        return super::auth_factor::error(error);
+    }
+    let unique_conflict = error
+        .downcast_ref::<sqlx::Error>()
+        .and_then(sqlx::Error::as_database_error)
+        .is_some_and(|database| database.is_unique_violation());
+    if error.is::<hms_db::admin::AdminCommandConflict>() || unique_conflict {
+        return ApiError::conflict(definite_code, definite_message);
+    }
+    ApiError::conflict(
+        unconfirmed_code,
+        "The administrative change could not be confirmed. Refresh its saved status before submitting another change.",
+    )
+}
+
 #[derive(Clone)]
 pub struct AdminService {
     state: AppState,
@@ -301,15 +323,11 @@ impl AdminService {
         )
         .await
         .map_err(|error| {
-            if error
-                .downcast_ref::<hms_db::auth::assurance::FactorError>()
-                .is_some()
-            {
-                return super::auth_factor::error(error);
-            }
-            ApiError::conflict(
+            privileged_write_error(
+                error,
                 "position_template_create_failed",
                 "Position template could not be saved.",
+                "position_template_create_write_unconfirmed",
             )
         })?;
         Ok(object(template))
@@ -365,13 +383,12 @@ impl AdminService {
         )
         .await
         .map_err(|error| {
-            if error
-                .downcast_ref::<hms_db::auth::assurance::FactorError>()
-                .is_some()
-            {
-                return super::auth_factor::error(error);
-            }
-            ApiError::conflict("position_create_failed", "Position could not be saved.")
+            privileged_write_error(
+                error,
+                "position_create_failed",
+                "Position could not be saved.",
+                "position_create_write_unconfirmed",
+            )
         })?;
         Ok(object(position))
     }
@@ -448,15 +465,11 @@ impl AdminService {
         )
         .await
         .map_err(|error| {
-            if error
-                .downcast_ref::<hms_db::auth::assurance::FactorError>()
-                .is_some()
-            {
-                return super::auth_factor::error(error);
-            }
-            ApiError::conflict(
+            privileged_write_error(
+                error,
                 "authority_appointment_create_failed",
                 "Authority appointment could not be saved.",
+                "authority_appointment_create_write_unconfirmed",
             )
         })?;
         self.state
@@ -526,15 +539,11 @@ impl AdminService {
         )
         .await
         .map_err(|error| {
-            if error
-                .downcast_ref::<hms_db::auth::assurance::FactorError>()
-                .is_some()
-            {
-                return super::auth_factor::error(error);
-            }
-            ApiError::conflict(
+            privileged_write_error(
+                error,
                 "permission_assignment_create_failed",
                 "Permission assignment could not be saved.",
+                "permission_assignment_create_write_unconfirmed",
             )
         })?;
         self.state
@@ -589,15 +598,11 @@ impl AdminService {
         )
         .await
         .map_err(|error| {
-            if error
-                .downcast_ref::<hms_db::auth::assurance::FactorError>()
-                .is_some()
-            {
-                return super::auth_factor::error(error);
-            }
-            ApiError::conflict(
+            privileged_write_error(
+                error,
                 "feature_entitlement_update_failed",
                 "Feature entitlement could not be updated.",
+                "feature_entitlement_update_write_unconfirmed",
             )
         })?
         .ok_or_else(|| ApiError::not_found("feature_not_found", "Feature was not found."))?;
@@ -627,15 +632,11 @@ impl AdminService {
         )
         .await
         .map_err(|error| {
-            if error
-                .downcast_ref::<hms_db::auth::assurance::FactorError>()
-                .is_some()
-            {
-                return super::auth_factor::error(error);
-            }
-            ApiError::conflict(
+            privileged_write_error(
+                error,
                 "feature_entitlement_delete_failed",
                 "Feature entitlement override could not be removed.",
+                "feature_entitlement_delete_write_unconfirmed",
             )
         })?
         .ok_or_else(|| ApiError::not_found("feature_not_found", "Feature was not found."))?;
@@ -763,13 +764,12 @@ impl AdminService {
         )
         .await
         .map_err(|error| {
-            if error
-                .downcast_ref::<hms_db::auth::assurance::FactorError>()
-                .is_some()
-            {
-                return super::auth_factor::error(error);
-            }
-            ApiError::conflict("staff_create_failed", "Staff account could not be saved.")
+            privileged_write_error(
+                error,
+                "staff_create_failed",
+                "Staff account could not be saved.",
+                "staff_create_write_unconfirmed",
+            )
         })?;
         if let Err(error) = self
             .deliver_staff_setup_token(
@@ -780,7 +780,7 @@ impl AdminService {
             )
             .await
         {
-            let _ = hms_db::admin::remove_failed_staff_account_setup(
+            let removed = hms_db::admin::remove_failed_staff_account_setup(
                 self.pool(),
                 self.facility_id(),
                 staff.id,
@@ -789,6 +789,12 @@ impl AdminService {
                 Some(ctx.request_id.clone()),
             )
             .await;
+            if !matches!(removed, Ok(true)) {
+                return Err(ApiError::conflict(
+                    "staff_create_write_unconfirmed",
+                    "The account outcome could not be confirmed after setup delivery failed. Refresh the saved staff account before submitting another change.",
+                ));
+            }
             return Err(error);
         }
         Ok(object(staff))
@@ -857,15 +863,11 @@ impl AdminService {
         )
         .await
         .map_err(|error| {
-            if error
-                .downcast_ref::<hms_db::auth::assurance::FactorError>()
-                .is_some()
-            {
-                return super::auth_factor::error(error);
-            }
-            ApiError::conflict(
+            privileged_write_error(
+                error,
                 "staff_reset_failed",
                 "Staff password reset could not be forced.",
+                "staff_reset_write_unconfirmed",
             )
         })?
         .ok_or_else(|| ApiError::not_found("staff_not_found", "Staff account was not found."))?;
@@ -898,15 +900,11 @@ impl AdminService {
         )
         .await
         .map_err(|error| {
-            if error
-                .downcast_ref::<hms_db::auth::assurance::FactorError>()
-                .is_some()
-            {
-                return super::auth_factor::error(error);
-            }
-            ApiError::conflict(
+            privileged_write_error(
+                error,
                 "staff_reset_failed",
                 "Staff password reset could not be forced.",
+                "staff_reset_write_unconfirmed",
             )
         })?
         .ok_or_else(|| {
@@ -936,15 +934,11 @@ impl AdminService {
         )
         .await
         .map_err(|error| {
-            if error
-                .downcast_ref::<hms_db::auth::assurance::FactorError>()
-                .is_some()
-            {
-                return super::auth_factor::error(error);
-            }
-            ApiError::conflict(
+            privileged_write_error(
+                error,
                 "staff_deactivate_failed",
                 "Staff account could not be deactivated.",
+                "staff_deactivate_write_unconfirmed",
             )
         })?
         .ok_or_else(|| ApiError::not_found("staff_not_found", "Staff account was not found."))?;
@@ -969,15 +963,11 @@ impl AdminService {
         )
         .await
         .map_err(|error| {
-            if error
-                .downcast_ref::<hms_db::auth::assurance::FactorError>()
-                .is_some()
-            {
-                return super::auth_factor::error(error);
-            }
-            ApiError::conflict(
+            privileged_write_error(
+                error,
                 "staff_reactivate_failed",
                 "Staff account could not be reactivated.",
+                "staff_reactivate_write_unconfirmed",
             )
         })?
         .ok_or_else(|| ApiError::not_found("staff_not_found", "Staff account was not found."))?;
@@ -1003,7 +993,13 @@ impl AdminService {
             Some(ctx.request_id.clone()),
         )
         .await
-        .map_err(|_| {
+        .map_err(|error| {
+            if error.is::<hms_db::admin::PractitionerProfileScopeConflict>() {
+                return ApiError::conflict(
+                    "practitioner_profile_scope_conflict",
+                    "The existing practitioner profile requires a facility scope review before it can be changed.",
+                );
+            }
             ApiError::conflict(
                 "practitioner_profile_save_failed",
                 "Practitioner profile could not be saved.",
@@ -1171,13 +1167,12 @@ impl AdminService {
         )
         .await
         .map_err(|error| {
-            if error
-                .downcast_ref::<hms_db::auth::assurance::FactorError>()
-                .is_some()
-            {
-                return super::auth_factor::error(error);
-            }
-            ApiError::conflict("delegation_create_failed", "Delegation could not be saved.")
+            privileged_write_error(
+                error,
+                "delegation_create_failed",
+                "Delegation could not be saved.",
+                "delegation_create_write_unconfirmed",
+            )
         })?;
         self.state
             .invalidate_auth_cache_for_user(facility_id, delegate_user_id);

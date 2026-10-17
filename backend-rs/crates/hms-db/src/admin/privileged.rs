@@ -1,6 +1,7 @@
 //! Canonical proof ordering for privileged administration with target users.
 use super::*;
 use crate::auth::assurance::PrivilegedDeadline;
+use crate::auth::{assurance::BusinessFactorActor, WebAuthnActor};
 use sqlx::{Postgres, Transaction};
 
 /// Facility, deterministic actor/target users, exact session/key, then sources.
@@ -66,4 +67,35 @@ pub(crate) async fn finish(
         crate::auth::assurance::check_privileged_deadline_tx(tx, end).await?;
     }
     Ok(())
+}
+
+/// Business administration retains its resolved network proof after canonical
+/// sorted actor/target locking. The policy publisher uses `begin` directly and
+/// owns its distinct exclusive policy lock, avoiding a SHARE-to-UPDATE upgrade.
+pub(crate) async fn begin_business(
+    tx: &mut Transaction<'_, Postgres>,
+    proof: Option<&mut BusinessFactorActor>,
+    facility: Uuid,
+    actor_user: Uuid,
+    targets: &[Uuid],
+    permission: PermissionCode,
+    exclusive_facility: bool,
+) -> anyhow::Result<Option<PrivilegedDeadline>> {
+    let Some(actor) = proof else {
+        return Ok(None);
+    };
+    let end = begin(
+        tx,
+        Some(&mut actor.identity),
+        facility,
+        actor_user,
+        targets,
+        permission,
+        exclusive_facility,
+    )
+    .await?;
+    crate::network::require_publication_tx(tx, facility, actor.resolved_network_policy_version)
+        .await?;
+    finish(tx, end).await?;
+    Ok(end)
 }

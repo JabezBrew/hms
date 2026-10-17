@@ -274,6 +274,13 @@ pub async fn create_nursing_task_for_actor(
 ) -> anyhow::Result<NursingTaskListItem> {
     use super::nursing_access as access;
     let mut tx = pool.begin().await?;
+    crate::network::prelock_publication_users_tx(
+        &mut tx,
+        actor.facility_id,
+        actor.user_id,
+        &task.assigned_to_user_id.into_iter().collect::<Vec<_>>(),
+    )
+    .await?;
     let wards = access::verify(&mut tx, &mut actor).await?;
     access::admission(
         &mut tx,

@@ -3,6 +3,23 @@ use crate::clinical::prescription_courses::{self as clinical_access, Prescriptio
 use hms_domain::deployment::FeatureKey;
 use std::collections::HashMap;
 
+pub(super) async fn prelock_targets(
+    tx: &mut Tx<'_>,
+    actor: &WardRoundActor,
+    inputs: &[WardRoundDraftActionInput],
+) -> anyhow::Result<()> {
+    // Normalized aggregate commands contain at most 100 reviewed actions.
+    let targets = inputs
+        .iter()
+        .filter_map(|input| match input {
+            WardRoundDraftActionInput::NursingTask(task) => task.assigned_to_user_id,
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    crate::network::prelock_publication_users_tx(tx, actor.facility_id, actor.user_id, &targets)
+        .await
+}
+
 pub(super) async fn verify(tx: &mut Tx<'_>, actor: &mut WardRoundActor) -> anyhow::Result<()> {
     let mut proof = PrescriptionActor {
         facility_id: actor.facility_id,
@@ -93,6 +110,7 @@ pub(super) async fn patient(
 
 pub(super) fn nursing_actor(actor: &WardRoundActor) -> crate::ward::nursing_access::NursingActor {
     crate::ward::nursing_access::NursingActor {
+        resolved_network_policy_version: actor.authorization.resolved_network_policy_version,
         facility_id: actor.facility_id,
         user_id: actor.user_id,
         session_id: actor.authorization.session_id,

@@ -297,7 +297,7 @@ pub async fn override_discharge_blocker_authorized(
     reason: String,
     actor_user_id: Uuid,
     reauth_verified_at: DateTime<Utc>,
-    authorization: crate::auth::WebAuthnActor,
+    authorization: crate::auth::assurance::BusinessFactorActor,
 ) -> anyhow::Result<Option<DischargeCaseListItem>> {
     override_discharge_blocker_inner(
         pool,
@@ -320,7 +320,7 @@ async fn override_discharge_blocker_inner(
     reason: String,
     actor_user_id: Uuid,
     reauth_verified_at: DateTime<Utc>,
-    authorization: Option<crate::auth::WebAuthnActor>,
+    authorization: Option<crate::auth::assurance::BusinessFactorActor>,
 ) -> anyhow::Result<Option<DischargeCaseListItem>> {
     let mut transaction = pool.begin().await?;
     // Match canonical complete_discharge: case parent precedes current actor
@@ -332,7 +332,7 @@ async fn override_discharge_blocker_inner(
     }
     let privileged_deadline = if let Some(mut actor) = authorization {
         Some(
-            crate::auth::assurance::require_family_privileged_tx(
+            crate::auth::assurance::require_family_business_tx(
                 &mut transaction,
                 &mut actor,
                 facility_id,
@@ -390,16 +390,18 @@ async fn override_discharge_blocker_inner(
 
     sqlx::query("INSERT INTO audit_events(id,facility_id,actor_user_id,event_type,resource_type,resource_id,metadata) VALUES(gen_random_uuid(),$1,$2,'admission.discharge_blocker.overridden','discharge_case',$3,'{}'::jsonb)")
         .bind(facility_id).bind(actor_user_id).bind(discharge_case_id).execute(&mut *transaction).await?;
+    let result = match row {
+        Some(row) => Some(
+            discharge_item_by_admission(&mut *transaction, facility_id, row.admission_case_id)
+                .await?,
+        ),
+        None => None,
+    };
     if let Some(end) = privileged_deadline {
         crate::auth::assurance::check_privileged_deadline_tx(&mut transaction, end).await?;
     }
     transaction.commit().await?;
-    match row {
-        Some(row) => Ok(Some(
-            discharge_item_by_admission(pool, facility_id, row.admission_case_id).await?,
-        )),
-        None => Ok(None),
-    }
+    Ok(result)
 }
 
 pub async fn complete_discharge(
@@ -730,11 +732,14 @@ fn discharge_query() -> QueryBuilder<'static, Postgres> {
     )
 }
 
-async fn discharge_item_by_admission(
-    pool: &PgPool,
+async fn discharge_item_by_admission<'e, E>(
+    executor: E,
     facility_id: Uuid,
     admission_case_id: Uuid,
-) -> anyhow::Result<DischargeCaseListItem> {
+) -> anyhow::Result<DischargeCaseListItem>
+where
+    E: sqlx::Executor<'e, Database = sqlx::Postgres>,
+{
     let mut query = discharge_query();
     query.push(" WHERE discharge_cases.facility_id = ");
     query.push_bind(facility_id);
@@ -742,7 +747,9 @@ async fn discharge_item_by_admission(
     query.push_bind(admission_case_id);
     let row = observe_db_query(
         "ward.discharge_cases.get_by_admission",
-        query.build_query_as::<DischargeCaseRow>().fetch_one(pool),
+        query
+            .build_query_as::<DischargeCaseRow>()
+            .fetch_one(executor),
     )
     .await?;
     discharge_from_row(row)

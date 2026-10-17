@@ -47,6 +47,12 @@ async fn actor(db: &TestDb, user: Uuid) -> NursingActor {
     .await
     .unwrap();
     NursingActor {
+        resolved_network_policy_version: Some(
+            hms_db::network::get_policy(db.pool(), db.facility_id())
+                .await
+                .unwrap()
+                .version,
+        ),
         facility_id: db.facility_id(),
         user_id: user,
         request_id: None,
@@ -585,7 +591,11 @@ async fn malformed_care_tuples_are_excluded_before_paging_and_query_cost_is_cons
     )
     .await;
     assert_eq!(first.unwrap()[0].id, task.id);
-    assert_eq!(cost, 9);
+    // The version-zero publication proof adds exactly two bounded operations:
+    // an unchanged sentinel INSERT and the retained policy SHARE read. Neither
+    // depends on the number of task rows; the larger-page assertion below must
+    // retain the same eleven-query budget and exclude the malformed care tuple.
+    assert_eq!(cost, 11);
     for _ in 0..5 {
         f.create().await;
     }

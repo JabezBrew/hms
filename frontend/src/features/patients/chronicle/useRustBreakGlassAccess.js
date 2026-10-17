@@ -9,6 +9,11 @@ import { acknowledgeWriteResponse, markWriteResponseUncertain } from '@/lib/api/
 const initialState = { grant: null, busy: false, error: null, refreshError: false, blocked: false, unconfirmed: false };
 function reducer(state, patch) { return { ...state, ...patch }; }
 
+function writeOutcomeUnconfirmed(error) {
+  return String(error?.data?.error?.code || '').endsWith('_unconfirmed')
+    || !(error?.status >= 400 && error?.status < 500);
+}
+
 function assertSameScope(current, authenticated) {
   if (!current?.id || !current.email || !current.facilityCode || !authenticated
     || authenticated.id !== current.id
@@ -126,11 +131,11 @@ export function useRustBreakGlassAccess({ enabled, patientId, user, reauthentica
       if (controller.signal.aborted) return false;
       return true;
     } catch (error) {
-      const unconfirmed = grantAttempted && !(error?.status >= 400 && error?.status < 500);
+      const unconfirmed = grantAttempted && writeOutcomeUnconfirmed(error);
       if (unconfirmed) markWriteResponseUncertain(grantReceipt || error);
       if (!controller.signal.aborted) {
         dispatch({ unconfirmed, error: unconfirmed
-          ? 'The emergency access request could not be confirmed. A grant may already exist. End any grant before requesting access again.'
+          ? 'The emergency access request could not be confirmed. A grant may already exist. Refresh this record and review the recovery notice before ending a grant or requesting access again.'
           : error?.message || 'Emergency access could not be granted.' });
       }
       return false;
@@ -156,7 +161,7 @@ export function useRustBreakGlassAccess({ enabled, patientId, user, reauthentica
       dispatch({ grant: null, blocked: true, unconfirmed: false });
       await refreshAccess();
     } catch (error) {
-      const unconfirmed = !(error?.status >= 400 && error?.status < 500);
+      const unconfirmed = writeOutcomeUnconfirmed(error);
       if (unconfirmed) markWriteResponseUncertain(response || error);
       if (!controller.signal.aborted) {
         dispatch({ unconfirmed, error: unconfirmed

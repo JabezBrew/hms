@@ -19,6 +19,7 @@ pub struct HandoverActor {
     pub permission_version: i64,
     pub active_profile: DeploymentProfile,
     pub valid_until: DateTime<Utc>,
+    pub resolved_network_policy_version: Option<i64>,
     pub can_view_all_wards: bool,
 }
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -493,6 +494,14 @@ async fn verify_actor(
     actor.valid_until = actor
         .valid_until
         .min(session.ok_or(HandoverError::AuthorizationExpired)?);
+    crate::network::require_publication_tx(
+        tx,
+        actor.facility_id,
+        actor
+            .resolved_network_policy_version
+            .ok_or(crate::network::NetworkPublicationError::MissingProof)?,
+    )
+    .await?;
     check_deadline(tx, actor).await
 }
 fn digest(value: impl AsRef<[u8]>) -> Vec<u8> {
@@ -612,6 +621,16 @@ pub async fn create(
         .normalized()
         .map_err(|_| HandoverError::InvalidRequest)?;
     let mut tx = pool.begin().await?;
+    crate::network::prelock_publication_users_tx(
+        &mut tx,
+        actor.facility_id,
+        actor.user_id,
+        &input
+            .intended_recipient_user_id
+            .into_iter()
+            .collect::<Vec<_>>(),
+    )
+    .await?;
     verify_actor(&mut tx, &mut actor).await?;
     if let Some(r) = reserve(
         &mut tx,
@@ -683,6 +702,16 @@ pub async fn amend(
     input.reason = reason(&input.reason)?;
     let mut tx = pool.begin().await?;
     let (patient, ward, version, status, author) = lock_root(&mut tx, &actor, id).await?;
+    crate::network::prelock_publication_users_tx(
+        &mut tx,
+        actor.facility_id,
+        actor.user_id,
+        &input
+            .intended_recipient_user_id
+            .into_iter()
+            .collect::<Vec<_>>(),
+    )
+    .await?;
     verify_actor(&mut tx, &mut actor).await?;
     if let Some(r) = reserve(
         &mut tx,

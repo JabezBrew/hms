@@ -965,7 +965,7 @@ pub async fn verify_result_authorized(
     facility_id: Uuid,
     result_id: Uuid,
     actor_user_id: Uuid,
-    authorization: crate::auth::WebAuthnActor,
+    authorization: crate::auth::assurance::BusinessFactorActor,
 ) -> anyhow::Result<Option<LabResultListItem>> {
     verify_result_inner(
         pool,
@@ -982,12 +982,12 @@ async fn verify_result_inner(
     facility_id: Uuid,
     result_id: Uuid,
     actor_user_id: Uuid,
-    authorization: Option<crate::auth::WebAuthnActor>,
+    authorization: Option<crate::auth::assurance::BusinessFactorActor>,
 ) -> anyhow::Result<Option<LabResultListItem>> {
     let mut transaction = pool.begin().await?;
     let privileged_deadline = if let Some(mut actor) = authorization {
         Some(
-            crate::auth::assurance::require_family_privileged_tx(
+            crate::auth::assurance::require_family_business_tx(
                 &mut transaction,
                 &mut actor,
                 facility_id,
@@ -1038,11 +1038,12 @@ async fn verify_result_inner(
         sqlx::query("INSERT INTO audit_events(id,facility_id,actor_user_id,event_type,resource_type,resource_id,metadata) VALUES(gen_random_uuid(),$1,$2,'laboratory.result.verified','lab_result',$3,'{}'::jsonb)")
         .bind(facility_id).bind(actor_user_id).bind(result_id).execute(&mut *transaction).await?;
     }
+    let result = fetch_result_by_id(&mut *transaction, facility_id, result_id).await?;
     if let Some(end) = privileged_deadline {
         crate::auth::assurance::check_privileged_deadline_tx(&mut transaction, end).await?;
     }
     transaction.commit().await?;
-    fetch_result_by_id(pool, facility_id, result_id).await
+    Ok(result)
 }
 
 pub async fn verify_results(
@@ -1061,7 +1062,7 @@ pub async fn verify_results_authorized(
     order_id: Option<Uuid>,
     result_ids: &[Uuid],
     actor_user_id: Uuid,
-    authorization: crate::auth::WebAuthnActor,
+    authorization: crate::auth::assurance::BusinessFactorActor,
 ) -> anyhow::Result<i64> {
     verify_results_inner(
         pool,
@@ -1080,7 +1081,7 @@ async fn verify_results_inner(
     order_id: Option<Uuid>,
     result_ids: &[Uuid],
     actor_user_id: Uuid,
-    authorization: Option<crate::auth::WebAuthnActor>,
+    authorization: Option<crate::auth::assurance::BusinessFactorActor>,
 ) -> anyhow::Result<i64> {
     if order_id.is_none() && result_ids.is_empty() {
         anyhow::bail!("bulk verification requires an order id or result ids");
@@ -1089,7 +1090,7 @@ async fn verify_results_inner(
     let mut transaction = pool.begin().await?;
     let privileged_deadline = if let Some(mut actor) = authorization {
         Some(
-            crate::auth::assurance::require_family_privileged_tx(
+            crate::auth::assurance::require_family_business_tx(
                 &mut transaction,
                 &mut actor,
                 facility_id,
@@ -1305,11 +1306,14 @@ async fn fetch_specimen_by_id(
         .transpose()
 }
 
-async fn fetch_result_by_id(
-    pool: &PgPool,
+async fn fetch_result_by_id<'e, E>(
+    executor: E,
     facility_id: Uuid,
     result_id: Uuid,
-) -> anyhow::Result<Option<LabResultListItem>> {
+) -> anyhow::Result<Option<LabResultListItem>>
+where
+    E: sqlx::Executor<'e, Database = sqlx::Postgres>,
+{
     let mut query = result_query();
     query.push(" WHERE lab_results.facility_id = ");
     query.push_bind(facility_id);
@@ -1317,7 +1321,7 @@ async fn fetch_result_by_id(
     query.push_bind(result_id);
     query
         .build_query_as::<ResultRow>()
-        .fetch_optional(pool)
+        .fetch_optional(executor)
         .await?
         .map(result_from_row)
         .transpose()

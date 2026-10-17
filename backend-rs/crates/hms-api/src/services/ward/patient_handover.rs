@@ -58,6 +58,7 @@ async fn admission_scope(
 }
 fn actor(ctx: &hms_access::RequestContext, deadline: DateTime<Utc>) -> repo::HandoverActor {
     repo::HandoverActor {
+        resolved_network_policy_version: ctx.resolved_network_policy_version,
         facility_id: ctx.facility_id,
         user_id: ctx.user_id,
         request_id: Some(ctx.request_id.clone()),
@@ -95,6 +96,9 @@ fn not_found() -> ApiError {
     )
 }
 pub fn error(e: anyhow::Error) -> ApiError {
+    if let Some(error) = ApiError::network_publication(&e) {
+        return error;
+    }
     use repo::HandoverError as E;
     if let Some(kind) = e.downcast_ref::<E>() {
         return match kind{

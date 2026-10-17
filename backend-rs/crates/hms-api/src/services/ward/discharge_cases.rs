@@ -347,15 +347,12 @@ impl DischargeCasesService {
         )
         .await
         .map_err(|error| {
-            if error
-                .downcast_ref::<hms_db::auth::assurance::FactorError>()
-                .is_some()
-            {
+            if crate::services::auth_factor::is_authority_error(&error) {
                 return crate::services::auth_factor::error(error);
             }
             ApiError::conflict(
-                "discharge_blocker_override_failed",
-                "Blocker could not be overridden.",
+                "discharge_blocker_override_write_unconfirmed",
+                "Blocker override could not be confirmed. Review the saved discharge before trying again.",
             )
         })?
         .ok_or_else(|| {

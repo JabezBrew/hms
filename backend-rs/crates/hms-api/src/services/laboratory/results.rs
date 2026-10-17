@@ -212,15 +212,12 @@ impl LabResultsService {
         )
         .await
         .map_err(|error| {
-            if error
-                .downcast_ref::<hms_db::auth::assurance::FactorError>()
-                .is_some()
-            {
+            if crate::services::auth_factor::is_authority_error(&error) {
                 return crate::services::auth_factor::error(error);
             }
             ApiError::conflict(
-                "lab_result_verify_failed",
-                "Lab result could not be verified.",
+                "lab_result_verify_write_unconfirmed",
+                "Lab result verification could not be confirmed. Review the saved result before trying again.",
             )
         })?
         .ok_or_else(|| ApiError::not_found("lab_result_not_found", "Lab result was not found."))?;
@@ -273,15 +270,12 @@ impl LabResultsService {
         )
         .await
         .map_err(|error| {
-            if error
-                .downcast_ref::<hms_db::auth::assurance::FactorError>()
-                .is_some()
-            {
+            if crate::services::auth_factor::is_authority_error(&error) {
                 return crate::services::auth_factor::error(error);
             }
             ApiError::conflict(
-                "lab_results_bulk_verify_failed",
-                "Lab results could not be verified.",
+                "lab_results_bulk_verify_write_unconfirmed",
+                "Lab result verification could not be confirmed. Review the saved results before trying again.",
             )
         })?;
 

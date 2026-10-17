@@ -44,6 +44,12 @@ async fn actor(db: &TestDb, user: Uuid) -> HandoverActor {
     .await
     .unwrap();
     HandoverActor {
+        resolved_network_policy_version: Some(
+            hms_db::network::get_policy(db.pool(), db.facility_id())
+                .await
+                .unwrap()
+                .version,
+        ),
         facility_id: db.facility_id(),
         user_id: user,
         request_id: None,

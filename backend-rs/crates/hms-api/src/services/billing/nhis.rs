@@ -378,15 +378,18 @@ impl NhisService {
         )
         .await
         .map_err(|error| {
-            if error
-                .downcast_ref::<hms_db::auth::assurance::FactorError>()
-                .is_some()
-            {
+            if crate::services::auth_factor::is_authority_error(&error) {
                 return crate::services::auth_factor::error(error);
             }
+            if error.is::<hms_db::billing::FinancialWriteConflict>() {
+                return ApiError::conflict(
+                    "nhis_ar_adjustment_failed",
+                    "NHIS AR adjustment could not be recorded.",
+                );
+            }
             ApiError::conflict(
-                "nhis_ar_adjustment_failed",
-                "NHIS AR adjustment could not be recorded.",
+                "nhis_ar_adjustment_write_unconfirmed",
+                "NHIS AR adjustment could not be confirmed. Review the saved ledger before trying again.",
             )
         })?;
         Ok(object(entry))

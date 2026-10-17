@@ -124,6 +124,45 @@ describe('Rust emergency access lifecycle', () => {
     expect(result.current.grant).toBeNull();
   });
 
+  it.each(['break_glass_grant_unconfirmed', 'factor_write_unconfirmed'])('keeps the explicit unknown 409 outcome %s unconfirmed and prevents another create', async (code) => {
+    patientsApi.requestBreakGlass.mockRejectedValueOnce(Object.assign(new Error('The saved outcome is unknown'), {
+      status: 409, data: { error: { code } },
+    }));
+    const { result } = setup();
+    await waitFor(() => expect(result.current.statusLoading).toBe(false));
+    await act(async () => { expect(await result.current.submit(payload)).toBe(false); });
+    expect(result.current.unconfirmed).toBe(true);
+    expect(result.current.error).toMatch(/grant may already exist/);
+    await act(async () => { await result.current.submit(payload); });
+    expect(patientsApi.requestBreakGlass).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(['break_glass_grant_exists', 'break_glass_patient_not_active', 'break_glass_grant_limit'])('keeps the typed business denial %s definite', async (code) => {
+    patientsApi.requestBreakGlass.mockRejectedValueOnce(Object.assign(new Error('The request was denied'), {
+      status: 409, data: { error: { code } },
+    }));
+    const { result } = setup();
+    await waitFor(() => expect(result.current.statusLoading).toBe(false));
+    await act(async () => { expect(await result.current.submit(payload)).toBe(false); });
+    expect(result.current.unconfirmed).toBe(false);
+    expect(result.current.error).toBe('The request was denied');
+    expect(patientsApi.requestBreakGlass).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps an explicit unknown 409 end outcome unconfirmed while refreshing current authority', async () => {
+    currentGrant = { id: 'existing-grant', expires_at: new Date(Date.now() + 300000).toISOString() };
+    patientsApi.endBreakGlass.mockRejectedValueOnce(Object.assign(new Error('The saved outcome is unknown'), {
+      status: 409, data: { error: { code: 'break_glass_end_unconfirmed' } },
+    }));
+    const { result } = setup();
+    await waitFor(() => expect(result.current.grant?.id).toBe('existing-grant'));
+    await act(async () => { await result.current.end(); });
+    expect(result.current.unconfirmed).toBe(true);
+    expect(result.current.error).toMatch(/grant may already have ended/);
+    expect(refetchContext).toHaveBeenCalled();
+    expect(patientsApi.endBreakGlass).toHaveBeenCalledTimes(1);
+  });
+
   it('distinguishes a confirmed grant from a failed record refresh and prevents duplicate creation', async () => {
     refetchContext.mockResolvedValue({ isError: true, error: new Error('Unavailable') });
     const { result } = setup();

@@ -2,7 +2,7 @@
 
 Status: active
 Owner: Engineering
-Last reviewed: 2026-06-06
+Last reviewed: 2026-10-17
 Scope: durable Interfaces that code, tests, deploys, and frontend integrations rely on.
 
 ## Contract Registry
@@ -107,6 +107,16 @@ returning or mutating data.
 Access behavior belongs in `hms-access` and request context guards. It should be
 covered through tests that call the same Interface production code uses.
 
+Protected business and rich-read transactions retain the exact server-resolved
+network-policy version through result construction and commit. An absent
+version-zero policy may acquire its unchanged readonly sentinel; configured
+proof is SELECT-only. A missing or superseded proof is a definite typed 403,
+not an unknown write outcome. This proof grants no patient, ward, permission or
+feature access. Own-account authentication and the policy writer's exclusive
+compare-and-set protocol remain separate. Commands reviewing other users lock
+only the facility and sorted reviewed actor/target users before their first
+policy proof, retaining the later active/local eligibility checks.
+
 Patient administrative profile access and Patient Chronicle access are separate
 surfaces. Registration/front-desk/billing users may need demographics,
 insurance, MRN/NHIS/contact, registration status, and current-context facts, but
@@ -149,6 +159,16 @@ as realtime.
 
 Repository Interfaces should describe product intent. SQL details should remain
 inside `hms-db`.
+
+Invoice finalization preserves the first finalizer, named reviewer and time
+evidence and emits one finalization event. A valid repeat returns the protected
+current invoice, not an immutable snapshot of later invoice balances. A named
+billing reviewer must be a distinct active local user with current Billing
+feature and manage authority; this attribution is not a second person's signed
+approval. Financial commands check reviewer and acting-user time boundaries at
+one final database clock. Reversals serialize on the payment parent before
+reading the current ledger total. Repeating a staff activation state must not
+revoke newly established sessions or append another transition event.
 
 Clinical care context is a first-class persistence contract:
 
@@ -211,6 +231,17 @@ Adapters must preserve:
 - server-side pagination
 - feature gating
 - PHI-safe, scoped query keys and browser events
+
+Automatic mutation retry is disabled globally; reads retain their own retry
+policy. A workflow may opt into replay only through its reviewed idempotency
+protocol. Unexpected persistence or commit errors use an explicit
+`*_unconfirmed` code and preserve the central opaque recovery barrier, including
+HTTP 409 responses. Known validation, authority and business conflicts remain
+definite. A status read never silently confirms an uncertain command: the user
+must review the saved workflow and explicitly acknowledge its recovery notice
+before a new non-idempotent change. Failed staff setup delivery is definite only
+after confirmed account removal; failed or skipped compensation stays
+unconfirmed.
 
 Chronicle context handoff must preserve real workflow context. OPD and
 Emergency links may set `visit=<encounter_id>` only when the list row carries a

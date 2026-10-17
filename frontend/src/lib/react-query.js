@@ -71,8 +71,9 @@ export const queryClient = new QueryClient({
       refetchInterval: false,
     },
     mutations: {
-      // Retry mutations once on failure
-      retry: 1,
+      // A failed response may follow a committed change. Retry only when the
+      // individual workflow has an explicit, reviewed idempotency protocol.
+      retry: false,
     },
   },
 });

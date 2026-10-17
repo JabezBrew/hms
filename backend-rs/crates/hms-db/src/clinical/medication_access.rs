@@ -53,7 +53,7 @@ pub(crate) async fn verify(
     if actor.identity.authorization.is_none() {
         return Err(MedicationAccessError::AuthorityExpired.into());
     }
-    prescription_courses::verify_actor(tx, &mut actor.identity)
+    prescription_courses::verify_identity_actor(tx, &mut actor.identity)
         .await
         .map_err(|error| {
             if error.is::<PrescriptionCourseError>() {
@@ -63,18 +63,31 @@ pub(crate) async fn verify(
             }
         })?;
     network_policy(tx, actor).await?;
-    let proof = actor
+    let profile = actor
         .identity
         .authorization
         .as_ref()
-        .ok_or(MedicationAccessError::AuthorityExpired)?;
+        .ok_or(MedicationAccessError::AuthorityExpired)?
+        .active_profile;
+    require_current_features_tx(tx, actor.identity.facility_id, profile, features).await?;
+    deadline(tx, actor).await
+}
+
+/// The caller retains its facility/identity proof while checking the exact
+/// workflow's features. No Nursing or other purpose is inferred here.
+pub(crate) async fn require_current_features_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    facility: Uuid,
+    profile: hms_domain::deployment::DeploymentProfile,
+    features: &[FeatureKey],
+) -> anyhow::Result<()> {
     let keys = features
         .iter()
         .map(codec::encode)
         .collect::<anyhow::Result<Vec<_>>>()?;
     let overrides: Vec<(String, bool)> = hms_observability::observe_db_query("clinical.medication.proof", sqlx::query_as("SELECT feature_key,enabled FROM facility_feature_entitlements WHERE facility_id=$1 AND feature_key=ANY($2)")
-        .bind(actor.identity.facility_id).bind(keys).fetch_all(&mut **tx)).await?;
-    let defaults = hms_domain::capabilities::feature_flags_for_profile(proof.active_profile);
+        .bind(facility).bind(keys).fetch_all(&mut **tx)).await?;
+    let defaults = hms_domain::capabilities::feature_flags_for_profile(profile);
     for feature in features {
         let key = codec::encode(*feature)?;
         if !overrides
@@ -86,7 +99,7 @@ pub(crate) async fn verify(
             return Err(MedicationAccessError::FeatureDisabled.into());
         }
     }
-    deadline(tx, actor).await
+    Ok(())
 }
 
 /// Lock the exact policy used by request resolution through final publication.
@@ -99,29 +112,8 @@ async fn network_policy(
     let expected = actor
         .resolved_network_policy_version
         .filter(|value| *value >= 0)
-        .ok_or(MedicationAccessError::AuthorityExpired)?;
-    if expected == 0 {
-        hms_observability::observe_db_query(
-            "clinical.medication.proof.network_sentinel",
-            sqlx::query("INSERT INTO facility_network_policies(facility_id) VALUES($1) ON CONFLICT DO NOTHING")
-                .bind(actor.identity.facility_id)
-                .execute(&mut **tx),
-        )
-        .await?;
-    }
-    let actual: Option<i64> = hms_observability::observe_db_query(
-        "clinical.medication.proof.network",
-        sqlx::query_scalar(
-            "SELECT version FROM facility_network_policies WHERE facility_id=$1 FOR SHARE",
-        )
-        .bind(actor.identity.facility_id)
-        .fetch_optional(&mut **tx),
-    )
-    .await?;
-    if actual != Some(expected) {
-        return Err(MedicationAccessError::AuthorityExpired.into());
-    }
-    Ok(())
+        .ok_or(crate::network::NetworkPublicationError::MissingProof)?;
+    crate::network::require_publication_tx(tx, actor.identity.facility_id, expected).await
 }
 pub(crate) async fn deadline(
     tx: &mut Transaction<'_, Postgres>,

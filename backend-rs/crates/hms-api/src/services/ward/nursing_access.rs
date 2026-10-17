@@ -27,6 +27,7 @@ pub(super) fn require(
 }
 pub(super) fn actor(ctx: &hms_access::RequestContext, deadline: DateTime<Utc>) -> NursingActor {
     NursingActor {
+        resolved_network_policy_version: ctx.resolved_network_policy_version,
         facility_id: ctx.facility_id,
         user_id: ctx.user_id,
         session_id: ctx.session_id,
@@ -69,6 +70,9 @@ pub(super) async fn scope(
     Ok(())
 }
 pub(super) fn error(error: anyhow::Error, write: bool) -> ApiError {
+    if let Some(error) = ApiError::network_publication(&error) {
+        return error;
+    }
     if let Some(e) = error.downcast_ref::<NursingError>() {
         return match e {
             NursingError::AuthorizationExpired => ApiError::forbidden(

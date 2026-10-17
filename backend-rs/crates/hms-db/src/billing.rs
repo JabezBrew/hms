@@ -18,6 +18,32 @@ use uuid::Uuid;
 use crate::codec;
 use crate::PgPool;
 
+mod approval;
+pub use approval::BillingApproverError;
+
+/// Explicit pre-write business conflicts are definite rejections. SQL, codec
+/// and commit failures remain unknown outcomes at the HTTP boundary.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum FinancialWriteConflict {
+    InvalidAmount,
+    PaymentUnavailable,
+    ReversalExceedsRemaining,
+    ClaimUnavailable,
+    AdjustmentExceedsReceivable,
+}
+impl std::fmt::Display for FinancialWriteConflict {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(match self {
+            Self::InvalidAmount => "A positive amount is required.",
+            Self::PaymentUnavailable => "The payment is unavailable.",
+            Self::ReversalExceedsRemaining => "The reversal exceeds the remaining payment.",
+            Self::ClaimUnavailable => "The claim is unavailable.",
+            Self::AdjustmentExceedsReceivable => "The adjustment exceeds the receivable.",
+        })
+    }
+}
+impl std::error::Error for FinancialWriteConflict {}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum NhisWriteConflict {
     ServiceUnavailable,
@@ -564,7 +590,6 @@ struct PaymentReversalRow {
 struct PaymentReversalContextRow {
     invoice_id: Uuid,
     amount_minor: i64,
-    reversed_amount_minor: i64,
     currency: String,
 }
 
@@ -1837,7 +1862,7 @@ pub async fn finalize_invoice_authorized(
     actor_user_id: Uuid,
     approval_user_id: Uuid,
     reauthorized_at: DateTime<Utc>,
-    authorization: crate::auth::WebAuthnActor,
+    authorization: crate::auth::assurance::BusinessFactorActor,
 ) -> anyhow::Result<Option<InvoiceListItem>> {
     finalize_invoice_inner(
         pool,
@@ -1858,12 +1883,19 @@ async fn finalize_invoice_inner(
     actor_user_id: Uuid,
     approval_user_id: Uuid,
     reauthorized_at: DateTime<Utc>,
-    authorization: Option<crate::auth::WebAuthnActor>,
+    authorization: Option<crate::auth::assurance::BusinessFactorActor>,
 ) -> anyhow::Result<Option<InvoiceListItem>> {
     let mut transaction = pool.begin().await?;
+    let approver_deadline = approval::lock(
+        &mut transaction,
+        facility_id,
+        actor_user_id,
+        approval_user_id,
+    )
+    .await?;
     let privileged_deadline = if let Some(mut actor) = authorization {
         Some(
-            crate::auth::assurance::require_family_privileged_tx(
+            crate::auth::assurance::require_family_business_tx(
                 &mut transaction,
                 &mut actor,
                 facility_id,
@@ -1876,9 +1908,6 @@ async fn finalize_invoice_inner(
     } else {
         None
     };
-    if actor_user_id == approval_user_id {
-        anyhow::bail!("billing finalization requires supervisor approval");
-    }
     let result = sqlx::query(
         r#"
         UPDATE invoices
@@ -1889,7 +1918,7 @@ async fn finalize_invoice_inner(
             finalized_approval_user_id = $3,
             finalized_reauthorized_at = $4,
             updated_at = now()
-        WHERE facility_id = $5 AND id = $6
+        WHERE facility_id = $5 AND id = $6 AND finalized_at IS NULL
         "#,
     )
     .bind(codec::encode(InvoiceLockReason::Finalized)?)
@@ -1900,16 +1929,16 @@ async fn finalize_invoice_inner(
     .bind(invoice_id)
     .execute(&mut *transaction)
     .await?;
-    if result.rows_affected() == 0 {
-        return Ok(None);
+    if result.rows_affected() > 0 {
+        sqlx::query("INSERT INTO audit_events(id,facility_id,actor_user_id,event_type,resource_type,resource_id,metadata) VALUES(gen_random_uuid(),$1,$2,'billing.invoice.finalized','invoice',$3,'{}'::jsonb)")
+            .bind(facility_id).bind(actor_user_id).bind(invoice_id).execute(&mut *transaction).await?;
     }
-    sqlx::query("INSERT INTO audit_events(id,facility_id,actor_user_id,event_type,resource_type,resource_id,metadata) VALUES(gen_random_uuid(),$1,$2,'billing.invoice.finalized','invoice',$3,'{}'::jsonb)")
-        .bind(facility_id).bind(actor_user_id).bind(invoice_id).execute(&mut *transaction).await?;
-    if let Some(end) = privileged_deadline {
-        crate::auth::assurance::check_privileged_deadline_tx(&mut transaction, end).await?;
-    }
+    // A repeat returns the protected current invoice without replacing the
+    // original finalizer/reviewer or creating another finalization event.
+    let result = fetch_invoice_by_id(&mut *transaction, facility_id, invoice_id).await?;
+    approval::finish(&mut transaction, approver_deadline, privileged_deadline).await?;
     transaction.commit().await?;
-    fetch_invoice_by_id(pool, facility_id, invoice_id).await
+    Ok(result)
 }
 
 pub async fn record_payment_reversal(
@@ -1922,7 +1951,7 @@ pub async fn record_payment_reversal(
 pub async fn record_payment_reversal_authorized(
     pool: &PgPool,
     reversal: NewPaymentReversal,
-    authorization: crate::auth::WebAuthnActor,
+    authorization: crate::auth::assurance::BusinessFactorActor,
 ) -> anyhow::Result<PaymentReversalLedgerEntry> {
     record_payment_reversal_inner(pool, reversal, Some(authorization)).await
 }
@@ -1930,13 +1959,10 @@ pub async fn record_payment_reversal_authorized(
 async fn record_payment_reversal_inner(
     pool: &PgPool,
     reversal: NewPaymentReversal,
-    authorization: Option<crate::auth::WebAuthnActor>,
+    authorization: Option<crate::auth::assurance::BusinessFactorActor>,
 ) -> anyhow::Result<PaymentReversalLedgerEntry> {
-    if reversal.approved_by_user_id == reversal.recorded_by_user_id {
-        anyhow::bail!("payment reversal requires supervisor approval");
-    }
     if reversal.amount_minor <= 0 {
-        anyhow::bail!("payment reversal amount must be positive");
+        return Err(FinancialWriteConflict::InvalidAmount.into());
     }
     let reversal_kind = codec::encode(reversal.reversal_kind)?;
     let audit_event_type = match reversal.reversal_kind {
@@ -1944,9 +1970,16 @@ async fn record_payment_reversal_inner(
         ReversalKind::Void => "billing.payment_void.recorded",
     };
     let mut transaction = pool.begin().await?;
+    let approver_deadline = approval::lock(
+        &mut transaction,
+        reversal.facility_id,
+        reversal.recorded_by_user_id,
+        reversal.approved_by_user_id,
+    )
+    .await?;
     let privileged_deadline = if let Some(mut actor) = authorization {
         Some(
-            crate::auth::assurance::require_family_privileged_tx(
+            crate::auth::assurance::require_family_business_tx(
                 &mut transaction,
                 &mut actor,
                 reversal.facility_id,
@@ -1963,13 +1996,6 @@ async fn record_payment_reversal_inner(
         r#"
         SELECT payments.invoice_id,
                payments.amount_minor,
-               COALESCE((
-                   SELECT SUM(payment_reversal_ledger.amount_minor)
-                   FROM payment_reversal_ledger
-                   WHERE payment_reversal_ledger.facility_id = payments.facility_id
-                     AND payment_reversal_ledger.payment_id = payments.id
-               ), 0)::BIGINT
-                   AS reversed_amount_minor,
                payments.currency
         FROM payments
         WHERE payments.facility_id = $1 AND payments.id = $2
@@ -1980,10 +2006,19 @@ async fn record_payment_reversal_inner(
     .bind(reversal.payment_id)
     .fetch_optional(&mut *transaction)
     .await?
-    .ok_or_else(|| anyhow::anyhow!("payment was not found"))?;
-    let remaining_reversible = payment.amount_minor - payment.reversed_amount_minor;
+    .ok_or(FinancialWriteConflict::PaymentUnavailable)?;
+    // Read the ledger in a fresh statement after acquiring the parent lock.
+    // A subquery in SELECT ... FOR UPDATE can retain its pre-wait snapshot.
+    let reversed_amount_minor: i64 = sqlx::query_scalar(
+        "SELECT COALESCE(SUM(amount_minor),0)::BIGINT FROM payment_reversal_ledger WHERE facility_id=$1 AND payment_id=$2",
+    )
+    .bind(reversal.facility_id)
+    .bind(reversal.payment_id)
+    .fetch_one(&mut *transaction)
+    .await?;
+    let remaining_reversible = payment.amount_minor - reversed_amount_minor;
     if reversal.amount_minor > remaining_reversible {
-        anyhow::bail!("payment reversal exceeds unreversed payment amount");
+        return Err(FinancialWriteConflict::ReversalExceedsRemaining.into());
     }
 
     sqlx::query(
@@ -2009,21 +2044,18 @@ async fn record_payment_reversal_inner(
     .execute(&mut *transaction)
     .await?;
 
-    let total_reversed = payment.reversed_amount_minor + reversal.amount_minor;
-    if total_reversed >= payment.amount_minor {
-        sqlx::query(
-            r#"
-            UPDATE payments
-            SET status = $1
-            WHERE facility_id = $2 AND id = $3
-            "#,
-        )
-        .bind(codec::encode(PaymentStatus::Void)?)
-        .bind(reversal.facility_id)
-        .bind(reversal.payment_id)
-        .execute(&mut *transaction)
-        .await?;
-    }
+    let total_reversed = reversed_amount_minor + reversal.amount_minor;
+    // Every reversal versions its parent, including partial reversals. A caller
+    // using a stronger snapshot isolation level must serialize or fail closed.
+    sqlx::query(
+        "UPDATE payments SET status=CASE WHEN $1 THEN $2 ELSE status END WHERE facility_id=$3 AND id=$4",
+    )
+    .bind(total_reversed >= payment.amount_minor)
+    .bind(codec::encode(PaymentStatus::Void)?)
+    .bind(reversal.facility_id)
+    .bind(reversal.payment_id)
+    .execute(&mut *transaction)
+    .await?;
     sqlx::query(
         r#"
         UPDATE invoices
@@ -2073,18 +2105,18 @@ async fn record_payment_reversal_inner(
         "reversal_id": reversal.id,
         "reversal_kind": reversal_kind,
         "amount_minor": reversal.amount_minor,
-        "supervisor_approved": true
+        "reviewer_attributed": true,
+        "approver_identity_verified": false
     }))
     .execute(&mut *transaction)
     .await?;
 
-    if let Some(end) = privileged_deadline {
-        crate::auth::assurance::check_privileged_deadline_tx(&mut transaction, end).await?;
-    }
-    transaction.commit().await?;
-    fetch_payment_reversal_by_id(pool, reversal.facility_id, reversal.id)
+    let saved = fetch_payment_reversal_by_id(&mut *transaction, reversal.facility_id, reversal.id)
         .await?
-        .ok_or_else(|| anyhow::anyhow!("created payment reversal was not found"))
+        .ok_or_else(|| anyhow::anyhow!("created payment reversal was not found"))?;
+    approval::finish(&mut transaction, approver_deadline, privileged_deadline).await?;
+    transaction.commit().await?;
+    Ok(saved)
 }
 
 pub async fn payment_reversal_ledger(
@@ -2503,7 +2535,7 @@ pub async fn record_nhis_ar_adjustment(
 pub async fn record_nhis_ar_adjustment_authorized(
     pool: &PgPool,
     adjustment: NewNhisArAdjustment,
-    authorization: crate::auth::WebAuthnActor,
+    authorization: crate::auth::assurance::BusinessFactorActor,
 ) -> anyhow::Result<NhisArAdjustmentEntry> {
     record_nhis_ar_adjustment_inner(pool, adjustment, Some(authorization)).await
 }
@@ -2511,14 +2543,14 @@ pub async fn record_nhis_ar_adjustment_authorized(
 async fn record_nhis_ar_adjustment_inner(
     pool: &PgPool,
     adjustment: NewNhisArAdjustment,
-    authorization: Option<crate::auth::WebAuthnActor>,
+    authorization: Option<crate::auth::assurance::BusinessFactorActor>,
 ) -> anyhow::Result<NhisArAdjustmentEntry> {
     if adjustment.amount_minor <= 0 {
-        anyhow::bail!("NHIS AR adjustment amount must be positive");
+        return Err(FinancialWriteConflict::InvalidAmount.into());
     }
     let mut transaction = pool.begin().await?;
     let privileged_deadline = if let Some(mut actor) = authorization {
-        let end = crate::auth::assurance::require_family_privileged_tx(
+        let end = crate::auth::assurance::require_family_business_tx(
             &mut transaction,
             &mut actor,
             adjustment.facility_id,
@@ -2529,7 +2561,7 @@ async fn record_nhis_ar_adjustment_inner(
         .await?;
         crate::auth::assurance::require_current_feature_tx(
             &mut transaction,
-            &actor,
+            &actor.identity,
             hms_domain::deployment::FeatureKey::Billing,
         )
         .await?;
@@ -2550,7 +2582,7 @@ async fn record_nhis_ar_adjustment_inner(
     .bind(adjustment.claim_id)
     .fetch_optional(&mut *transaction)
     .await?
-    .ok_or_else(|| anyhow::anyhow!("NHIS claim was not found"))?;
+    .ok_or(FinancialWriteConflict::ClaimUnavailable)?;
 
     let (payer_delta, patient_delta, written_off_delta, reconciled) =
         match adjustment.adjustment_kind {
@@ -2569,7 +2601,7 @@ async fn record_nhis_ar_adjustment_inner(
             NhisArAdjustmentKind::Adjustment => (-adjustment.amount_minor, 0, 0, false),
         };
     if claim.payer_receivable_minor + payer_delta < 0 {
-        anyhow::bail!("NHIS AR adjustment exceeds payer receivable");
+        return Err(FinancialWriteConflict::AdjustmentExceedsReceivable.into());
     }
     let affects_patient_liability = patient_delta != 0;
 
@@ -2613,13 +2645,15 @@ async fn record_nhis_ar_adjustment_inner(
     .await?;
     sqlx::query("INSERT INTO audit_events(id,facility_id,actor_user_id,event_type,resource_type,resource_id,metadata) VALUES(gen_random_uuid(),$1,$2,'nhis.ar_adjustment.recorded','nhis_claim_ar_adjustment',$3,'{}'::jsonb)")
         .bind(adjustment.facility_id).bind(adjustment.recorded_by_user_id).bind(adjustment.id).execute(&mut *transaction).await?;
+    let saved =
+        fetch_nhis_ar_adjustment_by_id(&mut *transaction, adjustment.facility_id, adjustment.id)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("created NHIS AR adjustment was not found"))?;
     if let Some(end) = privileged_deadline {
         crate::auth::assurance::check_privileged_deadline_tx(&mut transaction, end).await?;
     }
     transaction.commit().await?;
-    fetch_nhis_ar_adjustment_by_id(pool, adjustment.facility_id, adjustment.id)
-        .await?
-        .ok_or_else(|| anyhow::anyhow!("created NHIS AR adjustment was not found"))
+    Ok(saved)
 }
 
 pub async fn nhis_claim_ar_state(
@@ -3249,11 +3283,14 @@ fn cash_session_query() -> QueryBuilder<'static, Postgres> {
     )
 }
 
-async fn fetch_invoice_by_id(
-    pool: &PgPool,
+async fn fetch_invoice_by_id<'e, E>(
+    executor: E,
     facility_id: Uuid,
     id: Uuid,
-) -> anyhow::Result<Option<InvoiceListItem>> {
+) -> anyhow::Result<Option<InvoiceListItem>>
+where
+    E: sqlx::Executor<'e, Database = sqlx::Postgres>,
+{
     let mut query = invoice_query();
     query.push(" WHERE invoices.facility_id = ");
     query.push_bind(facility_id);
@@ -3261,7 +3298,7 @@ async fn fetch_invoice_by_id(
     query.push_bind(id);
     query
         .build_query_as::<InvoiceRow>()
-        .fetch_optional(pool)
+        .fetch_optional(executor)
         .await?
         .map(invoice_from_row)
         .transpose()
@@ -3362,11 +3399,14 @@ async fn fetch_claim_by_id(
         .transpose()
 }
 
-async fn fetch_payment_reversal_by_id(
-    pool: &PgPool,
+async fn fetch_payment_reversal_by_id<'e, E>(
+    executor: E,
     facility_id: Uuid,
     id: Uuid,
-) -> anyhow::Result<Option<PaymentReversalLedgerEntry>> {
+) -> anyhow::Result<Option<PaymentReversalLedgerEntry>>
+where
+    E: sqlx::Executor<'e, Database = sqlx::Postgres>,
+{
     let row = sqlx::query_as::<_, PaymentReversalRow>(
         r#"
         SELECT id, payment_id, invoice_id, reversal_kind, amount_minor, currency, reason,
@@ -3377,7 +3417,7 @@ async fn fetch_payment_reversal_by_id(
     )
     .bind(facility_id)
     .bind(id)
-    .fetch_optional(pool)
+    .fetch_optional(executor)
     .await?;
     row.map(payment_reversal_from_row).transpose()
 }
@@ -3415,11 +3455,14 @@ async fn fetch_nhis_service_mapping_by_id(
     Ok(row.map(nhis_service_mapping_from_row))
 }
 
-async fn fetch_nhis_ar_adjustment_by_id(
-    pool: &PgPool,
+async fn fetch_nhis_ar_adjustment_by_id<'e, E>(
+    executor: E,
     facility_id: Uuid,
     id: Uuid,
-) -> anyhow::Result<Option<NhisArAdjustmentEntry>> {
+) -> anyhow::Result<Option<NhisArAdjustmentEntry>>
+where
+    E: sqlx::Executor<'e, Database = sqlx::Postgres>,
+{
     let row = sqlx::query_as::<_, NhisArAdjustmentRow>(
         r#"
         SELECT id, claim_id, adjustment_kind, amount_minor, reason,
@@ -3430,7 +3473,7 @@ async fn fetch_nhis_ar_adjustment_by_id(
     )
     .bind(facility_id)
     .bind(id)
-    .fetch_optional(pool)
+    .fetch_optional(executor)
     .await?;
     row.map(nhis_ar_adjustment_from_row).transpose()
 }

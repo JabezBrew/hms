@@ -44,6 +44,12 @@ async fn actor(db: &TestDb, user: Uuid) -> FluidActor {
     .await
     .unwrap();
     FluidActor {
+        resolved_network_policy_version: Some(
+            hms_db::network::get_policy(db.pool(), db.facility_id())
+                .await
+                .unwrap()
+                .version,
+        ),
         facility_id: db.facility_id(),
         user_id: user,
         request_id: None,
@@ -696,7 +702,10 @@ async fn fluid_current_ward_scope_is_before_pages_and_complete_scalar_and_rich_a
         .await;
     assert_eq!(one.unwrap().len(), 1);
     assert_eq!(many.unwrap().len(), 2);
-    assert_eq!((cost, larger_cost), (9, 9));
+    // Retaining the version-zero policy adds one unchanged sentinel INSERT
+    // and one SHARE read to each page, including the 101-row request. The exact
+    // budget must remain independent of page size and excluded ward history.
+    assert_eq!((cost, larger_cost), (11, 11));
     let list = list_fluid_balance_for_actor(f.db.pool(), proof.clone(), scope.clone(), None, 101)
         .await
         .unwrap();

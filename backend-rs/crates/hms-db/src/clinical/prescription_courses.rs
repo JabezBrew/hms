@@ -76,6 +76,7 @@ pub struct PrescriptionAuthorization {
     pub permission_version: i64,
     pub active_profile: hms_domain::deployment::DeploymentProfile,
     pub valid_until: DateTime<Utc>,
+    pub resolved_network_policy_version: Option<i64>,
 }
 impl std::fmt::Debug for PrescriptionAuthorization {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -169,6 +170,98 @@ pub async fn get_detail(
         .map(detail)
         .transpose()
 }
+async fn protected_read<'a>(
+    pool: &'a PgPool,
+    actor: PrescriptionActor,
+    id: Uuid,
+) -> anyhow::Result<Option<(Transaction<'a, Postgres>, PrescriptionActor)>> {
+    let mut tx = pool.begin().await?;
+    let patient: Option<Uuid> = sqlx::query_scalar(
+        "SELECT patient_id FROM prescriptions WHERE facility_id=$1 AND id=$2 FOR SHARE",
+    )
+    .bind(actor.facility_id)
+    .bind(id)
+    .fetch_optional(&mut *tx)
+    .await?;
+    let Some(patient) = patient else {
+        return Ok(None);
+    };
+    let expected = actor
+        .authorization
+        .as_ref()
+        .and_then(|proof| proof.resolved_network_policy_version);
+    let mut proof = super::medication_access::MedicationActor {
+        identity: actor,
+        can_view_all_wards: false,
+        resolved_network_policy_version: expected,
+    };
+    super::medication_access::verify(
+        &mut tx,
+        &mut proof,
+        &[
+            hms_domain::deployment::FeatureKey::Patients,
+            hms_domain::deployment::FeatureKey::Encounters,
+        ],
+    )
+    .await?;
+    // Preserve prescribing's facility-scoped outpatient/history policy: the API
+    // requires Full/View and demographics, without an extra care relationship,
+    // current ward or alive/registered restriction on historical detail.
+    super::medication_access::local_patient(&mut tx, &proof, patient).await?;
+    Ok(Some((tx, proof.identity)))
+}
+pub async fn get_detail_authorized(
+    pool: &PgPool,
+    actor: PrescriptionActor,
+    id: Uuid,
+) -> anyhow::Result<Option<PrescriptionDetail>> {
+    let Some((mut tx, actor)) = protected_read(pool, actor, id).await? else {
+        return Ok(None);
+    };
+    let result = detail_tx(&mut tx, actor.facility_id, id).await?;
+    check_authorization(&mut tx, &actor).await?;
+    tx.commit().await?;
+    Ok(Some(result))
+}
+async fn protected_receipt<T: serde::de::DeserializeOwned>(
+    pool: &PgPool,
+    actor: PrescriptionActor,
+    source: Uuid,
+    key: Uuid,
+    kind: &'static str,
+) -> anyhow::Result<Option<T>> {
+    let Some((mut tx, actor)) = protected_read(pool, actor, source).await? else {
+        return Ok(None);
+    };
+    let saved: Option<JsonValue> = sqlx::query_scalar("SELECT receipt FROM prescription_commands WHERE facility_id=$1 AND source_prescription_id=$2 AND actor_user_id=$3 AND request_key_hash=$4 AND command_type=$5")
+        .bind(actor.facility_id).bind(source).bind(actor.user_id).bind(hash(key.as_bytes())).bind(kind)
+        .fetch_optional(&mut *tx).await?;
+    let result = saved
+        .map(|mut value| {
+            value["replayed"] = JsonValue::Bool(true);
+            serde_json::from_value(value)
+        })
+        .transpose()?;
+    check_authorization(&mut tx, &actor).await?;
+    tx.commit().await?;
+    Ok(result)
+}
+pub async fn get_documentation_receipt_authorized(
+    pool: &PgPool,
+    actor: PrescriptionActor,
+    source: Uuid,
+    key: Uuid,
+) -> anyhow::Result<Option<PrescriptionDocumentationReceipt>> {
+    protected_receipt(pool, actor, source, key, "documentation").await
+}
+pub async fn get_new_course_receipt_authorized(
+    pool: &PgPool,
+    actor: PrescriptionActor,
+    source: Uuid,
+    key: Uuid,
+) -> anyhow::Result<Option<NewPrescriptionCourseReceipt>> {
+    protected_receipt(pool, actor, source, key, "new_course").await
+}
 pub(crate) async fn detail_tx(
     tx: &mut Transaction<'_, Postgres>,
     facility: Uuid,
@@ -201,6 +294,46 @@ pub(crate) async fn details_tx(
         .collect()
 }
 pub(crate) async fn verify_actor(
+    tx: &mut Transaction<'_, Postgres>,
+    actor: &mut PrescriptionActor,
+) -> anyhow::Result<()> {
+    verify_identity_actor(tx, actor).await?;
+    if actor.authorization.is_none() {
+        // Trusted repository/import compatibility only. HTTP commands use the
+        // mandatory authorized wrappers; protected sibling actors are nonoptional.
+        return Ok(());
+    }
+    let expected = actor
+        .authorization
+        .as_ref()
+        .and_then(|proof| proof.resolved_network_policy_version)
+        .ok_or(crate::network::NetworkPublicationError::MissingProof)?;
+    crate::network::require_publication_tx(tx, actor.facility_id, expected).await
+}
+
+async fn verify_prescribing_actor(
+    tx: &mut Transaction<'_, Postgres>,
+    actor: &mut PrescriptionActor,
+) -> anyhow::Result<()> {
+    verify_actor(tx, actor).await?;
+    if let Some(proof) = actor.authorization.as_ref() {
+        super::medication_access::require_current_features_tx(
+            tx,
+            actor.facility_id,
+            proof.active_profile,
+            &[
+                hms_domain::deployment::FeatureKey::Patients,
+                hms_domain::deployment::FeatureKey::Encounters,
+            ],
+        )
+        .await?;
+    }
+    check_authorization(tx, actor).await
+}
+
+/// Identity-only composition seam for MedicationActor (which retains its own
+/// mandatory publication proof) and explicit trusted fixture/import creation.
+pub(crate) async fn verify_identity_actor(
     tx: &mut Transaction<'_, Postgres>,
     actor: &mut PrescriptionActor,
 ) -> anyhow::Result<()> {
@@ -350,7 +483,13 @@ pub async fn create_with_stock_policy(
     };
     let id = prescription.id;
     let mut tx = pool.begin().await?;
-    verify_actor(&mut tx, &mut actor).await?;
+    if actor.authorization.is_some() {
+        verify_prescribing_actor(&mut tx, &mut actor).await?;
+    } else {
+        // Existing internal import/fixture API. Protected HTTP creation always
+        // supplies authorization; no request payload can select this branch.
+        verify_identity_actor(&mut tx, &mut actor).await?;
+    }
     validate_create_care_context(&mut tx, &mut prescription).await?;
     insert_prescription_in_transaction(
         &mut tx,
@@ -366,6 +505,26 @@ pub async fn create_with_stock_policy(
     check_authorization(&mut tx, &actor).await?;
     tx.commit().await?;
     Ok(result)
+}
+fn require_http_proof(actor: &PrescriptionActor) -> anyhow::Result<()> {
+    if actor
+        .authorization
+        .as_ref()
+        .and_then(|proof| proof.resolved_network_policy_version)
+        .is_none()
+    {
+        return Err(crate::network::NetworkPublicationError::MissingProof.into());
+    }
+    Ok(())
+}
+pub async fn update_documentation_authorized(
+    pool: &PgPool,
+    actor: PrescriptionActor,
+    source: Uuid,
+    input: UpdatePrescriptionDocumentationRequest,
+) -> anyhow::Result<PrescriptionDocumentationReceipt> {
+    require_http_proof(&actor)?;
+    update_documentation(pool, actor, source, input).await
 }
 pub async fn update_documentation(
     pool: &PgPool,
@@ -385,7 +544,7 @@ pub async fn update_documentation(
     lock_prescription(&mut tx, actor.facility_id, source)
         .await?
         .ok_or(PrescriptionCourseError::NotFound)?;
-    verify_actor(&mut tx, &mut actor).await?;
+    verify_prescribing_actor(&mut tx, &mut actor).await?;
     if let Some(mut result) = replay::<PrescriptionDocumentationReceipt>(
         &mut tx,
         &actor,
@@ -542,6 +701,15 @@ async fn validate_create_care_context(
     Ok(())
 }
 
+pub async fn create_new_course_authorized(
+    pool: &PgPool,
+    actor: PrescriptionActor,
+    source: Uuid,
+    input: NewPrescriptionCourseRequest,
+) -> anyhow::Result<NewPrescriptionCourseReceipt> {
+    require_http_proof(&actor)?;
+    create_new_course(pool, actor, source, input).await
+}
 pub async fn create_new_course(
     pool: &PgPool,
     mut actor: PrescriptionActor,
@@ -555,7 +723,7 @@ pub async fn create_new_course(
     let summary = lock_prescription(&mut tx, actor.facility_id, source)
         .await?
         .ok_or(PrescriptionCourseError::NotFound)?;
-    verify_actor(&mut tx, &mut actor).await?;
+    verify_prescribing_actor(&mut tx, &mut actor).await?;
     if let Some(mut result) = replay::<NewPrescriptionCourseReceipt>(
         &mut tx,
         &actor,

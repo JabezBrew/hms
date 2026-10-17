@@ -36,6 +36,105 @@ impl std::fmt::Display for NetworkPolicyError {
 }
 impl std::error::Error for NetworkPolicyError {}
 
+/// The request's server-resolved network decision must remain current until a
+/// protected business/read transaction publishes. This is deliberately separate
+/// from own-auth ceremonies and the policy writer's CAS/FOR UPDATE protocol.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum NetworkPublicationError {
+    MissingProof,
+    PolicyChanged,
+}
+impl NetworkPublicationError {
+    pub fn code(self) -> &'static str {
+        match self {
+            Self::MissingProof => "network_policy_proof_required",
+            Self::PolicyChanged => "network_policy_changed",
+        }
+    }
+    pub fn message(self) -> &'static str {
+        match self {
+            Self::MissingProof => "Current network access proof is required.",
+            Self::PolicyChanged => "Network access changed. Reload and review current access.",
+        }
+    }
+}
+impl std::fmt::Display for NetworkPublicationError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.message())
+    }
+}
+impl std::error::Error for NetworkPublicationError {}
+
+pub async fn require_publication_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    facility: Uuid,
+    expected_version: i64,
+) -> anyhow::Result<()> {
+    if expected_version < 0 {
+        return Err(NetworkPublicationError::MissingProof.into());
+    }
+    if expected_version == 0 {
+        observe_db_query(
+            "network.publication.sentinel",
+            sqlx::query("INSERT INTO facility_network_policies(facility_id) VALUES($1) ON CONFLICT DO NOTHING")
+                .bind(facility)
+                .execute(&mut **tx),
+        )
+        .await?;
+    }
+    let actual: Option<i64> = observe_db_query(
+        "network.publication.lock",
+        sqlx::query_scalar(
+            "SELECT version FROM facility_network_policies WHERE facility_id=$1 FOR SHARE",
+        )
+        .bind(facility)
+        .fetch_optional(&mut **tx),
+    )
+    .await?;
+    if actual != Some(expected_version) {
+        return Err(NetworkPublicationError::PolicyChanged.into());
+    }
+    Ok(())
+}
+
+/// Order only the actor and explicitly reviewed target users before retaining
+/// policy proof. A target may itself publish policy with a strong user lock;
+/// acquiring it after policy SHARE would invert that publisher's order.
+/// This grants no authority: callers still perform their mandatory identity,
+/// feature, deadline and active/local target eligibility checks afterwards.
+pub(crate) async fn prelock_publication_users_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    facility: Uuid,
+    actor: Uuid,
+    targets: &[Uuid],
+) -> anyhow::Result<()> {
+    if targets.iter().all(|target| *target == actor) {
+        return Ok(());
+    }
+    let _parent: Option<Uuid> = observe_db_query(
+        "network.publication.target_facility",
+        sqlx::query_scalar("SELECT id FROM facilities WHERE id=$1 FOR SHARE")
+            .bind(facility)
+            .fetch_optional(&mut **tx),
+    )
+    .await?;
+    let mut users = targets.to_vec();
+    users.push(actor);
+    users.sort_unstable();
+    users.dedup();
+    let _: Vec<Uuid> = observe_db_query(
+        "network.publication.target_users",
+        sqlx::query_scalar(
+            "SELECT id FROM users WHERE facility_id=$1 AND id=ANY($2) ORDER BY id FOR SHARE",
+        )
+        .bind(facility)
+        .bind(users)
+        .fetch_all(&mut **tx),
+    )
+    .await?;
+    Ok(())
+}
+
 #[derive(Clone)]
 pub struct NetworkPolicyActor {
     pub facility_id: Uuid,

@@ -18,7 +18,7 @@ use serde_json::{json, Value};
 use sqlx::{FromRow, QueryBuilder};
 use uuid::Uuid;
 
-use crate::auth::WebAuthnActor;
+use crate::auth::assurance::BusinessFactorActor;
 use crate::{codec, PgPool};
 
 pub(crate) mod privileged;
@@ -26,6 +26,25 @@ pub(crate) mod privileged;
 const EMPLOYEE_IDENTIFIER_TYPE: &str = "employee";
 const EMPLOYEE_ID_SEQUENCE_WIDTH: usize = 7;
 const EMPLOYEE_ID_MAX_SEQUENCE: i64 = 9_999_999;
+
+/// Definite no-write command rejections. Persistence/commit errors must remain
+/// distinguishable from a reviewed reference or scope that is unavailable.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AdminCommandConflict {
+    ReferenceUnavailable,
+    InvalidScope,
+}
+
+impl std::fmt::Display for AdminCommandConflict {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::ReferenceUnavailable => "the administrative reference is unavailable",
+            Self::InvalidScope => "the administrative scope is invalid",
+        })
+    }
+}
+
+impl std::error::Error for AdminCommandConflict {}
 
 pub struct AdminCursor {
     pub occurred_at: DateTime<Utc>,
@@ -159,6 +178,17 @@ pub struct NewPractitionerProfile {
     pub qualification: String,
     pub fhir_practitioner_id: Option<String>,
 }
+
+#[derive(Debug)]
+pub struct PractitionerProfileScopeConflict;
+
+impl std::fmt::Display for PractitionerProfileScopeConflict {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("The practitioner profile requires a facility scope review.")
+    }
+}
+
+impl std::error::Error for PractitionerProfileScopeConflict {}
 
 pub struct NewStaffAccount {
     pub facility_id: Uuid,
@@ -649,7 +679,7 @@ pub async fn create_position_template(
 pub async fn create_position_template_authorized(
     pool: &PgPool,
     template: NewPositionTemplate,
-    actor: WebAuthnActor,
+    actor: BusinessFactorActor,
 ) -> anyhow::Result<PositionTemplateListItem> {
     create_position_template_with_proof(pool, template, Some(actor)).await
 }
@@ -657,12 +687,12 @@ pub async fn create_position_template_authorized(
 async fn create_position_template_with_proof(
     pool: &PgPool,
     template: NewPositionTemplate,
-    mut proof: Option<WebAuthnActor>,
+    mut proof: Option<BusinessFactorActor>,
 ) -> anyhow::Result<PositionTemplateListItem> {
     let id = Uuid::new_v4();
     let permission_codes = codec::encode_slice(&template.permission_codes)?;
     let mut tx = pool.begin().await?;
-    let proof_deadline = privileged::begin(
+    let proof_deadline = privileged::begin_business(
         &mut tx,
         proof.as_mut(),
         template.facility_id,
@@ -697,11 +727,12 @@ async fn create_position_template_with_proof(
         },
     )
     .await?;
+    let response = get_position_template(&mut *tx, template.facility_id, id)
+        .await?
+        .ok_or_else(|| anyhow::anyhow!("position template was not found after write"))?;
     privileged::finish(&mut tx, proof_deadline).await?;
     tx.commit().await?;
-    get_position_template(pool, template.facility_id, id)
-        .await?
-        .ok_or_else(|| anyhow::anyhow!("position template was not found after write"))
+    Ok(response)
 }
 
 pub async fn list_positions(
@@ -734,7 +765,7 @@ pub async fn create_position(
 pub async fn create_position_authorized(
     pool: &PgPool,
     position: NewPosition,
-    actor: WebAuthnActor,
+    actor: BusinessFactorActor,
 ) -> anyhow::Result<PositionListItem> {
     create_position_with_proof(pool, position, Some(actor)).await
 }
@@ -742,11 +773,11 @@ pub async fn create_position_authorized(
 async fn create_position_with_proof(
     pool: &PgPool,
     position: NewPosition,
-    mut proof: Option<WebAuthnActor>,
+    mut proof: Option<BusinessFactorActor>,
 ) -> anyhow::Result<PositionListItem> {
     let id = Uuid::new_v4();
     let mut tx = pool.begin().await?;
-    let proof_deadline = privileged::begin(
+    let proof_deadline = privileged::begin_business(
         &mut tx,
         proof.as_mut(),
         position.facility_id,
@@ -792,11 +823,12 @@ async fn create_position_with_proof(
         },
     )
     .await?;
+    let response = get_position(&mut *tx, position.facility_id, id)
+        .await?
+        .ok_or_else(|| anyhow::anyhow!("position was not found after write"))?;
     privileged::finish(&mut tx, proof_deadline).await?;
     tx.commit().await?;
-    get_position(pool, position.facility_id, id)
-        .await?
-        .ok_or_else(|| anyhow::anyhow!("position was not found after write"))
+    Ok(response)
 }
 
 // Hold reference eligibility through the write instead of trusting a foreign-key
@@ -815,10 +847,9 @@ async fn validate_position_references_tx(
     .bind(facility_id)
     .fetch_optional(&mut **tx)
     .await?;
-    anyhow::ensure!(
-        org_unit.is_some(),
-        "position organization unit is unavailable"
-    );
+    if org_unit.is_none() {
+        return Err(AdminCommandConflict::ReferenceUnavailable.into());
+    }
     if let Some(template_id) = template_id {
         let template = sqlx::query_scalar::<_, Uuid>(
             "SELECT id FROM position_templates WHERE id = $1 AND facility_id = $2 FOR SHARE",
@@ -827,7 +858,9 @@ async fn validate_position_references_tx(
         .bind(facility_id)
         .fetch_optional(&mut **tx)
         .await?;
-        anyhow::ensure!(template.is_some(), "position template is unavailable");
+        if template.is_none() {
+            return Err(AdminCommandConflict::ReferenceUnavailable.into());
+        }
     }
     Ok(())
 }
@@ -873,7 +906,7 @@ pub async fn create_authority_appointment_authorized(
     pool: &PgPool,
     appointment: NewAuthorityAppointment,
     request_id: Option<String>,
-    actor: WebAuthnActor,
+    actor: BusinessFactorActor,
 ) -> anyhow::Result<AuthorityAppointmentListItem> {
     create_authority_appointment_with_proof(pool, appointment, request_id, Some(actor)).await
 }
@@ -882,11 +915,11 @@ async fn create_authority_appointment_with_proof(
     pool: &PgPool,
     appointment: NewAuthorityAppointment,
     request_id: Option<String>,
-    mut proof: Option<WebAuthnActor>,
+    mut proof: Option<BusinessFactorActor>,
 ) -> anyhow::Result<AuthorityAppointmentListItem> {
     let id = Uuid::new_v4();
     let mut tx = pool.begin().await?;
-    let proof_deadline = privileged::begin(
+    let proof_deadline = privileged::begin_business(
         &mut tx,
         proof.as_mut(),
         appointment.facility_id,
@@ -903,10 +936,9 @@ async fn create_authority_appointment_with_proof(
     .bind(appointment.facility_id)
     .fetch_optional(&mut *tx)
     .await?;
-    anyhow::ensure!(
-        target.is_some(),
-        "authority recipient is unavailable in this facility"
-    );
+    if target.is_none() {
+        return Err(AdminCommandConflict::ReferenceUnavailable.into());
+    }
     let position = sqlx::query_as::<_, (Uuid, Option<Uuid>)>(
         "SELECT org_unit_id, template_id FROM positions
          WHERE id=$1 AND facility_id=$2 AND status='active' FOR SHARE",
@@ -915,8 +947,7 @@ async fn create_authority_appointment_with_proof(
     .bind(appointment.facility_id)
     .fetch_optional(&mut *tx)
     .await?;
-    let (org_unit_id, template_id) = position
-        .ok_or_else(|| anyhow::anyhow!("authority position is unavailable in this facility"))?;
+    let (org_unit_id, template_id) = position.ok_or(AdminCommandConflict::ReferenceUnavailable)?;
     validate_position_references_tx(&mut tx, appointment.facility_id, org_unit_id, template_id)
         .await?;
     sqlx::query(
@@ -952,11 +983,12 @@ async fn create_authority_appointment_with_proof(
         },
     )
     .await?;
+    let response = get_authority_appointment(&mut *tx, appointment.facility_id, id)
+        .await?
+        .ok_or_else(|| anyhow::anyhow!("authority appointment was not found after write"))?;
     privileged::finish(&mut tx, proof_deadline).await?;
     tx.commit().await?;
-    get_authority_appointment(pool, appointment.facility_id, id)
-        .await?
-        .ok_or_else(|| anyhow::anyhow!("authority appointment was not found after write"))
+    Ok(response)
 }
 
 pub async fn list_permission_assignments(
@@ -1181,7 +1213,7 @@ pub async fn create_permission_assignment_authorized(
     pool: &PgPool,
     assignment: NewPermissionAssignment,
     request_id: Option<String>,
-    actor: WebAuthnActor,
+    actor: BusinessFactorActor,
 ) -> anyhow::Result<PermissionAssignmentListItem> {
     create_permission_assignment_with_proof(pool, assignment, request_id, Some(actor)).await
 }
@@ -1190,12 +1222,12 @@ async fn create_permission_assignment_with_proof(
     pool: &PgPool,
     assignment: NewPermissionAssignment,
     request_id: Option<String>,
-    mut proof: Option<WebAuthnActor>,
+    mut proof: Option<BusinessFactorActor>,
 ) -> anyhow::Result<PermissionAssignmentListItem> {
     let id = Uuid::new_v4();
     let permission_code = codec::encode(assignment.permission_code)?;
     let mut tx = pool.begin().await?;
-    let proof_deadline = privileged::begin(
+    let proof_deadline = privileged::begin_business(
         &mut tx,
         proof.as_mut(),
         assignment.facility_id,
@@ -1212,24 +1244,22 @@ async fn create_permission_assignment_with_proof(
     .bind(assignment.facility_id)
     .fetch_optional(&mut *tx)
     .await?;
-    anyhow::ensure!(
-        target.is_some(),
-        "authority recipient is unavailable in this facility"
-    );
+    if target.is_none() {
+        return Err(AdminCommandConflict::ReferenceUnavailable.into());
+    }
     match assignment.scope_type.as_str() {
-        "facility" => anyhow::ensure!(
-            assignment.scope_id.is_none(),
-            "facility scope must not have a unit id"
-        ),
+        "facility" if assignment.scope_id.is_some() => {
+            return Err(AdminCommandConflict::InvalidScope.into());
+        }
+        "facility" => {}
         "organization_unit" => {
             let unit = sqlx::query_scalar::<_, Uuid>("SELECT id FROM organization_units WHERE id=$1 AND facility_id=$2 AND is_active=TRUE FOR SHARE")
                 .bind(assignment.scope_id).bind(assignment.facility_id).fetch_optional(&mut *tx).await?;
-            anyhow::ensure!(
-                unit.is_some(),
-                "authority scope is unavailable in this facility"
-            );
+            if unit.is_none() {
+                return Err(AdminCommandConflict::ReferenceUnavailable.into());
+            }
         }
-        _ => anyhow::bail!("authority scope is unsupported"),
+        _ => return Err(AdminCommandConflict::InvalidScope.into()),
     }
     sqlx::query(
         "INSERT INTO permission_assignments (
@@ -1269,11 +1299,12 @@ async fn create_permission_assignment_with_proof(
         },
     )
     .await?;
+    let response = get_permission_assignment(&mut *tx, assignment.facility_id, id)
+        .await?
+        .ok_or_else(|| anyhow::anyhow!("permission assignment was not found after write"))?;
     privileged::finish(&mut tx, proof_deadline).await?;
     tx.commit().await?;
-    get_permission_assignment(pool, assignment.facility_id, id)
-        .await?
-        .ok_or_else(|| anyhow::anyhow!("permission assignment was not found after write"))
+    Ok(response)
 }
 
 pub async fn list_feature_entitlements(
@@ -1363,7 +1394,7 @@ pub async fn update_feature_entitlement_authorized(
     enabled: bool,
     actor_user_id: Uuid,
     request_id: Option<String>,
-    actor: WebAuthnActor,
+    actor: BusinessFactorActor,
 ) -> anyhow::Result<Option<FeatureEntitlementListItem>> {
     update_feature_entitlement_with_proof(
         pool,
@@ -1384,11 +1415,11 @@ async fn update_feature_entitlement_with_proof(
     enabled: bool,
     actor_user_id: Uuid,
     request_id: Option<String>,
-    mut proof: Option<WebAuthnActor>,
+    mut proof: Option<BusinessFactorActor>,
 ) -> anyhow::Result<Option<FeatureEntitlementListItem>> {
     let feature_key = codec::encode(feature)?;
     let mut tx = pool.begin().await?;
-    let proof_deadline = privileged::begin(
+    let proof_deadline = privileged::begin_business(
         &mut tx,
         proof.as_mut(),
         facility_id,
@@ -1449,13 +1480,12 @@ async fn update_feature_entitlement_with_proof(
     )
     .await?;
 
+    let defaults = feature_flags_for_profile(profile);
+    let overrides = feature_entitlement_overrides(&mut *tx, facility_id).await?;
+    let response = feature_entitlement_item(feature, &defaults, &overrides);
     privileged::finish(&mut tx, proof_deadline).await?;
     tx.commit().await?;
-    let defaults = feature_flags_for_profile(profile);
-    let overrides = feature_entitlement_overrides(pool, facility_id).await?;
-    Ok(Some(feature_entitlement_item(
-        feature, &defaults, &overrides,
-    )))
+    Ok(Some(response))
 }
 
 pub async fn delete_feature_entitlement(
@@ -1483,7 +1513,7 @@ pub async fn delete_feature_entitlement_authorized(
     feature: FeatureKey,
     actor_user_id: Uuid,
     request_id: Option<String>,
-    actor: WebAuthnActor,
+    actor: BusinessFactorActor,
 ) -> anyhow::Result<Option<FeatureEntitlementListItem>> {
     delete_feature_entitlement_with_proof(
         pool,
@@ -1502,11 +1532,11 @@ async fn delete_feature_entitlement_with_proof(
     feature: FeatureKey,
     actor_user_id: Uuid,
     request_id: Option<String>,
-    mut proof: Option<WebAuthnActor>,
+    mut proof: Option<BusinessFactorActor>,
 ) -> anyhow::Result<Option<FeatureEntitlementListItem>> {
     let feature_key = codec::encode(feature)?;
     let mut tx = pool.begin().await?;
-    let proof_deadline = privileged::begin(
+    let proof_deadline = privileged::begin_business(
         &mut tx,
         proof.as_mut(),
         facility_id,
@@ -1556,13 +1586,12 @@ async fn delete_feature_entitlement_with_proof(
     )
     .await?;
 
+    let defaults = feature_flags_for_profile(profile);
+    let overrides = feature_entitlement_overrides(&mut *tx, facility_id).await?;
+    let response = feature_entitlement_item(feature, &defaults, &overrides);
     privileged::finish(&mut tx, proof_deadline).await?;
     tx.commit().await?;
-    let defaults = feature_flags_for_profile(profile);
-    let overrides = feature_entitlement_overrides(pool, facility_id).await?;
-    Ok(Some(feature_entitlement_item(
-        feature, &defaults, &overrides,
-    )))
+    Ok(Some(response))
 }
 
 pub async fn list_staff_accounts(
@@ -1658,6 +1687,7 @@ async fn list_staff_facet_options(
                 COUNT(*)::bigint AS count
          FROM staff_profiles
          JOIN users ON users.id = staff_profiles.user_id
+                   AND users.facility_id = staff_profiles.facility_id
          WHERE staff_profiles.facility_id = ",
     );
     query.push_bind(facility_id);
@@ -1715,6 +1745,17 @@ pub async fn get_staff_account(
     facility_id: Uuid,
     staff_id: Uuid,
 ) -> anyhow::Result<Option<StaffListItem>> {
+    get_staff_account_with_executor(pool, facility_id, staff_id).await
+}
+
+async fn get_staff_account_with_executor<'e, E>(
+    executor: E,
+    facility_id: Uuid,
+    staff_id: Uuid,
+) -> anyhow::Result<Option<StaffListItem>>
+where
+    E: sqlx::Executor<'e, Database = sqlx::Postgres>,
+{
     let mut query = QueryBuilder::new(staff_query());
     query.push(" WHERE staff_profiles.facility_id = ");
     query.push_bind(facility_id);
@@ -1722,7 +1763,7 @@ pub async fn get_staff_account(
     query.push_bind(staff_id);
     let row = query
         .build_query_as::<StaffRow>()
-        .fetch_optional(pool)
+        .fetch_optional(executor)
         .await?;
     row.map(staff_from_row).transpose()
 }
@@ -1740,7 +1781,7 @@ pub async fn create_staff_account_authorized(
     pool: &PgPool,
     staff: NewStaffAccount,
     request_id: Option<String>,
-    actor: WebAuthnActor,
+    actor: BusinessFactorActor,
 ) -> anyhow::Result<StaffListItem> {
     create_staff_account_with_proof(pool, staff, request_id, Some(actor)).await
 }
@@ -1749,12 +1790,12 @@ async fn create_staff_account_with_proof(
     pool: &PgPool,
     staff: NewStaffAccount,
     request_id: Option<String>,
-    mut proof: Option<WebAuthnActor>,
+    mut proof: Option<BusinessFactorActor>,
 ) -> anyhow::Result<StaffListItem> {
     let staff_id = Uuid::new_v4();
     let user_id = Uuid::new_v4();
     let mut tx = pool.begin().await?;
-    let proof_deadline = privileged::begin(
+    let proof_deadline = privileged::begin_business(
         &mut tx,
         proof.as_mut(),
         staff.facility_id,
@@ -1881,11 +1922,12 @@ async fn create_staff_account_with_proof(
         },
     )
     .await?;
+    let response = get_staff_account_with_executor(&mut *tx, staff.facility_id, staff_id)
+        .await?
+        .ok_or_else(|| anyhow::anyhow!("staff account was not found after write"))?;
     privileged::finish(&mut tx, proof_deadline).await?;
     tx.commit().await?;
-    get_staff_account(pool, staff.facility_id, staff_id)
-        .await?
-        .ok_or_else(|| anyhow::anyhow!("staff account was not found after write"))
+    Ok(response)
 }
 
 pub async fn remove_failed_staff_account_setup(
@@ -2120,7 +2162,7 @@ pub async fn prepare_staff_password_reset_delivery_authorized(
     staff_id: Uuid,
     setup_token_hash: String,
     setup_token_expires_at: DateTime<Utc>,
-    actor: WebAuthnActor,
+    actor: BusinessFactorActor,
 ) -> anyhow::Result<Option<StaffListItem>> {
     prepare_staff_password_reset_delivery_with_proof(
         pool,
@@ -2139,7 +2181,7 @@ async fn prepare_staff_password_reset_delivery_with_proof(
     staff_id: Uuid,
     setup_token_hash: String,
     setup_token_expires_at: DateTime<Utc>,
-    mut proof: Option<WebAuthnActor>,
+    mut proof: Option<BusinessFactorActor>,
 ) -> anyhow::Result<Option<StaffListItem>> {
     let Some(staff) = get_staff_account(pool, facility_id, staff_id).await? else {
         return Ok(None);
@@ -2148,9 +2190,9 @@ async fn prepare_staff_password_reset_delivery_with_proof(
     let mut tx = pool.begin().await?;
     let actor_user_id = proof
         .as_ref()
-        .map(|actor| actor.user_id)
+        .map(|actor| actor.identity.user_id)
         .unwrap_or_default();
-    let proof_deadline = privileged::begin(
+    let proof_deadline = privileged::begin_business(
         &mut tx,
         proof.as_mut(),
         facility_id,
@@ -2172,9 +2214,10 @@ async fn prepare_staff_password_reset_delivery_with_proof(
     .bind(setup_token_expires_at)
     .execute(&mut *tx)
     .await?;
+    let response = get_staff_account_with_executor(&mut *tx, facility_id, staff_id).await?;
     privileged::finish(&mut tx, proof_deadline).await?;
     tx.commit().await?;
-    get_staff_account(pool, facility_id, staff_id).await
+    Ok(response)
 }
 
 pub async fn cancel_staff_password_reset_delivery(
@@ -2227,7 +2270,7 @@ pub async fn finalize_staff_password_reset_authorized(
     actor_user_id: Uuid,
     request_id: Option<String>,
     setup_token_hash: &str,
-    actor: WebAuthnActor,
+    actor: BusinessFactorActor,
 ) -> anyhow::Result<Option<StaffListItem>> {
     finalize_staff_password_reset_with_proof(
         pool,
@@ -2248,14 +2291,14 @@ async fn finalize_staff_password_reset_with_proof(
     actor_user_id: Uuid,
     request_id: Option<String>,
     setup_token_hash: &str,
-    mut proof: Option<WebAuthnActor>,
+    mut proof: Option<BusinessFactorActor>,
 ) -> anyhow::Result<Option<StaffListItem>> {
     let Some(staff) = get_staff_account(pool, facility_id, staff_id).await? else {
         return Ok(None);
     };
 
     let mut tx = pool.begin().await?;
-    let proof_deadline = privileged::begin(
+    let proof_deadline = privileged::begin_business(
         &mut tx,
         proof.as_mut(),
         facility_id,
@@ -2377,9 +2420,10 @@ async fn finalize_staff_password_reset_with_proof(
         },
     )
     .await?;
+    let response = get_staff_account_with_executor(&mut *tx, facility_id, staff_id).await?;
     privileged::finish(&mut tx, proof_deadline).await?;
     tx.commit().await?;
-    get_staff_account(pool, facility_id, staff_id).await
+    Ok(response)
 }
 
 pub async fn deactivate_staff_account(
@@ -2409,7 +2453,7 @@ pub async fn deactivate_staff_account_authorized(
     staff_id: Uuid,
     actor_user_id: Uuid,
     request_id: Option<String>,
-    actor: WebAuthnActor,
+    actor: BusinessFactorActor,
 ) -> anyhow::Result<Option<StaffListItem>> {
     set_staff_active(
         pool,
@@ -2451,7 +2495,7 @@ pub async fn reactivate_staff_account_authorized(
     staff_id: Uuid,
     actor_user_id: Uuid,
     request_id: Option<String>,
-    actor: WebAuthnActor,
+    actor: BusinessFactorActor,
 ) -> anyhow::Result<Option<StaffListItem>> {
     set_staff_active(
         pool,
@@ -2612,7 +2656,7 @@ pub async fn create_delegation_authorized(
     pool: &PgPool,
     delegation: NewDelegation,
     request_id: Option<String>,
-    actor: WebAuthnActor,
+    actor: BusinessFactorActor,
 ) -> anyhow::Result<DelegationListItem> {
     create_delegation_with_proof(pool, delegation, request_id, Some(actor)).await
 }
@@ -2621,12 +2665,12 @@ async fn create_delegation_with_proof(
     pool: &PgPool,
     delegation: NewDelegation,
     request_id: Option<String>,
-    mut proof: Option<WebAuthnActor>,
+    mut proof: Option<BusinessFactorActor>,
 ) -> anyhow::Result<DelegationListItem> {
     let id = Uuid::new_v4();
     let permission_code = codec::encode(delegation.permission_code)?;
     let mut tx = pool.begin().await?;
-    let proof_deadline = privileged::begin(
+    let proof_deadline = privileged::begin_business(
         &mut tx,
         proof.as_mut(),
         delegation.facility_id,
@@ -2643,10 +2687,9 @@ async fn create_delegation_with_proof(
     .bind(delegation.facility_id)
     .fetch_optional(&mut *tx)
     .await?;
-    anyhow::ensure!(
-        target.is_some(),
-        "authority recipient is unavailable in this facility"
-    );
+    if target.is_none() {
+        return Err(AdminCommandConflict::ReferenceUnavailable.into());
+    }
     let delegator = sqlx::query_scalar::<_, Uuid>(
         "SELECT id FROM users WHERE id=$1 AND facility_id=$2 AND is_active=TRUE",
     )
@@ -2654,10 +2697,9 @@ async fn create_delegation_with_proof(
     .bind(delegation.facility_id)
     .fetch_optional(&mut *tx)
     .await?;
-    anyhow::ensure!(
-        delegator.is_some(),
-        "delegator is unavailable in this facility"
-    );
+    if delegator.is_none() {
+        return Err(AdminCommandConflict::ReferenceUnavailable.into());
+    }
     sqlx::query(
         "INSERT INTO delegations (
             id, facility_id, delegator_user_id, delegate_user_id, permission_code,
@@ -2697,11 +2739,12 @@ async fn create_delegation_with_proof(
         },
     )
     .await?;
+    let response = get_delegation(&mut *tx, delegation.facility_id, id)
+        .await?
+        .ok_or_else(|| anyhow::anyhow!("delegation was not found after write"))?;
     privileged::finish(&mut tx, proof_deadline).await?;
     tx.commit().await?;
-    get_delegation(pool, delegation.facility_id, id)
-        .await?
-        .ok_or_else(|| anyhow::anyhow!("delegation was not found after write"))
+    Ok(response)
 }
 
 pub async fn list_audit_events(
@@ -2918,10 +2961,13 @@ async fn facility_profile(
         .transpose()
 }
 
-async fn feature_entitlement_overrides(
-    pool: &PgPool,
+async fn feature_entitlement_overrides<'e, E>(
+    executor: E,
     facility_id: Uuid,
-) -> anyhow::Result<HashMap<FeatureKey, FeatureEntitlementRow>> {
+) -> anyhow::Result<HashMap<FeatureKey, FeatureEntitlementRow>>
+where
+    E: sqlx::Executor<'e, Database = sqlx::Postgres>,
+{
     let rows = sqlx::query_as::<_, FeatureEntitlementRow>(
         r#"
         SELECT feature_key,
@@ -2933,7 +2979,7 @@ async fn feature_entitlement_overrides(
         "#,
     )
     .bind(facility_id)
-    .fetch_all(pool)
+    .fetch_all(executor)
     .await?;
 
     let mut overrides = HashMap::new();
@@ -2970,7 +3016,7 @@ async fn insert_practitioner_profile_tx(
     actor_user_id: Uuid,
     profile: NewPractitionerProfile,
 ) -> anyhow::Result<()> {
-    sqlx::query(
+    let saved = sqlx::query(
         r#"
         INSERT INTO practitioner_profiles (
             id,
@@ -2991,6 +3037,7 @@ async fn insert_practitioner_profile_tx(
             fhir_practitioner_id = EXCLUDED.fhir_practitioner_id,
             updated_by_user_id = EXCLUDED.updated_by_user_id,
             updated_at = now()
+        WHERE practitioner_profiles.facility_id = EXCLUDED.facility_id
         "#,
     )
     .bind(Uuid::new_v4())
@@ -3008,6 +3055,10 @@ async fn insert_practitioner_profile_tx(
     .execute(&mut **tx)
     .await?;
 
+    if saved.rows_affected() != 1 {
+        return Err(PractitionerProfileScopeConflict.into());
+    }
+
     Ok(())
 }
 
@@ -3019,14 +3070,14 @@ async fn set_staff_active(
     is_active: bool,
     event_type: &'static str,
     request_id: Option<String>,
-    mut proof: Option<WebAuthnActor>,
+    mut proof: Option<BusinessFactorActor>,
 ) -> anyhow::Result<Option<StaffListItem>> {
     let Some(staff) = get_staff_account(pool, facility_id, staff_id).await? else {
         return Ok(None);
     };
 
     let mut tx = pool.begin().await?;
-    let proof_deadline = privileged::begin(
+    let proof_deadline = privileged::begin_business(
         &mut tx,
         proof.as_mut(),
         facility_id,
@@ -3036,19 +3087,21 @@ async fn set_staff_active(
         false,
     )
     .await?;
-    sqlx::query(
+    let changed = sqlx::query(
         "UPDATE users
          SET is_active = $3,
              session_version = session_version + 1,
              updated_at = now()
-         WHERE id = $1 AND facility_id = $2",
+         WHERE id = $1 AND facility_id = $2 AND is_active IS DISTINCT FROM $3",
     )
     .bind(staff.user_id)
     .bind(facility_id)
     .bind(is_active)
     .execute(&mut *tx)
-    .await?;
-    if !is_active {
+    .await?
+    .rows_affected()
+        > 0;
+    if changed && !is_active {
         sqlx::query(
             "UPDATE refresh_sessions
              SET revoked_at = COALESCE(revoked_at, now()),
@@ -3060,22 +3113,25 @@ async fn set_staff_active(
         .execute(&mut *tx)
         .await?;
     }
-    insert_audit_event_tx(
-        &mut tx,
-        NewAuditEvent {
-            facility_id,
-            actor_user_id: Some(actor_user_id),
-            request_id,
-            event_type: event_type.to_owned(),
-            resource_type: "staff".to_owned(),
-            resource_id: Some(staff_id),
-            metadata: json!({ "active": is_active }),
-        },
-    )
-    .await?;
+    if changed {
+        insert_audit_event_tx(
+            &mut tx,
+            NewAuditEvent {
+                facility_id,
+                actor_user_id: Some(actor_user_id),
+                request_id,
+                event_type: event_type.to_owned(),
+                resource_type: "staff".to_owned(),
+                resource_id: Some(staff_id),
+                metadata: json!({ "active": is_active }),
+            },
+        )
+        .await?;
+    }
+    let response = get_staff_account_with_executor(&mut *tx, facility_id, staff_id).await?;
     privileged::finish(&mut tx, proof_deadline).await?;
     tx.commit().await?;
-    get_staff_account(pool, facility_id, staff_id).await
+    Ok(response)
 }
 
 async fn get_organization_unit(
@@ -3104,11 +3160,14 @@ async fn get_organization_unit(
     row.map(organization_unit_from_row).transpose()
 }
 
-async fn get_position_template(
-    pool: &PgPool,
+async fn get_position_template<'e, E>(
+    executor: E,
     facility_id: Uuid,
     id: Uuid,
-) -> anyhow::Result<Option<PositionTemplateListItem>> {
+) -> anyhow::Result<Option<PositionTemplateListItem>>
+where
+    E: sqlx::Executor<'e, Database = sqlx::Postgres>,
+{
     let row = sqlx::query_as::<_, PositionTemplateRow>(
         "SELECT id, code, title, description, permission_codes, created_at
          FROM position_templates
@@ -3116,16 +3175,19 @@ async fn get_position_template(
     )
     .bind(facility_id)
     .bind(id)
-    .fetch_optional(pool)
+    .fetch_optional(executor)
     .await?;
     row.map(position_template_from_row).transpose()
 }
 
-async fn get_position(
-    pool: &PgPool,
+async fn get_position<'e, E>(
+    executor: E,
     facility_id: Uuid,
     id: Uuid,
-) -> anyhow::Result<Option<PositionListItem>> {
+) -> anyhow::Result<Option<PositionListItem>>
+where
+    E: sqlx::Executor<'e, Database = sqlx::Postgres>,
+{
     let mut query = QueryBuilder::new(position_query());
     query.push(" WHERE positions.facility_id = ");
     query.push_bind(facility_id);
@@ -3133,16 +3195,19 @@ async fn get_position(
     query.push_bind(id);
     let row = query
         .build_query_as::<PositionRow>()
-        .fetch_optional(pool)
+        .fetch_optional(executor)
         .await?;
     row.map(position_from_row).transpose()
 }
 
-async fn get_authority_appointment(
-    pool: &PgPool,
+async fn get_authority_appointment<'e, E>(
+    executor: E,
     facility_id: Uuid,
     id: Uuid,
-) -> anyhow::Result<Option<AuthorityAppointmentListItem>> {
+) -> anyhow::Result<Option<AuthorityAppointmentListItem>>
+where
+    E: sqlx::Executor<'e, Database = sqlx::Postgres>,
+{
     let mut query = QueryBuilder::new(authority_appointment_query());
     query.push(" WHERE authority_appointments.facility_id = ");
     query.push_bind(facility_id);
@@ -3150,16 +3215,19 @@ async fn get_authority_appointment(
     query.push_bind(id);
     let row = query
         .build_query_as::<AuthorityAppointmentRow>()
-        .fetch_optional(pool)
+        .fetch_optional(executor)
         .await?;
     row.map(authority_appointment_from_row).transpose()
 }
 
-async fn get_permission_assignment(
-    pool: &PgPool,
+async fn get_permission_assignment<'e, E>(
+    executor: E,
     facility_id: Uuid,
     id: Uuid,
-) -> anyhow::Result<Option<PermissionAssignmentListItem>> {
+) -> anyhow::Result<Option<PermissionAssignmentListItem>>
+where
+    E: sqlx::Executor<'e, Database = sqlx::Postgres>,
+{
     let mut query = QueryBuilder::new(permission_assignment_query());
     query.push(" WHERE permission_assignments.facility_id = ");
     query.push_bind(facility_id);
@@ -3167,7 +3235,7 @@ async fn get_permission_assignment(
     query.push_bind(id);
     let row = query
         .build_query_as::<PermissionAssignmentRow>()
-        .fetch_optional(pool)
+        .fetch_optional(executor)
         .await?;
     row.map(permission_assignment_from_row).transpose()
 }
@@ -3189,11 +3257,14 @@ async fn get_committee(
     row.map(committee_from_row).transpose()
 }
 
-async fn get_delegation(
-    pool: &PgPool,
+async fn get_delegation<'e, E>(
+    executor: E,
     facility_id: Uuid,
     id: Uuid,
-) -> anyhow::Result<Option<DelegationListItem>> {
+) -> anyhow::Result<Option<DelegationListItem>>
+where
+    E: sqlx::Executor<'e, Database = sqlx::Postgres>,
+{
     let mut query = QueryBuilder::new(delegation_query());
     query.push(" WHERE delegations.facility_id = ");
     query.push_bind(facility_id);
@@ -3201,7 +3272,7 @@ async fn get_delegation(
     query.push_bind(id);
     let row = query
         .build_query_as::<DelegationRow>()
-        .fetch_optional(pool)
+        .fetch_optional(executor)
         .await?;
     row.map(delegation_from_row).transpose()
 }
@@ -3263,7 +3334,9 @@ fn staff_query() -> &'static str {
             staff_profiles.created_at
      FROM staff_profiles
      JOIN users ON users.id = staff_profiles.user_id
-     LEFT JOIN practitioner_profiles ON practitioner_profiles.staff_id = staff_profiles.id"
+               AND users.facility_id = staff_profiles.facility_id
+     LEFT JOIN practitioner_profiles ON practitioner_profiles.staff_id = staff_profiles.id
+                                    AND practitioner_profiles.facility_id = staff_profiles.facility_id"
 }
 
 fn practitioner_query() -> &'static str {
@@ -3280,7 +3353,9 @@ fn practitioner_query() -> &'static str {
             practitioner_profiles.created_at
      FROM practitioner_profiles
      JOIN staff_profiles ON staff_profiles.id = practitioner_profiles.staff_id
-     JOIN users ON users.id = staff_profiles.user_id"
+                        AND staff_profiles.facility_id = practitioner_profiles.facility_id
+     JOIN users ON users.id = staff_profiles.user_id
+               AND users.facility_id = staff_profiles.facility_id"
 }
 
 fn position_query() -> &'static str {

@@ -84,6 +84,9 @@ fn page(
     })
 }
 fn error(value: anyhow::Error, write: bool) -> ApiError {
+    if let Some(error) = ApiError::network_publication(&value) {
+        return error;
+    }
     if let Some(e) = value.downcast_ref::<MedicationAccessError>() {
         return match e {
             MedicationAccessError::FeatureDisabled => ApiError::forbidden(

@@ -50,6 +50,8 @@ describe('current-authority factor requirement from the real fetch boundary', ()
   it.each([
     ['permission_denied', 403], ['password_change_required', 403], ['factor_authorization_expired', 403],
     ['network_reauth_required', 403], ['passkey_verification_required_extra', 403],
+    ['network_policy_changed', 403], ['network_policy_proof_required', 403],
+    ['billing_approver_required', 403], ['billing_approver_authority_expired', 403],
     ['passkey_verification_required', 401], ['passkey_verification_required', 409], ['passkey_verification_required', 500],
   ])('does not treat %s HTTP %s as repairable factor proof', async (code, status) => {
     globalThis.fetch.mockResolvedValueOnce(errorResponse(code, status));

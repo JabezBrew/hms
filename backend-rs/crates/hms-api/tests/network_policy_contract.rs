@@ -542,10 +542,11 @@ async fn warm_protected_request_reuses_context_instead_of_resolving_auth_twice()
     // must not be mistaken for a second request-context hydration/resolution.
     let auth_and_connection_reads = 2;
     let clinical_identity_and_deadline_reads = 4;
+    let retained_business_policy_read = 1;
     assert_eq!(
         metrics.db_query_count,
-        auth_and_connection_reads + clinical_identity_and_deadline_reads,
-        "one auth-version read, one connection-policy read and four existing clinical-proof reads; handler must reuse context"
+        auth_and_connection_reads + clinical_identity_and_deadline_reads + retained_business_policy_read,
+        "one auth-version read, one connection decision, four clinical-proof reads and one retained policy proof; handler must reuse context"
     );
 }
 

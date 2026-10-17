@@ -35,11 +35,19 @@ pub struct PrivilegedDeadline {
     password: DateTime<Utc>,
     factor: DateTime<Utc>,
 }
+
+/// Business publication composes network authority with the exact factor proof.
+/// Own credential ceremonies deliberately keep their separate WebAuthnActor.
+#[derive(Clone)]
+pub struct BusinessFactorActor {
+    pub identity: WebAuthnActor,
+    pub resolved_network_policy_version: i64,
+}
 impl PrivilegedDeadline {
     pub fn expires_at(self) -> DateTime<Utc> {
         self.authority.min(self.password).min(self.factor)
     }
-    fn check_at(self, at: DateTime<Utc>) -> Result<(), FactorError> {
+    pub(crate) fn check_at(self, at: DateTime<Utc>) -> Result<(), FactorError> {
         if at >= self.authority {
             return Err(FactorError::AuthorizationExpired);
         }
@@ -1134,20 +1142,38 @@ pub async fn require_family_privileged_tx(
     Ok(end)
 }
 
+/// Hold the server-resolved policy alongside existing session/key/family locks
+/// until the caller has shaped its result and committed its business work.
+pub async fn require_family_business_tx(
+    tx: &mut Tx<'_>,
+    actor: &mut BusinessFactorActor,
+    facility: Uuid,
+    user: Uuid,
+    permission: PermissionCode,
+    feature: FeatureKey,
+) -> anyhow::Result<PrivilegedDeadline> {
+    let end =
+        require_family_privileged_tx(tx, &mut actor.identity, facility, user, permission, feature)
+            .await?;
+    crate::network::require_publication_tx(tx, facility, actor.resolved_network_policy_version)
+        .await?;
+    check_privileged_deadline_tx(tx, end).await?;
+    Ok(end)
+}
+
 /// Revalidate a collected privileged read immediately before publication. The
 /// caller must finish external I/O before entering this short transaction.
 pub async fn confirm_family_privileged(
     pool: &PgPool,
-    mut actor: WebAuthnActor,
+    mut actor: BusinessFactorActor,
     permission: PermissionCode,
     feature: FeatureKey,
 ) -> anyhow::Result<()> {
     let mut tx = pool.begin().await?;
-    let facility = actor.facility_id;
-    let user = actor.user_id;
-    let end =
-        require_family_privileged_tx(&mut tx, &mut actor, facility, user, permission, feature)
-            .await?;
+    let facility = actor.identity.facility_id;
+    let user = actor.identity.user_id;
+    let end = require_family_business_tx(&mut tx, &mut actor, facility, user, permission, feature)
+        .await?;
     check_privileged_deadline_tx(&mut tx, end).await?;
     tx.commit().await?;
     Ok(())

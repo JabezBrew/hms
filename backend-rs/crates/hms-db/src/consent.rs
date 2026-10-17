@@ -67,7 +67,7 @@ pub async fn create_consent_grant(
 pub async fn create_consent_grant_authorized(
     pool: &PgPool,
     grant: NewConsentGrant,
-    authorization: crate::auth::WebAuthnActor,
+    authorization: crate::auth::assurance::BusinessFactorActor,
 ) -> anyhow::Result<ConsentGrantListItem> {
     create_consent_grant_inner(pool, grant, Some(authorization)).await
 }
@@ -75,12 +75,12 @@ pub async fn create_consent_grant_authorized(
 async fn create_consent_grant_inner(
     pool: &PgPool,
     grant: NewConsentGrant,
-    authorization: Option<crate::auth::WebAuthnActor>,
+    authorization: Option<crate::auth::assurance::BusinessFactorActor>,
 ) -> anyhow::Result<ConsentGrantListItem> {
     let mut transaction = pool.begin().await?;
     let privileged_deadline = if let Some(mut actor) = authorization {
         Some(
-            crate::auth::assurance::require_family_privileged_tx(
+            crate::auth::assurance::require_family_business_tx(
                 &mut transaction,
                 &mut actor,
                 grant.facility_id,
@@ -127,11 +127,12 @@ async fn create_consent_grant_inner(
 
     sqlx::query("INSERT INTO audit_events(id,facility_id,actor_user_id,event_type,resource_type,resource_id,metadata) VALUES(gen_random_uuid(),$1,$2,$3,'consent_grant',$4,'{}'::jsonb)")
         .bind(grant.facility_id).bind(grant.created_by_user_id).bind("consent.granted").bind(grant.id).execute(&mut *transaction).await?;
+    let result = consent_by_id(&mut *transaction, grant.facility_id, grant.id).await?;
     if let Some(end) = privileged_deadline {
         crate::auth::assurance::check_privileged_deadline_tx(&mut transaction, end).await?;
     }
     transaction.commit().await?;
-    consent_by_id(pool, grant.facility_id, grant.id).await
+    Ok(result)
 }
 
 pub async fn get_consent_grant(
@@ -156,7 +157,7 @@ pub async fn revoke_consent_grant_authorized(
     facility_id: Uuid,
     grant_id: Uuid,
     actor_user_id: Uuid,
-    authorization: crate::auth::WebAuthnActor,
+    authorization: crate::auth::assurance::BusinessFactorActor,
 ) -> anyhow::Result<Option<ConsentGrantListItem>> {
     revoke_consent_grant_inner(
         pool,
@@ -173,12 +174,12 @@ async fn revoke_consent_grant_inner(
     facility_id: Uuid,
     grant_id: Uuid,
     actor_user_id: Uuid,
-    authorization: Option<crate::auth::WebAuthnActor>,
+    authorization: Option<crate::auth::assurance::BusinessFactorActor>,
 ) -> anyhow::Result<Option<ConsentGrantListItem>> {
     let mut transaction = pool.begin().await?;
     let privileged_deadline = if let Some(mut actor) = authorization {
         Some(
-            crate::auth::assurance::require_family_privileged_tx(
+            crate::auth::assurance::require_family_business_tx(
                 &mut transaction,
                 &mut actor,
                 facility_id,
@@ -215,11 +216,12 @@ async fn revoke_consent_grant_inner(
         sqlx::query("INSERT INTO audit_events(id,facility_id,actor_user_id,event_type,resource_type,resource_id,metadata) VALUES(gen_random_uuid(),$1,$2,$3,'consent_grant',$4,'{}'::jsonb)")
         .bind(facility_id).bind(actor_user_id).bind("consent.revoked").bind(grant_id).execute(&mut *transaction).await?;
     }
+    let result = optional_consent_by_id(&mut *transaction, facility_id, grant_id).await?;
     if let Some(end) = privileged_deadline {
         crate::auth::assurance::check_privileged_deadline_tx(&mut transaction, end).await?;
     }
     transaction.commit().await?;
-    optional_consent_by_id(pool, facility_id, grant_id).await
+    Ok(result)
 }
 
 fn consent_query() -> QueryBuilder<'static, Postgres> {
@@ -253,21 +255,27 @@ fn append_cursor(query: &mut QueryBuilder<'_, Postgres>, cursor: Option<ConsentC
     }
 }
 
-async fn consent_by_id(
-    pool: &PgPool,
+async fn consent_by_id<'e, E>(
+    executor: E,
     facility_id: Uuid,
     grant_id: Uuid,
-) -> anyhow::Result<ConsentGrantListItem> {
-    optional_consent_by_id(pool, facility_id, grant_id)
+) -> anyhow::Result<ConsentGrantListItem>
+where
+    E: sqlx::Executor<'e, Database = sqlx::Postgres>,
+{
+    optional_consent_by_id(executor, facility_id, grant_id)
         .await?
         .ok_or_else(|| anyhow::anyhow!("consent grant was not found after write"))
 }
 
-async fn optional_consent_by_id(
-    pool: &PgPool,
+async fn optional_consent_by_id<'e, E>(
+    executor: E,
     facility_id: Uuid,
     grant_id: Uuid,
-) -> anyhow::Result<Option<ConsentGrantListItem>> {
+) -> anyhow::Result<Option<ConsentGrantListItem>>
+where
+    E: sqlx::Executor<'e, Database = sqlx::Postgres>,
+{
     let mut query = consent_query();
     query.push(" WHERE consent_grants.facility_id = ");
     query.push_bind(facility_id);
@@ -275,7 +283,7 @@ async fn optional_consent_by_id(
     query.push_bind(grant_id);
     let row = query
         .build_query_as::<ConsentGrantRow>()
-        .fetch_optional(pool)
+        .fetch_optional(executor)
         .await?;
     row.map(consent_from_row).transpose()
 }

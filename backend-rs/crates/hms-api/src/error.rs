@@ -29,6 +29,14 @@ pub struct ApiError {
 }
 
 impl ApiError {
+    /// A failed retained network proof is a definite denial before publication,
+    /// rather than an unknown write outcome that could invite a duplicate.
+    pub fn network_publication(error: &anyhow::Error) -> Option<Self> {
+        error
+            .downcast_ref::<hms_db::network::NetworkPublicationError>()
+            .map(|reason| Self::forbidden(reason.code(), reason.message()))
+    }
+
     pub fn bad_request(code: &'static str, message: &'static str) -> Self {
         Self {
             status: StatusCode::BAD_REQUEST,

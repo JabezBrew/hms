@@ -301,15 +301,15 @@ impl FinancialWorkflowService {
         )
         .await
         .map_err(|error| {
-            if error
-                .downcast_ref::<hms_db::auth::assurance::FactorError>()
-                .is_some()
-            {
+            if let Some(reason) = error.downcast_ref::<hms_db::billing::BillingApproverError>() {
+                return ApiError::forbidden(reason.code(), reason.message());
+            }
+            if crate::services::auth_factor::is_authority_error(&error) {
                 return crate::services::auth_factor::error(error);
             }
             ApiError::conflict(
-                "invoice_finalization_failed",
-                "Invoice could not be finalized.",
+                "invoice_finalization_write_unconfirmed",
+                "Invoice finalization could not be confirmed. Review the saved invoice before trying again.",
             )
         })?
         .ok_or_else(|| ApiError::not_found("invoice_not_found", "Invoice was not found."))?;
@@ -353,15 +353,21 @@ impl FinancialWorkflowService {
         )
         .await
         .map_err(|error| {
-            if error
-                .downcast_ref::<hms_db::auth::assurance::FactorError>()
-                .is_some()
-            {
+            if let Some(reason) = error.downcast_ref::<hms_db::billing::BillingApproverError>() {
+                return ApiError::forbidden(reason.code(), reason.message());
+            }
+            if crate::services::auth_factor::is_authority_error(&error) {
                 return crate::services::auth_factor::error(error);
             }
+            if error.is::<hms_db::billing::FinancialWriteConflict>() {
+                return ApiError::conflict(
+                    "payment_reversal_failed",
+                    "Payment reversal could not be recorded.",
+                );
+            }
             ApiError::conflict(
-                "payment_reversal_failed",
-                "Payment reversal could not be recorded.",
+                "payment_reversal_write_unconfirmed",
+                "Payment reversal could not be confirmed. Review the payment ledger before trying again.",
             )
         })?;
         Ok(object(reversal))

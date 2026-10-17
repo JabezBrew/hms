@@ -427,6 +427,7 @@ pub async fn save(
         }
     }
     artifacts::lock_prescriptions(&mut tx, &actor, patient, &input.actions).await?;
+    access::prelock_targets(&mut tx, &actor, &input.actions).await?;
     access::verify(&mut tx, &mut actor).await?;
     access::patient(&mut tx, &mut actor, patient).await?;
     if let Some(id) = input.ward_round_id {
@@ -551,6 +552,7 @@ pub async fn commit(
         return Err(WardRoundError::InvalidInput.into());
     }
     artifacts::lock_prescriptions(&mut tx, &actor, patient, &normalized.actions).await?;
+    access::prelock_targets(&mut tx, &actor, &normalized.actions).await?;
     access::verify(&mut tx, &mut actor).await?;
     artifacts::lock_groups(&mut tx, &actor, patient, &normalized.actions).await?;
     let discharge = artifacts::discharge_source(

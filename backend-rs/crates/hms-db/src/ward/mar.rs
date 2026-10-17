@@ -510,6 +510,17 @@ async fn record_medication_outcome_inner(
     } else {
         None
     };
+    // Source remains first; reviewed actor/witness users precede the first
+    // policy proof. Keep the later active local witness check unchanged.
+    if access_actor.is_some() || command.authorization.is_some() {
+        crate::network::prelock_publication_users_tx(
+            &mut transaction,
+            command.facility_id,
+            command.actor_user_id,
+            &command.witness_user_id.into_iter().collect::<Vec<_>>(),
+        )
+        .await?;
+    }
     let actor = if let Some(actor) = access_actor.as_mut() {
         crate::clinical::medication_access::verify(
             &mut transaction,

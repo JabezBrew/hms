@@ -31,6 +31,7 @@ impl WardRoundsService {
             user_id: ctx.user_id,
             request_id: Some(ctx.request_id.clone()),
             authorization: hms_db::clinical::prescription_courses::PrescriptionAuthorization {
+                resolved_network_policy_version: ctx.resolved_network_policy_version,
                 session_id: ctx.session_id,
                 session_version: ctx.session_version,
                 permission_version: ctx.permission_version,
@@ -311,6 +312,9 @@ impl AppState {
     }
 }
 fn map_error(error: anyhow::Error, write: bool) -> ApiError {
+    if let Some(error) = ApiError::network_publication(&error) {
+        return error;
+    }
     if let Some(e) = error.downcast_ref::<WardRoundError>() {
         return match e {
         WardRoundError::NotFound=>ApiError::not_found("ward_round_not_found","The Ward Round, admission or original request was not found."),

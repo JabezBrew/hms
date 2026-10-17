@@ -861,15 +861,12 @@ impl PatientsService {
         )
         .await
         .map_err(|error| {
-            if error
-                .downcast_ref::<hms_db::auth::assurance::FactorError>()
-                .is_some()
-            {
+            if crate::services::auth_factor::is_authority_error(&error) {
                 return crate::services::auth_factor::error(error);
             }
             ApiError::conflict(
-                "break_glass_grant_failed",
-                "Break-glass access could not be granted.",
+                "break_glass_grant_write_unconfirmed",
+                "The emergency access outcome could not be confirmed. Review its current status before requesting another grant.",
             )
         })?;
 
@@ -901,8 +898,8 @@ impl PatientsService {
         .await
         .map_err(|_| {
             ApiError::conflict(
-                "break_glass_end_failed",
-                "Break-glass grants could not be ended.",
+                "break_glass_end_write_unconfirmed",
+                "Ending emergency access could not be confirmed. Refresh its current status before requesting access again.",
             )
         })?;
 

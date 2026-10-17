@@ -191,9 +191,7 @@ impl ControlledSubstancesService {
         )
         .await
         .map_err(|error| {
-            if error
-                .downcast_ref::<hms_db::auth::assurance::FactorError>()
-                .is_some()
+            if crate::services::auth_factor::is_authority_error(&error)
             {
                 return crate::services::auth_factor::error(error);
             }
@@ -250,9 +248,7 @@ impl ControlledSubstancesService {
         )
         .await
         .map_err(|error| {
-            if error
-                .downcast_ref::<hms_db::auth::assurance::FactorError>()
-                .is_some()
+            if crate::services::auth_factor::is_authority_error(&error)
             {
                 return crate::services::auth_factor::error(error);
             }

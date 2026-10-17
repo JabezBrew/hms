@@ -937,7 +937,22 @@ async fn payment_reversal_writes_admin_visible_audit_event() {
         .expect("payment id exists")
         .to_owned();
 
-    let supervisor_user_id = Uuid::from_u128(hms_db::provision::LIMITED_USER_ID);
+    // The deliberately setup-required limited demo account is not an eligible
+    // reviewer. Create an independent active, setup-complete synthetic account
+    // for this positive audit contract without changing baseline safety facts.
+    let supervisor_user_id = Uuid::new_v4();
+    let pool = app.db_pool().await;
+    sqlx::query("INSERT INTO users(id,facility_id,email,display_name,password_hash,is_active,password_change_required) SELECT $1,facility_id,'billing-audit-reviewer@hms.local','Synthetic billing audit reviewer',password_hash,TRUE,FALSE FROM users WHERE facility_id=$2 AND id=$3")
+        .bind(supervisor_user_id)
+        .bind(app.state().facility_id())
+        .bind(Uuid::from_u128(hms_db::provision::OWNER_USER_ID))
+        .execute(&pool)
+        .await
+        .expect("independent eligible synthetic billing reviewer exists");
+    // This is an explicitly eligible named local reviewer, not a second
+    // authenticated person's approval ceremony.
+    grant_test_permission(&app, supervisor_user_id, PermissionCode::BillingManage).await;
+    grant_test_feature(&app, supervisor_user_id, FeatureKey::Billing).await;
     let reverse_response = app
         .clone()
         .oneshot(

@@ -379,6 +379,9 @@ fn read_error() -> ApiError {
     )
 }
 pub(super) fn fluid_error(error: anyhow::Error, write: bool) -> ApiError {
+    if let Some(error) = ApiError::network_publication(&error) {
+        return error;
+    }
     if error.is::<hms_db::ward::nursing_access::NursingError>() {
         return nursing_access::error(error, write);
     }

@@ -775,18 +775,16 @@ impl ClinicalService {
         )?;
         prescription_courses::require_full_clinical_detail(ctx)?;
         let _source = load_prescription_for_access(&self.state, ctx, id).await?;
-        let detail =
-            hms_db::clinical::prescription_courses::get_detail(self.pool(), self.facility_id(), id)
-                .await
-                .map_err(|_| {
-                    ApiError::conflict(
-                        "prescription_load_failed",
-                        "Prescription details could not be loaded.",
-                    )
-                })?
-                .ok_or_else(|| {
-                    ApiError::not_found("prescription_not_found", "Prescription was not found.")
-                })?;
+        let detail = hms_db::clinical::prescription_courses::get_detail_authorized(
+            self.pool(),
+            prescription_courses::read_actor(ctx)?,
+            id,
+        )
+        .await
+        .map_err(prescription_courses::write_error)?
+        .ok_or_else(|| {
+            ApiError::not_found("prescription_not_found", "Prescription was not found.")
+        })?;
         Ok(object(detail))
     }
 
@@ -826,7 +824,8 @@ impl ClinicalService {
             hms_db::clinical::update_prescription_authorized(self.pool(), medication_access::actor(ctx,authorization_deadline), id, payload)
                 .await
                 .map_err(|error| {
-                    if error.is::<hms_db::clinical::medication_access::MedicationAccessError>() {
+                    if let Some(error) = ApiError::network_publication(&error) { return error; }
+            if error.is::<hms_db::clinical::medication_access::MedicationAccessError>() {
                         return medication_access::error(error,true);
                     }
                     if error.to_string() == "prescription_inventory_item_invalid" {
@@ -888,6 +887,7 @@ impl ClinicalService {
         )
         .await
         .map_err(|error| {
+            if let Some(error) = ApiError::network_publication(&error) { return error; }
             if error.is::<hms_db::clinical::medication_access::MedicationAccessError>() {return medication_access::error(error,true);}
             if error.is::<hms_db::clinical::stock_basis::StockBasisError>() || error.is::<hms_db::clinical::prescription_courses::PrescriptionCourseError>() {return crate::services::clinical::prescription_courses::write_error(error);}
 

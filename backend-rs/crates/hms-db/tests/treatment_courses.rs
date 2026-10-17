@@ -326,6 +326,12 @@ async fn actor(db: &TestDb) -> MedicationActor {
             user_id: db.owner_user_id(),
             request_id: None,
             authorization: Some(PrescriptionAuthorization {
+                resolved_network_policy_version: Some(
+                    hms_db::network::get_policy(db.pool(), db.facility_id())
+                        .await
+                        .unwrap()
+                        .version,
+                ),
                 session_id: id,
                 session_version: sv,
                 permission_version: pv,

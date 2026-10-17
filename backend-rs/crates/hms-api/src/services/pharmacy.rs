@@ -187,6 +187,7 @@ impl PharmacyService {
         )
         .await
         .map_err(|error| {
+            if let Some(error) = ApiError::network_publication(&error) { return error; }
             if error.is::<hms_db::clinical::medication_access::MedicationAccessError>() {return crate::services::clinical::medication_access::error(error,true);}
             if error.is::<hms_db::clinical::stock_basis::StockBasisError>() || error.is::<hms_db::clinical::prescription_courses::PrescriptionCourseError>() {return crate::services::clinical::prescription_courses::write_error(error);}
 

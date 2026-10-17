@@ -142,7 +142,7 @@ pub async fn revoke_access_grant(
 pub async fn revoke_access_grant_authorized(
     pool: &PgPool,
     command: RevokeGrant,
-    actor: crate::auth::WebAuthnActor,
+    actor: crate::auth::assurance::BusinessFactorActor,
 ) -> Result<AccessGrantRevocation, RevokeGrantError> {
     revoke_access_grant_with_proof(pool, command, Some(actor)).await
 }
@@ -150,7 +150,7 @@ pub async fn revoke_access_grant_authorized(
 async fn revoke_access_grant_with_proof(
     pool: &PgPool,
     command: RevokeGrant,
-    mut proof: Option<crate::auth::WebAuthnActor>,
+    mut proof: Option<crate::auth::assurance::BusinessFactorActor>,
 ) -> Result<AccessGrantRevocation, RevokeGrantError> {
     // Identifiers come exclusively from the enum, never request text.
     let (table, user_column) = match command.kind {
@@ -167,7 +167,7 @@ async fn revoke_access_grant_with_proof(
     .fetch_optional(&mut *tx)
     .await?
     .ok_or(RevokeGrantError::NotFound)?;
-    let proof_deadline = crate::admin::privileged::begin(
+    let proof_deadline = crate::admin::privileged::begin_business(
         &mut tx,
         proof.as_mut(),
         command.facility_id,
@@ -257,9 +257,7 @@ async fn revoke_access_grant_with_proof(
     } else {
         (false, None)
     };
-    crate::admin::privileged::finish(&mut tx, proof_deadline).await?;
-    tx.commit().await?;
-    Ok(AccessGrantRevocation {
+    let response = AccessGrantRevocation {
         id: command.id,
         kind: command.kind,
         user_id,
@@ -267,5 +265,8 @@ async fn revoke_access_grant_with_proof(
         revoked_at,
         independent_access_retained,
         effective_permission_remaining,
-    })
+    };
+    crate::admin::privileged::finish(&mut tx, proof_deadline).await?;
+    tx.commit().await?;
+    Ok(response)
 }

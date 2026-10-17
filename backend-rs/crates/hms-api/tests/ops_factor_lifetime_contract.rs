@@ -148,3 +148,50 @@ async fn ops_read_rechecks_current_admin_feature_after_external_collection() {
     sqlx::query("INSERT INTO facility_feature_entitlements(facility_id,feature_key,enabled) VALUES($1,'admin',false) ON CONFLICT(facility_id,feature_key) DO UPDATE SET enabled=false").bind(app.state().facility_id()).execute(&pool).await.unwrap();
     finish_read(pending, &gate, server, "factor_authorization_expired").await;
 }
+
+#[tokio::test]
+async fn ops_read_rechecks_published_network_policy_after_external_collection() {
+    let (app, actor, gate, server) = fixture().await;
+    let pool = app.db_pool().await;
+    let facility = app.state().facility_id();
+    let pending = begin_read(&app, &actor, &gate).await;
+    let current = hms_db::network::get_policy(&pool, facility).await.unwrap();
+    tokio::time::timeout(
+        std::time::Duration::from_secs(3),
+        hms_db::network::update_policy(
+            &pool,
+            hms_db::network::NetworkPolicyActor {
+                facility_id: facility,
+                user_id: None,
+                request_id: None,
+                reauth_deadline: None,
+                auth_versions: None,
+                session_id: None,
+                active_profile: None,
+                resolved_policy_version: None,
+            },
+            hms_domain::network::UpdateNetworkPolicyRequest {
+                client_request_id: Uuid::new_v4(),
+                expected_version: current.version,
+                onsite_cidrs: vec!["192.0.2.254/32".into()],
+                offsite_mode: hms_domain::network::NetworkOffsiteMode::Deny,
+                reason: "Synthetic network publication during external collection".into(),
+            },
+            None,
+        ),
+    )
+    .await
+    .expect("external collection must not retain a database policy lock")
+    .expect("canonical operator publication succeeds");
+    finish_read(pending, &gate, server, "network_policy_changed").await;
+    assert_eq!(
+        api_get(app.clone(), &actor, "/api/v2/auth/me")
+            .await
+            .status(),
+        StatusCode::OK,
+        "own authenticated identity remains reachable under a clinical Deny policy"
+    );
+    let token = actor.bearer();
+    let proved = step_up_test_session(&app, token.strip_prefix("Bearer ").unwrap(), None).await;
+    assert!(!proved.is_empty(), "own signed step-up remains available");
+}

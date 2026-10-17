@@ -13,6 +13,7 @@ pub struct NursingActor {
     pub permission_version: i64,
     pub active_profile: DeploymentProfile,
     pub valid_until: DateTime<Utc>,
+    pub resolved_network_policy_version: Option<i64>,
     pub can_view_all_wards: bool,
     pub request_id: Option<String>,
 }
@@ -103,6 +104,14 @@ pub(crate) async fn verify(
     actor.valid_until = actor
         .valid_until
         .min(session.ok_or(NursingError::AuthorizationExpired)?);
+    crate::network::require_publication_tx(
+        tx,
+        actor.facility_id,
+        actor
+            .resolved_network_policy_version
+            .ok_or(crate::network::NetworkPublicationError::MissingProof)?,
+    )
+    .await?;
     deadline(tx, actor).await?;
     if actor.can_view_all_wards {
         return Ok(None);

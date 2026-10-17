@@ -2267,7 +2267,7 @@ pub async fn start_break_glass_grant(
 pub async fn start_break_glass_grant_authorized(
     pool: &PgPool,
     command: StartBreakGlassGrant,
-    authorization: crate::auth::WebAuthnActor,
+    authorization: crate::auth::assurance::BusinessFactorActor,
 ) -> anyhow::Result<BreakGlassGrantOutcome> {
     start_break_glass_grant_inner(pool, command, Some(authorization)).await
 }
@@ -2275,7 +2275,7 @@ pub async fn start_break_glass_grant_authorized(
 async fn start_break_glass_grant_inner(
     pool: &PgPool,
     command: StartBreakGlassGrant,
-    authorization: Option<crate::auth::WebAuthnActor>,
+    authorization: Option<crate::auth::assurance::BusinessFactorActor>,
 ) -> anyhow::Result<BreakGlassGrantOutcome> {
     let mut transaction = pool.begin().await?;
     // Quota serialization precedes the shared factor proof: concurrent starts
@@ -2298,7 +2298,7 @@ async fn start_break_glass_grant_inner(
     }
     let privileged_deadline = if let Some(mut actor) = authorization {
         Some(
-            crate::auth::assurance::require_family_privileged_tx(
+            crate::auth::assurance::require_family_business_tx(
                 &mut transaction,
                 &mut actor,
                 command.facility_id,

@@ -100,6 +100,7 @@ impl MarService {
             facility_id:self.state.facility_id(),prescription_id:source.id,admission_case_id:admission.id,
             client_request_id:payload.client_request_id,indication:payload.indication,actor_user_id:ctx.user_id,request_id:Some(ctx.request_id.clone()),
         },crate::services::clinical::medication_access::actor(ctx,authorization_deadline)).await.map_err(|error|{
+            if let Some(error) = ApiError::network_publication(&error) { return error; }
             if error.is::<hms_db::clinical::medication_access::MedicationAccessError>() {return crate::services::clinical::medication_access::error(error,true);}
             if let Some(reason)=error.downcast_ref::<hms_db::ward::PrnError>() {
                 return if *reason==hms_db::ward::PrnError::InvalidIndication {ApiError::bad_request("invalid_prn_request",reason.message())}
@@ -274,6 +275,7 @@ impl MarService {
         )
         .await
         .map_err(|error| {
+            if let Some(error) = ApiError::network_publication(&error) { return error; }
             if error.is::<hms_db::clinical::medication_access::MedicationAccessError>() {return crate::services::clinical::medication_access::error(error,true);}
             if error.is::<hms_db::clinical::stock_basis::StockBasisError>() || error.is::<hms_db::clinical::prescription_courses::PrescriptionCourseError>() {return crate::services::clinical::prescription_courses::write_error(error);}
 

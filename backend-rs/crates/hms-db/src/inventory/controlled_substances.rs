@@ -389,7 +389,7 @@ pub async fn create_controlled_count(
 pub async fn create_controlled_count_authorized(
     pool: &PgPool,
     count: NewControlledCount,
-    authorization: crate::auth::WebAuthnActor,
+    authorization: crate::auth::assurance::BusinessFactorActor,
 ) -> anyhow::Result<ControlledSubstanceRegisterItem> {
     create_controlled_count_inner(pool, count, Some(authorization)).await
 }
@@ -397,7 +397,7 @@ pub async fn create_controlled_count_authorized(
 async fn create_controlled_count_inner(
     pool: &PgPool,
     count: NewControlledCount,
-    authorization: Option<crate::auth::WebAuthnActor>,
+    authorization: Option<crate::auth::assurance::BusinessFactorActor>,
 ) -> anyhow::Result<ControlledSubstanceRegisterItem> {
     if count.actual_count < 0 {
         anyhow::bail!("controlled count cannot be negative");
@@ -416,7 +416,7 @@ async fn create_controlled_count_inner(
     .await?;
     let privileged_deadline = if let Some(mut actor) = authorization {
         Some(
-            crate::auth::assurance::require_family_privileged_tx(
+            crate::auth::assurance::require_family_business_tx(
                 &mut tx,
                 &mut actor,
                 count.facility_id,
@@ -517,13 +517,14 @@ async fn create_controlled_count_inner(
         .await?;
     }
 
+    let result = fetch_controlled_by_id(&mut *tx, count.facility_id, count.id)
+        .await?
+        .ok_or_else(|| anyhow::anyhow!("created controlled count was not found"))?;
     if let Some(end) = privileged_deadline {
         crate::auth::assurance::check_privileged_deadline_tx(&mut tx, end).await?;
     }
     tx.commit().await?;
-    fetch_controlled_by_id(pool, count.facility_id, count.id)
-        .await?
-        .ok_or_else(|| anyhow::anyhow!("created controlled count was not found"))
+    Ok(result)
 }
 
 pub async fn create_controlled_movement(
@@ -536,7 +537,7 @@ pub async fn create_controlled_movement(
 pub async fn create_controlled_movement_authorized(
     pool: &PgPool,
     movement: NewControlledMovement,
-    authorization: crate::auth::WebAuthnActor,
+    authorization: crate::auth::assurance::BusinessFactorActor,
 ) -> anyhow::Result<ControlledSubstanceRegisterItem> {
     create_controlled_movement_inner(pool, movement, Some(authorization)).await
 }
@@ -544,7 +545,7 @@ pub async fn create_controlled_movement_authorized(
 async fn create_controlled_movement_inner(
     pool: &PgPool,
     movement: NewControlledMovement,
-    authorization: Option<crate::auth::WebAuthnActor>,
+    authorization: Option<crate::auth::assurance::BusinessFactorActor>,
 ) -> anyhow::Result<ControlledSubstanceRegisterItem> {
     let mut tx = pool.begin().await?;
     lock_controlled_users(
@@ -556,7 +557,7 @@ async fn create_controlled_movement_inner(
     .await?;
     let privileged_deadline = if let Some(mut actor) = authorization {
         Some(
-            crate::auth::assurance::require_family_privileged_tx(
+            crate::auth::assurance::require_family_business_tx(
                 &mut tx,
                 &mut actor,
                 movement.facility_id,
@@ -603,13 +604,14 @@ async fn create_controlled_movement_inner(
 
     insert_controlled_movement_tx(&mut tx, movement.clone(), current_balance).await?;
     insert_controlled_movement_audit_tx(&mut tx, &movement, next_balance).await?;
+    let result = fetch_controlled_by_id(&mut *tx, movement.facility_id, movement.id)
+        .await?
+        .ok_or_else(|| anyhow::anyhow!("created controlled register entry was not found"))?;
     if let Some(end) = privileged_deadline {
         crate::auth::assurance::check_privileged_deadline_tx(&mut tx, end).await?;
     }
     tx.commit().await?;
-    fetch_controlled_by_id(pool, movement.facility_id, movement.id)
-        .await?
-        .ok_or_else(|| anyhow::anyhow!("created controlled register entry was not found"))
+    Ok(result)
 }
 
 async fn insert_controlled_movement_audit_tx(
@@ -741,11 +743,14 @@ where
     .unwrap_or(0))
 }
 
-async fn fetch_controlled_by_id(
-    pool: &PgPool,
+async fn fetch_controlled_by_id<'e, E>(
+    executor: E,
     facility_id: Uuid,
     id: Uuid,
-) -> anyhow::Result<Option<ControlledSubstanceRegisterItem>> {
+) -> anyhow::Result<Option<ControlledSubstanceRegisterItem>>
+where
+    E: sqlx::Executor<'e, Database = sqlx::Postgres>,
+{
     let mut query = controlled_query();
     query.push(" WHERE controlled_substance_register.facility_id = ");
     query.push_bind(facility_id);
@@ -753,7 +758,9 @@ async fn fetch_controlled_by_id(
     query.push_bind(id);
     hms_observability::observe_db_query(
         "inventory.controlled_register.fetch_by_id",
-        query.build_query_as::<ControlledRow>().fetch_optional(pool),
+        query
+            .build_query_as::<ControlledRow>()
+            .fetch_optional(executor),
     )
     .await?
     .map(controlled_from_row)

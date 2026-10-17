@@ -86,6 +86,7 @@ impl Matrix {
         .execute(&pool)
         .await
         .unwrap();
+        grant_test_feature(&app, supervisor, FeatureKey::Billing).await;
         sqlx::query("INSERT INTO staff_profiles(id,facility_id,user_id,employee_id,department,position,hire_date) VALUES($1,$2,$3,'SYN_FACTOR','Synthetic','Synthetic',CURRENT_DATE)").bind(staff).bind(facility).bind(target).execute(&pool).await.unwrap();
         let invoice = Uuid::new_v4();
         let claim = Uuid::new_v4();

@@ -37,6 +37,9 @@ fn not_found() -> ApiError {
     )
 }
 pub(crate) fn error(e: anyhow::Error) -> ApiError {
+    if let Some(error) = ApiError::network_publication(&e) {
+        return error;
+    }
     use notes::NoteError as E;
     if let Some(kind) = e.downcast_ref::<E>() {
         return match kind{

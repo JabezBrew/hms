@@ -74,6 +74,7 @@ impl AdmissionAdvisoriesService {
             user_id: ctx.user_id,
             request_id: Some(ctx.request_id.clone()),
             authorization: hms_db::clinical::prescription_courses::PrescriptionAuthorization {
+                resolved_network_policy_version: ctx.resolved_network_policy_version,
                 session_id: ctx.session_id,
                 session_version: ctx.session_version,
                 permission_version: ctx.permission_version,
@@ -188,6 +189,9 @@ impl AdmissionAdvisoriesService {
     }
 }
 pub(super) fn map_error(error: anyhow::Error, write: bool) -> ApiError {
+    if let Some(error) = ApiError::network_publication(&error) {
+        return error;
+    }
     if error.root_cause().to_string() == "discharge blockers are still open" {
         return ApiError::conflict(
             "discharge_blockers_open",
@@ -238,6 +242,7 @@ pub(super) fn closure_actor(
         user_id: ctx.user_id,
         request_id: Some(ctx.request_id.clone()),
         authorization: hms_db::clinical::prescription_courses::PrescriptionAuthorization {
+            resolved_network_policy_version: ctx.resolved_network_policy_version,
             session_id: ctx.session_id,
             session_version: ctx.session_version,
             permission_version: ctx.permission_version,

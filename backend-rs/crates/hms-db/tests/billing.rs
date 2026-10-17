@@ -1079,13 +1079,21 @@ impl BillingFixture {
         .await
         .expect("owner exists");
         let supervisor_id = sqlx::query_scalar::<_, uuid::Uuid>(
-            "SELECT id FROM users WHERE facility_id = $1 AND id <> $2 ORDER BY created_at, id LIMIT 1",
+            "INSERT INTO users(id,facility_id,email,display_name,password_hash,is_active,password_change_required)
+             SELECT gen_random_uuid(),$1,'billing-reviewer@hms.local','Synthetic billing reviewer',password_hash,TRUE,FALSE
+             FROM users WHERE facility_id=$1 AND id=$2 RETURNING id",
         )
         .bind(facility_id)
         .bind(owner_id)
         .fetch_one(&pool)
         .await
-        .expect("supervisor exists");
+        .expect("distinct active synthetic reviewer is created");
+        // Positive finalization/refund fixtures name a distinct local user with
+        // explicit billing eligibility; no authenticated reviewer is implied.
+        sqlx::query("INSERT INTO user_permissions(user_id,permission_code) VALUES($1,'billing.manage') ON CONFLICT DO NOTHING")
+            .bind(supervisor_id).execute(&pool).await.expect("reviewer permission is explicit");
+        sqlx::query("INSERT INTO user_features(user_id,feature_key) VALUES($1,'billing') ON CONFLICT DO NOTHING")
+            .bind(supervisor_id).execute(&pool).await.expect("reviewer feature is explicit");
         let patient_id = sqlx::query_scalar::<_, uuid::Uuid>(
             "SELECT id FROM patients WHERE facility_id = $1 ORDER BY created_at, id LIMIT 1",
         )

@@ -381,7 +381,14 @@ pub async fn replace_recovery(
 pub fn config(state: &AppState) -> Result<WebAuthnConfig, ApiError> {
     Ok(state.webauthn_config())
 }
+pub fn is_authority_error(error: &anyhow::Error) -> bool {
+    error.is::<FactorError>() || error.is::<hms_db::network::NetworkPublicationError>()
+}
+
 pub fn error(e: anyhow::Error) -> ApiError {
+    if let Some(error) = ApiError::network_publication(&e) {
+        return error;
+    }
     match e.downcast_ref::<FactorError>(){
       Some(FactorError::ManagementRequired)=>ApiError::conflict("factor_management_required","A stored passkey needs operator review. No key was omitted or password fallback enabled."),
       Some(FactorError::CredentialLimit)=>ApiError::conflict("passkey_limit_reached","Review the existing passkeys before adding another."),
@@ -425,17 +432,26 @@ pub async fn setup_start(
 
 /// RequestContext preserves the exact token/session/authority deadline even for
 /// older thin handlers. Missing proof is denied rather than guessed from now.
-pub fn privileged_actor(ctx: &hms_access::RequestContext) -> Result<WebAuthnActor, ApiError> {
-    Ok(WebAuthnActor {
-        facility_id: ctx.facility_id,
-        user_id: ctx.user_id,
-        session_id: ctx.session_id,
-        session_version: ctx.session_version,
-        permission_version: ctx.permission_version,
-        active_profile: ctx.active_profile,
-        valid_until: ctx
-            .authorization_deadline
-            .ok_or_else(|| error(FactorError::AuthorizationExpired.into()))?,
-        request_id: ctx.request_id.clone(),
+pub fn privileged_actor(
+    ctx: &hms_access::RequestContext,
+) -> Result<db::BusinessFactorActor, ApiError> {
+    let version = ctx
+        .resolved_network_policy_version
+        .filter(|value| *value >= 0)
+        .ok_or_else(|| error(hms_db::network::NetworkPublicationError::MissingProof.into()))?;
+    Ok(db::BusinessFactorActor {
+        identity: WebAuthnActor {
+            facility_id: ctx.facility_id,
+            user_id: ctx.user_id,
+            session_id: ctx.session_id,
+            session_version: ctx.session_version,
+            permission_version: ctx.permission_version,
+            active_profile: ctx.active_profile,
+            valid_until: ctx
+                .authorization_deadline
+                .ok_or_else(|| error(FactorError::AuthorizationExpired.into()))?,
+            request_id: ctx.request_id.clone(),
+        },
+        resolved_network_policy_version: version,
     })
 }

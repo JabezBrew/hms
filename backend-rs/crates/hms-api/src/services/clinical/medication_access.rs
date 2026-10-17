@@ -42,6 +42,9 @@ pub(crate) fn require_pharmacy_purpose(ctx: &hms_access::RequestContext) -> Resu
     Ok(())
 }
 pub(crate) fn error(error: anyhow::Error, write: bool) -> ApiError {
+    if let Some(error) = ApiError::network_publication(&error) {
+        return error;
+    }
     if let Some(reason) = error.downcast_ref::<MedicationAccessError>() {
         return match reason {
             MedicationAccessError::AuthorityExpired=>ApiError::forbidden("medication_authorization_expired","Current medication access is required. Sign in and review your access."),
