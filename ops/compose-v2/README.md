@@ -8,6 +8,19 @@ PgBouncer, and Redis.
 The stack serves only `/api/v2/*` from Rust. It does not include Django admin,
 Django sessions, old API shapes, old data migration, or AI shell modules.
 
+Migration deployments now use a maintenance window: after backup/build/check-db
+gates, API and worker are drained and verified stopped before migration. Python
+3 is required for atomic fsynced deployment-state files. Explicit artifact and
+actual DB schema compatibility gates apply even to `--skip-migrations` recovery.
+Migration 202610170023 cannot use checkpoint 12 binaries as an automatic runtime
+rollback. See the [schema compatibility contract](../../docs/v2/2026-10-17-runtime-schema-compatibility-scope.md).
+All supported host deploy entrypoints share the private kernel lease at
+`/opt/.hms-deploy-state/deploy.lock`, held across migration and recovery. Nested
+calls inherit the actual descriptor; an environment flag cannot bypass it.
+Existing legacy `/tmp/hms-deploy.lock` state fails closed for operator review;
+no PID-based stale-lock deletion runs. Use one reviewed deployment identity on
+the host; ownership mismatches are not silently repaired.
+
 ## Supported Profiles
 
 Set `HMS_DEPLOYMENT_PROFILE` to one of:

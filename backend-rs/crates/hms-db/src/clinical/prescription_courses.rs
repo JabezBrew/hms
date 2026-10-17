@@ -204,13 +204,16 @@ pub(crate) async fn verify_actor(
     tx: &mut Transaction<'_, Postgres>,
     actor: &mut PrescriptionActor,
 ) -> anyhow::Result<()> {
-    let profile: Option<String> = sqlx::query_scalar(
-        "SELECT deployment_profile FROM facilities WHERE id=$1 AND is_active FOR SHARE",
+    let profile: Option<String> = hms_observability::observe_db_query(
+        "clinical.prescription.proof.facility",
+        sqlx::query_scalar(
+            "SELECT deployment_profile FROM facilities WHERE id=$1 AND is_active FOR SHARE",
+        )
+        .bind(actor.facility_id)
+        .fetch_optional(&mut **tx),
     )
-    .bind(actor.facility_id)
-    .fetch_optional(&mut **tx)
     .await?;
-    let user:Option<(i64,i64)>=sqlx::query_as("SELECT session_version,permission_version FROM users WHERE facility_id=$1 AND id=$2 AND is_active AND NOT password_change_required FOR SHARE").bind(actor.facility_id).bind(actor.user_id).fetch_optional(&mut **tx).await?;
+    let user:Option<(i64,i64)>=hms_observability::observe_db_query("clinical.prescription.proof.user", sqlx::query_as("SELECT session_version,permission_version FROM users WHERE facility_id=$1 AND id=$2 AND is_active AND NOT password_change_required FOR SHARE").bind(actor.facility_id).bind(actor.user_id).fetch_optional(&mut **tx)).await?;
     if user.is_none() || profile.is_none() {
         return Err(PrescriptionCourseError::InvalidActor.into());
     }
@@ -220,8 +223,8 @@ pub(crate) async fn verify_actor(
         {
             return Err(PrescriptionCourseError::InvalidActor.into());
         }
-        let session:Option<DateTime<Utc>>=sqlx::query_scalar("SELECT LEAST(expires_at,idle_expires_at,absolute_expires_at) FROM refresh_sessions WHERE facility_id=$1 AND user_id=$2 AND session_id=$3 AND session_version=$4 AND permission_version_at_issue=$5 AND revoked_at IS NULL AND LEAST(expires_at,idle_expires_at,absolute_expires_at)>clock_timestamp() FOR SHARE")
-            .bind(actor.facility_id).bind(actor.user_id).bind(proof.session_id).bind(proof.session_version).bind(proof.permission_version).fetch_optional(&mut **tx).await?;
+        let session:Option<DateTime<Utc>>=hms_observability::observe_db_query("clinical.prescription.proof.session", sqlx::query_scalar("SELECT LEAST(expires_at,idle_expires_at,absolute_expires_at) FROM refresh_sessions WHERE facility_id=$1 AND user_id=$2 AND session_id=$3 AND session_version=$4 AND permission_version_at_issue=$5 AND revoked_at IS NULL AND LEAST(expires_at,idle_expires_at,absolute_expires_at)>clock_timestamp() FOR SHARE")
+            .bind(actor.facility_id).bind(actor.user_id).bind(proof.session_id).bind(proof.session_version).bind(proof.permission_version).fetch_optional(&mut **tx)).await?;
         proof.valid_until = proof
             .valid_until
             .min(session.ok_or(PrescriptionCourseError::InvalidActor)?);
@@ -233,10 +236,13 @@ pub(crate) async fn check_authorization(
     actor: &PrescriptionActor,
 ) -> anyhow::Result<()> {
     if let Some(proof) = actor.authorization.as_ref() {
-        let valid: bool = sqlx::query_scalar("SELECT clock_timestamp()<$1")
-            .bind(proof.valid_until)
-            .fetch_one(&mut **tx)
-            .await?;
+        let valid: bool = hms_observability::observe_db_query(
+            "clinical.prescription.proof.deadline",
+            sqlx::query_scalar("SELECT clock_timestamp()<$1")
+                .bind(proof.valid_until)
+                .fetch_one(&mut **tx),
+        )
+        .await?;
         if !valid {
             return Err(PrescriptionCourseError::AuthorizationExpired.into());
         }

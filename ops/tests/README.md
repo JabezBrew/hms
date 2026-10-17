@@ -15,6 +15,8 @@ Scope: operations and deployment configuration tests.
 | `test_deploy_script.py` | deploy script behavior. |
 | `test_monitoring_config.py` | monitoring configuration behavior. |
 | `test_compose_deploy_readiness.py` | Compose deployment health/readiness gates. |
+| `test_schema_compatibility_deploy.py` | copied-shell migration drain ordering, strict compatibility state, safe archive recovery and exact-project orphan migration cleanup with mocked Docker. |
+| `test_deploy_lease.py` | actual local kernel lease inheritance/termination, unsafe-state rejection, six competing deployment entrypoints, and guarded recovery across a competing Compose attempt. |
 | `test_free_testing_deploy.py` | private synthetic env generation, free-testing Compose overrides, Access preflight, explicit public authentication gates, tunnel readiness and local-only behavior. |
 
 ## Invariants

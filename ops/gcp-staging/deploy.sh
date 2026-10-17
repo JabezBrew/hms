@@ -91,6 +91,12 @@ EXTERNAL_DB_BACKUP_TARGET_HOST="${EXTERNAL_DB_BACKUP_TARGET_HOST:-$expected_host
 
 export ENV_FILE COMPOSE_FILES DATABASE_MODE HMS_DATABASE_URL EXTERNAL_DB_BACKUP_TARGET_HOST PUBLIC_HEALTHCHECK_MODE
 
+lease_helper="$ROOT_DIR/ops/deploy-lease.py"
+[ -f "$lease_helper" ] || { printf 'Host deployment lease helper is missing.\n' >&2; exit 1; }
+if ! python3 "$lease_helper" --check >/dev/null 2>&1; then
+  exec python3 "$lease_helper" -- /bin/sh "$ROOT_DIR/ops/gcp-staging/deploy.sh" "$@"
+fi
+
 "$ROOT_DIR/ops/compose-v2/deploy.sh" "$@"
 
 case "${GCP_EDGE_VERIFY:-auto}" in

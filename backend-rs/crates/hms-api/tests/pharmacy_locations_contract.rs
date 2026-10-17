@@ -142,6 +142,12 @@ async fn dispensing_locations_require_the_existing_pharmacy_feature_and_permissi
 #[tokio::test]
 async fn pharmacy_only_actor_uses_named_location_and_bound_stock_to_supply_a_real_dose() {
     let app = app().await;
+    grant_test_patient_visibility(
+        &app,
+        Uuid::from_u128(hms_db::provision::LIMITED_USER_ID),
+        PatientDataVisibility::Prescription,
+    )
+    .await;
     let token = pharmacy_actor(&app).await;
     let pool = app.db_pool().await;
     let facility = app.state().facility_id();

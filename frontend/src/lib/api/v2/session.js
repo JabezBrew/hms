@@ -228,7 +228,7 @@ async function rawV2Request(requestConfig, retryWithRefresh = true) {
       throw failure;
     }
     confirmWriteAttempt(attempt, data);
-    if (!tracked) { try { await recordWriteRecoveryRead({ resolvedPath, pathParams: pathSnapshot, query: querySnapshot, body: bodySnapshot }, data, { principal: originPrincipal, readEvidence }); } catch { /* Recovery storage failures must not prevent authorized reads. */ } }
+    if (!tracked) { try { await recordWriteRecoveryRead({ resolvedPath, pathParams: pathSnapshot, query: querySnapshot, body: bodySnapshot }, data, { principal: originPrincipal, readEvidence, isCurrentScope: () => currentNetworkAuthorityScope() === originAuthority && getV2ClientScopeKey() === originTransport }); } catch { /* Recovery storage failures must not prevent authorized reads. */ } }
     return data;
   }
 

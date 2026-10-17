@@ -28,3 +28,5 @@ pub mod ward;
 pub mod ward_rounds;
 
 pub mod fluid;
+
+pub mod treatment_courses;

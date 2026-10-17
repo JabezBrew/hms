@@ -100,3 +100,5 @@ impl AppState {
         WardServices::new(self.clone())
     }
 }
+
+pub mod treatment_courses;

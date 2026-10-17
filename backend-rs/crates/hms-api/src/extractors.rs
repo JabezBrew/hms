@@ -247,7 +247,8 @@ pub(crate) async fn resolve_request(
         reauth,
     )
     .with_active_authorities(context_facts.active_authorities)
-    .with_authorization_deadline(authorization_deadline);
+    .with_authorization_deadline(authorization_deadline)
+    .with_resolved_network_policy_version(network.policy.version);
     let assemble_elapsed = assemble_started_at.elapsed();
     let total_elapsed = total_started_at.elapsed();
 

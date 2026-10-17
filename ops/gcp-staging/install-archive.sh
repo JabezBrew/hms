@@ -184,8 +184,56 @@ restore_runtime_without_migrations() {
   )
 }
 
+candidate_compose() {
+  (
+    cd "$DEPLOY_ROOT"
+    candidate_env="${ENV_FILE:-$DEPLOY_ROOT/ops/compose-v2/.env}"
+    candidate_files="${COMPOSE_FILES:-$DEPLOY_ROOT/ops/compose-v2/compose.yml $DEPLOY_ROOT/ops/gcp-staging/compose.cloudsql.yml}"
+    candidate_args=""
+    for candidate_file in $candidate_files; do
+      [ -f "$candidate_file" ] || return 1
+      candidate_args="$candidate_args -f $candidate_file"
+    done
+    [ -f "$candidate_env" ] || return 1
+    # shellcheck disable=SC2086
+    docker compose --env-file "$candidate_env" $candidate_args "$@"
+  )
+}
+
+retain_stopped_recovery_anchors() {
+  printf 'Automatic runtime rollback is unsafe or unconfirmed. Retaining both release trees; application writers remain stopped.\n' >&2
+  candidate_compose stop --timeout 60 hms-api hms-worker >/dev/null 2>&1 || {
+    printf 'Application writer stop could not be confirmed; immediate operator recovery is required.\n' >&2
+    return 1
+  }
+  remaining="$(candidate_compose ps --status running -q hms-api hms-worker 2>/dev/null)" || return 1
+  if [ -n "$remaining" ]; then
+    printf 'Application writers are still running; immediate operator recovery is required.\n' >&2
+    return 1
+  fi
+  candidate_project="$(candidate_compose config 2>/dev/null | awk '$1 == "name:" { print $2; exit }')"
+  hms_stop_migration_oneoffs "$candidate_project" || {
+    printf 'Candidate migration jobs could not be confirmed stopped; immediate operator recovery is required.\n' >&2
+    return 1
+  }
+  printf 'Use a reviewed compatible forward release, or explicitly reviewed database restoration. No database restore was attempted.\n' >&2
+}
+
 require_command tar
 require_command date
+require_command python3
+
+# Remote packaging uploads the committed helper beside this standalone script;
+# an in-tree invocation uses the same helper from its release checkout.
+installer_directory="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+lease_helper="$installer_directory/deploy-lease.py"
+if [ ! -f "$lease_helper" ]; then
+  lease_helper="$installer_directory/../deploy-lease.py"
+fi
+[ -f "$lease_helper" ] || { printf 'Host deployment lease helper is missing.\n' >&2; exit 1; }
+if ! python3 "$lease_helper" --check >/dev/null 2>&1; then
+  exec python3 "$lease_helper" -- /bin/sh "$0" "$@"
+fi
 
 parent_dir="$(dirname "$DEPLOY_ROOT")"
 stamp="$(date -u '+%Y%m%dT%H%M%SZ')"
@@ -194,6 +242,17 @@ ROLLBACK_ROOT="$parent_dir/hms.pre-deploy-$stamp-$$"
 owner="$(id -un)"
 group="$(id -gn)"
 DEPLOY_SWAPPED="false"
+STATE_ROOT="$parent_dir/.hms-deploy-state"
+if [ -L "$STATE_ROOT" ]; then
+  printf 'Refusing a symbolic deployment state directory.\n' >&2
+  exit 1
+fi
+as_root mkdir -p "$STATE_ROOT"
+as_root chown "$owner:$group" "$STATE_ROOT"
+as_root chmod 700 "$STATE_ROOT"
+HMS_SCHEMA_FENCE_FILE="${HMS_SCHEMA_FENCE_FILE:-$STATE_ROOT/schema-compatibility.local}"
+HMS_DEPLOY_ATTEMPT_FILE="$STATE_ROOT/attempt-$stamp-$$.local"
+export HMS_SCHEMA_FENCE_FILE HMS_DEPLOY_ATTEMPT_FILE
 
 restore_previous_tree() {
   status="$?"
@@ -204,6 +263,36 @@ restore_previous_tree() {
     return "$status"
   fi
 
+  recovery_stage="$(cat "$HMS_DEPLOY_ATTEMPT_FILE" 2>/dev/null || true)"
+  case "$recovery_stage" in
+    pre_quiesce)
+      # No application stop/replacement occurred. Restore source only, keeping
+      # the known running containers untouched after build/preflight failure.
+      recreate_runtime=false
+      ;;
+    quiescing)
+      recreate_runtime=true
+      candidate_project="$(candidate_compose config 2>/dev/null | awk '$1 == "name:" { print $2; exit }')"
+      if ! hms_stop_migration_oneoffs "$candidate_project"; then
+        retain_stopped_recovery_anchors || true
+        return "$status"
+      fi
+      database_epoch="$(candidate_compose run --rm -T hms-migrator hms-migrator schema-compatibility 2>/dev/null)" || {
+        retain_stopped_recovery_anchors || true
+        return "$status"
+      }
+      if ! hms_require_runtime_compatible "$ROLLBACK_ROOT" "$database_epoch"; then
+        retain_stopped_recovery_anchors || true
+        return "$status"
+      fi
+      ;;
+    *)
+      # Missing or corrupted intent must never be mistaken for pre-quiesce.
+      retain_stopped_recovery_anchors || true
+      return "$status"
+      ;;
+  esac
+
   FAILED_ROOT="$parent_dir/hms.failed-deploy-$stamp-$$"
   printf 'Deploy failed; restoring previous tree from %s.\n' "$ROLLBACK_ROOT" >&2
   if [ -e "$DEPLOY_ROOT" ]; then
@@ -213,6 +302,10 @@ restore_previous_tree() {
     as_root mv "$ROLLBACK_ROOT" "$DEPLOY_ROOT" || true
     as_root chown -R "$owner:$group" "$DEPLOY_ROOT" || true
     printf 'Previous tree restored to %s. Failed release retained at %s.\n' "$DEPLOY_ROOT" "$FAILED_ROOT" >&2
+    if [ "$recreate_runtime" = false ]; then
+      printf 'Pre-quiesce failure: existing application containers were left untouched.\n' >&2
+      return "$status"
+    fi
     if [ -x "$DEPLOY_ROOT/deploy" ]; then
       printf 'Recreating runtime from restored tree without rerunning migrations...\n' >&2
       if restored_tree_supports_skip_migrations "$DEPLOY_ROOT/deploy"; then
@@ -267,7 +360,10 @@ restore_previous_tree() {
   return "$status"
 }
 
-trap restore_previous_tree EXIT HUP INT TERM
+trap restore_previous_tree EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 printf 'Preparing %s for deploy %s...\n' "$NEXT_ROOT" "$SHA"
 as_root rm -rf "$NEXT_ROOT"
@@ -276,6 +372,15 @@ as_root chown "$owner:$group" "$NEXT_ROOT"
 
 tar -xzf "$ARCHIVE" -C "$NEXT_ROOT"
 validate_migration_versions_in "$NEXT_ROOT"
+if [ ! -f "$NEXT_ROOT/ops/schema-compatibility.sh" ]; then
+  printf 'Candidate release lacks the schema compatibility recovery contract.\n' >&2
+  exit 1
+fi
+. "$NEXT_ROOT/ops/schema-compatibility.sh"
+require_command python3
+hms_validate_schema_fence "$HMS_SCHEMA_FENCE_FILE"
+hms_require_runtime_compatible "$NEXT_ROOT" "$(hms_candidate_breaking_epoch "$NEXT_ROOT")"
+hms_record_deploy_stage "$HMS_DEPLOY_ATTEMPT_FILE" pre_quiesce
 
 preserve_private_file ops/compose-v2/.env
 preserve_private_file ops/hetzner-v2/.env

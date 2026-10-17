@@ -90,8 +90,10 @@ impl PharmacyService {
         &self,
         ctx: &hms_access::RequestContext,
         query: PharmacyQueueQuery,
+        authorization_deadline: chrono::DateTime<chrono::Utc>,
     ) -> Result<ListResponse<PharmacyQueueItem>, ApiError> {
         require_pharmacy_access(ctx, self.state.facility_id())?;
+        crate::services::clinical::medication_access::require_pharmacy_purpose(ctx)?;
         let page = cursor_list::page_request(
             query.cursor.as_deref(),
             query.limit,
@@ -104,16 +106,16 @@ impl PharmacyService {
             let _patient = load_patient_for_access(&self.state, ctx, patient_id).await?;
         }
         let fetch_limit = page.fetch_limit();
-        let rows = hms_db::pharmacy::list_fulfillment_queue(
+        let rows = hms_db::pharmacy::list_fulfillment_queue_authorized(
             self.state.db_pool(),
-            self.state.facility_id(),
+            crate::services::clinical::medication_access::actor(ctx, authorization_deadline),
             page.cursor,
             fetch_limit,
             query.patient_id,
             query.status,
         )
         .await
-        .map_err(|_| ApiError::conflict("pharmacy_queue_failed", "Queue could not be loaded."))?;
+        .map_err(|error| crate::services::clinical::medication_access::error(error, false))?;
         Ok(cursor_list::page_response(rows, page.limit, |item| {
             cursor_list::encode_cursor(item.coverage_start, item.id)
         }))
@@ -123,20 +125,23 @@ impl PharmacyService {
         &self,
         ctx: &hms_access::RequestContext,
         id: Uuid,
+        authorization_deadline: chrono::DateTime<chrono::Utc>,
     ) -> Result<ObjectResponse<PharmacyQueueItem>, ApiError> {
         require_pharmacy_access(ctx, self.state.facility_id())?;
-        let item =
-            hms_db::pharmacy::get_fulfillment(self.state.db_pool(), self.state.facility_id(), id)
-                .await
-                .map_err(|_| {
-                    ApiError::conflict("pharmacy_queue_failed", "Queue item could not be loaded.")
-                })?
-                .ok_or_else(|| {
-                    ApiError::not_found(
-                        "pharmacy_fulfillment_not_found",
-                        "Queue item was not found.",
-                    )
-                })?;
+        crate::services::clinical::medication_access::require_pharmacy_purpose(ctx)?;
+        let item = hms_db::pharmacy::get_fulfillment_authorized(
+            self.state.db_pool(),
+            crate::services::clinical::medication_access::actor(ctx, authorization_deadline),
+            id,
+        )
+        .await
+        .map_err(|error| crate::services::clinical::medication_access::error(error, false))?
+        .ok_or_else(|| {
+            ApiError::not_found(
+                "pharmacy_fulfillment_not_found",
+                "Queue item was not found.",
+            )
+        })?;
         let _patient = load_patient_for_access(&self.state, ctx, item.patient_id).await?;
         Ok(object(item))
     }
@@ -149,23 +154,25 @@ impl PharmacyService {
         authorization_deadline: chrono::DateTime<chrono::Utc>,
     ) -> Result<ObjectResponse<PharmacyFulfillmentDispenseResult>, ApiError> {
         require_pharmacy_access(ctx, self.state.facility_id())?;
+        crate::services::clinical::medication_access::require_pharmacy_purpose(ctx)?;
         if payload.quantity <= 0 {
             return Err(validation_error("quantity", "Quantity must be positive."));
         }
-        let item =
-            hms_db::pharmacy::get_fulfillment(self.state.db_pool(), self.state.facility_id(), id)
-                .await
-                .map_err(|_| {
-                    ApiError::conflict("pharmacy_queue_failed", "Queue item could not be loaded.")
-                })?
-                .ok_or_else(|| {
-                    ApiError::not_found(
-                        "pharmacy_fulfillment_not_found",
-                        "Queue item was not found.",
-                    )
-                })?;
+        let item = hms_db::pharmacy::get_fulfillment_authorized(
+            self.state.db_pool(),
+            crate::services::clinical::medication_access::actor(ctx, authorization_deadline),
+            id,
+        )
+        .await
+        .map_err(|error| crate::services::clinical::medication_access::error(error, false))?
+        .ok_or_else(|| {
+            ApiError::not_found(
+                "pharmacy_fulfillment_not_found",
+                "Queue item was not found.",
+            )
+        })?;
         let _patient = load_patient_for_access(&self.state, ctx, item.patient_id).await?;
-        let result = hms_db::pharmacy::dispense_fulfillment(
+        let result = hms_db::pharmacy::dispense_fulfillment_authorized(
             self.state.db_pool(),
             hms_db::pharmacy::DispenseFulfillmentCommand {
  authorization: Some(crate::services::clinical::prescription_courses::authorization(ctx, authorization_deadline)),
@@ -176,9 +183,11 @@ impl PharmacyService {
                 quantity: payload.quantity,
                 actor_user_id: ctx.user_id,
             },
+            crate::services::clinical::medication_access::actor(ctx,authorization_deadline),
         )
         .await
         .map_err(|error| {
+            if error.is::<hms_db::clinical::medication_access::MedicationAccessError>() {return crate::services::clinical::medication_access::error(error,true);}
             if error.is::<hms_db::clinical::stock_basis::StockBasisError>() || error.is::<hms_db::clinical::prescription_courses::PrescriptionCourseError>() {return crate::services::clinical::prescription_courses::write_error(error);}
 
             if let Some(reason)=error.downcast_ref::<hms_db::ward::PrnError>() {

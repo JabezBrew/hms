@@ -11,9 +11,11 @@ use hms_observability::observe_db_query;
 use sqlx::{FromRow, Postgres, QueryBuilder};
 use uuid::Uuid;
 
+use crate::clinical::medication_access::{self as access, MedicationActor};
 use crate::clinical::stock_basis as basis;
 use crate::codec;
 use crate::PgPool;
+use hms_domain::deployment::FeatureKey;
 
 #[derive(Clone, Debug)]
 pub struct PharmacyCursor {
@@ -183,6 +185,22 @@ pub async fn generate_mar_for_prescription(
     pool: &PgPool,
     command: GenerateMarCommand,
 ) -> anyhow::Result<GenerateMedicationAdministrationResponse> {
+    generate_mar_inner(pool, command, None).await
+}
+
+pub async fn generate_mar_for_prescription_authorized(
+    pool: &PgPool,
+    command: GenerateMarCommand,
+    actor: MedicationActor,
+) -> anyhow::Result<GenerateMedicationAdministrationResponse> {
+    generate_mar_inner(pool, command, Some(actor)).await
+}
+
+async fn generate_mar_inner(
+    pool: &PgPool,
+    command: GenerateMarCommand,
+    mut authority: Option<MedicationActor>,
+) -> anyhow::Result<GenerateMedicationAdministrationResponse> {
     let mut transaction = pool.begin().await?;
     let prescription = sqlx::query_as::<_, PrescriptionGenerationRow>(
         r#"
@@ -202,13 +220,32 @@ pub async fn generate_mar_for_prescription(
         anyhow::bail!("prescription_not_active");
     }
 
-    let actor = basis::authorize(
-        &mut transaction,
-        command.facility_id,
-        command.actor_user_id,
-        command.authorization.clone(),
-    )
-    .await?;
+    let actor = if let Some(authority) = authority.as_mut() {
+        if authority.identity.facility_id != command.facility_id
+            || authority.identity.user_id != command.actor_user_id
+        {
+            return Err(access::MedicationAccessError::AuthorityExpired.into());
+        }
+        access::verify(
+            &mut transaction,
+            authority,
+            &[
+                FeatureKey::Patients,
+                FeatureKey::Encounters,
+                FeatureKey::Nursing,
+            ],
+        )
+        .await?;
+        authority.identity.clone()
+    } else {
+        basis::authorize(
+            &mut transaction,
+            command.facility_id,
+            command.actor_user_id,
+            command.authorization.clone(),
+        )
+        .await?
+    };
     let _group = crate::clinical::prescription_courses::lock_prn_safety_group(
         &mut transaction,
         command.facility_id,
@@ -247,6 +284,20 @@ pub async fn generate_mar_for_prescription(
     }
     if !matches!(admission.status.as_str(), "admitted" | "discharge_pending") {
         return Err(basis::StockBasisError::AdmissionInactive.into());
+    }
+
+    if let Some(authority) = authority.as_ref() {
+        access::patient(&mut transaction, authority, prescription.patient_id).await?;
+        let wards = access::wards(&mut transaction, authority).await?;
+        access::admission(
+            &mut transaction,
+            authority,
+            &wards,
+            command.admission_case_id,
+            prescription.patient_id,
+            true,
+        )
+        .await?;
     }
 
     let scheduled_policy = if prescription.frequency.trim().eq_ignore_ascii_case("prn") {
@@ -324,7 +375,7 @@ pub async fn generate_mar_for_prescription(
     let requested_interval = schedule.interval_minutes();
     let course_id = if let Some(course) = existing_course {
         let course_active = sqlx::query_scalar::<_, bool>(
-            "SELECT status = 'active' FROM medication_courses WHERE facility_id = $1 AND id = $2",
+            "SELECT status = 'active' AND NOT EXISTS(SELECT 1 FROM medication_course_stops s WHERE s.facility_id=medication_courses.facility_id AND s.medication_course_id=medication_courses.id) FROM medication_courses WHERE facility_id = $1 AND id = $2",
         )
         .bind(command.facility_id)
         .bind(course.id)
@@ -363,9 +414,9 @@ pub async fn generate_mar_for_prescription(
             id, facility_id, patient_id, admission_case_id, prescription_id,
             medication_name, dose, route, frequency, inventory_item_id, first_dose_at, interval_minutes,
             generation_window_start, generation_window_end, status, created_by_user_id,
-            prescription_start_date, prescription_duration_days, prescription_first_dose_at, prescription_prn_policy, prescription_scheduled_stock_policy
+            prescription_start_date, prescription_duration_days, prescription_first_dose_at, prescription_prn_policy, prescription_scheduled_stock_policy, scheduled_through
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, 'active', $15, $16, $17, $18, $19, $20)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, 'active', $15, $16, $17, $18, $19, $20, $14)
         RETURNING id
         "#,
         )
@@ -411,11 +462,13 @@ pub async fn generate_mar_for_prescription(
         INSERT INTO pharmacy_fulfillments (
             id, facility_id, patient_id, admission_case_id, prescription_id, medication_course_id,
             status, medication_name, dose, route, frequency, inventory_item_id, coverage_start, coverage_end,
-            requested_dose_count, created_by_user_id
+            requested_dose_count, created_by_user_id, source_kind
         )
-        VALUES ($1, $2, $3, $4, $5, $6, 'pending', $7, $8, $9, $10, $11, $12, $13, $14, $15)
-        ON CONFLICT (facility_id, medication_course_id) DO UPDATE
+        VALUES ($1, $2, $3, $4, $5, $6, 'pending', $7, $8, $9, $10, $11, $12, $13, $14, $15, 'initial_generation')
+        ON CONFLICT (facility_id, medication_course_id)
+        WHERE source_kind IN ('initial_generation','prn_aggregate') DO UPDATE
         SET id = pharmacy_fulfillments.id
+        WHERE pharmacy_fulfillments.source_kind='initial_generation'
         RETURNING id
         "#,
     )
@@ -434,8 +487,9 @@ pub async fn generate_mar_for_prescription(
     .bind(window_end)
     .bind(i32::try_from(dose_times.len()).unwrap_or(i32::MAX))
     .bind(command.actor_user_id)
-    .fetch_one(&mut *transaction)
-    .await?;
+    .fetch_optional(&mut *transaction)
+    .await?
+    .context("mar_generation_parameters_locked")?;
 
     let mut created_count = 0_i64;
     let mut existing_count = 0_i64;
@@ -537,6 +591,61 @@ pub async fn list_fulfillment_queue(
     patient_id: Option<Uuid>,
     status: Option<PharmacyFulfillmentStatus>,
 ) -> anyhow::Result<Vec<PharmacyQueueItem>> {
+    let mut query = fulfillment_list_query(facility_id, cursor, limit, patient_id, status)?;
+    let rows = observe_db_query(
+        "pharmacy.fulfillments.queue",
+        query.build_query_as::<QueueRow>().fetch_all(pool),
+    )
+    .await?;
+    rows.into_iter().map(queue_item_from_row).collect()
+}
+
+pub async fn list_fulfillment_queue_authorized(
+    pool: &PgPool,
+    mut actor: MedicationActor,
+    cursor: Option<PharmacyCursor>,
+    limit: i64,
+    patient_id: Option<Uuid>,
+    status: Option<PharmacyFulfillmentStatus>,
+) -> anyhow::Result<Vec<PharmacyQueueItem>> {
+    let mut tx = pool.begin().await?;
+    access::verify(
+        &mut tx,
+        &mut actor,
+        &[FeatureKey::Patients, FeatureKey::Pharmacy],
+    )
+    .await?;
+    if let Some(patient) = patient_id {
+        access::local_patient(&mut tx, &actor, patient).await?;
+    }
+    let mut query = fulfillment_list_query(
+        actor.identity.facility_id,
+        cursor,
+        limit,
+        patient_id,
+        status,
+    )?;
+    let rows = observe_db_query(
+        "pharmacy.fulfillments.queue",
+        query.build_query_as::<QueueRow>().fetch_all(&mut *tx),
+    )
+    .await?;
+    let result = rows
+        .into_iter()
+        .map(queue_item_from_row)
+        .collect::<anyhow::Result<_>>()?;
+    access::deadline(&mut tx, &actor).await?;
+    tx.commit().await?;
+    Ok(result)
+}
+
+fn fulfillment_list_query(
+    facility_id: Uuid,
+    cursor: Option<PharmacyCursor>,
+    limit: i64,
+    patient_id: Option<Uuid>,
+    status: Option<PharmacyFulfillmentStatus>,
+) -> anyhow::Result<QueryBuilder<'static, Postgres>> {
     let mut query = queue_query();
     query.push(" WHERE pharmacy_fulfillments.facility_id = ");
     query.push_bind(facility_id);
@@ -566,10 +675,12 @@ pub async fn list_fulfillment_queue(
                   AND c.id = pharmacy_fulfillments.medication_course_id
                   AND c.patient_id = p.patient_id AND c.admission_case_id = pharmacy_fulfillments.admission_case_id
                   AND c.status = 'active' AND p.status = 'active'
+                  AND NOT EXISTS(SELECT 1 FROM medication_course_stops s WHERE s.facility_id=c.facility_id AND s.medication_course_id=c.id)
                   AND c.prescription_start_date IS NOT DISTINCT FROM p.start_date
                   AND c.prescription_duration_days IS NOT DISTINCT FROM p.duration_days
                   AND c.prescription_first_dose_at IS NOT DISTINCT FROM p.first_dose_at
                 AND c.prescription_prn_policy IS NOT DISTINCT FROM p.prn_policy
+                  AND c.prescription_scheduled_stock_policy IS NOT DISTINCT FROM p.scheduled_stock_policy
                   AND c.medication_name = p.medication_name AND c.dose = p.dose
                   AND c.route = p.route AND c.frequency = p.frequency
                   AND c.inventory_item_id IS NOT DISTINCT FROM p.inventory_item_id
@@ -591,12 +702,7 @@ pub async fn list_fulfillment_queue(
         " ORDER BY pharmacy_fulfillments.coverage_start ASC, pharmacy_fulfillments.id ASC LIMIT ",
     );
     query.push_bind(limit);
-    let rows = observe_db_query(
-        "pharmacy.fulfillments.queue",
-        query.build_query_as::<QueueRow>().fetch_all(pool),
-    )
-    .await?;
-    rows.into_iter().map(queue_item_from_row).collect()
+    Ok(query)
 }
 
 pub async fn get_fulfillment(
@@ -618,9 +724,61 @@ pub async fn get_fulfillment(
     .transpose()
 }
 
+pub async fn get_fulfillment_authorized(
+    pool: &PgPool,
+    mut actor: MedicationActor,
+    fulfillment_id: Uuid,
+) -> anyhow::Result<Option<PharmacyQueueItem>> {
+    let mut tx = pool.begin().await?;
+    let parent: Option<(Uuid,Uuid)> = sqlx::query_as("SELECT p.id,p.patient_id FROM pharmacy_fulfillments f JOIN prescriptions p ON p.id=f.prescription_id AND p.facility_id=f.facility_id AND p.patient_id=f.patient_id WHERE f.facility_id=$1 AND f.id=$2 FOR SHARE OF p")
+        .bind(actor.identity.facility_id).bind(fulfillment_id).fetch_optional(&mut *tx).await?;
+    let Some((_, patient)) = parent else {
+        return Ok(None);
+    };
+    access::verify(
+        &mut tx,
+        &mut actor,
+        &[FeatureKey::Patients, FeatureKey::Pharmacy],
+    )
+    .await?;
+    access::local_patient(&mut tx, &actor, patient).await?;
+    let mut query = queue_query();
+    query
+        .push(" WHERE pharmacy_fulfillments.facility_id=")
+        .push_bind(actor.identity.facility_id)
+        .push(" AND pharmacy_fulfillments.id=")
+        .push_bind(fulfillment_id);
+    let result = observe_db_query(
+        "pharmacy.fulfillments.get",
+        query.build_query_as::<QueueRow>().fetch_optional(&mut *tx),
+    )
+    .await?
+    .map(queue_item_from_row)
+    .transpose()?;
+    access::deadline(&mut tx, &actor).await?;
+    tx.commit().await?;
+    Ok(result)
+}
+
 pub async fn dispense_fulfillment(
     pool: &PgPool,
     command: DispenseFulfillmentCommand,
+) -> anyhow::Result<PharmacyFulfillmentDispenseResult> {
+    dispense_inner(pool, command, None).await
+}
+
+pub async fn dispense_fulfillment_authorized(
+    pool: &PgPool,
+    command: DispenseFulfillmentCommand,
+    actor: MedicationActor,
+) -> anyhow::Result<PharmacyFulfillmentDispenseResult> {
+    dispense_inner(pool, command, Some(actor)).await
+}
+
+async fn dispense_inner(
+    pool: &PgPool,
+    command: DispenseFulfillmentCommand,
+    mut authority: Option<MedicationActor>,
 ) -> anyhow::Result<PharmacyFulfillmentDispenseResult> {
     let mut transaction = pool.begin().await?;
     // Read only the parent id first, then use the same source-before-child lock
@@ -637,13 +795,29 @@ pub async fn dispense_fulfillment(
         crate::clinical::lock_prescription(&mut transaction, command.facility_id, prescription_id)
             .await?
             .context("prescription_not_found")?;
-    let actor = basis::authorize(
-        &mut transaction,
-        command.facility_id,
-        command.actor_user_id,
-        command.authorization.clone(),
-    )
-    .await?;
+    let actor = if let Some(authority) = authority.as_mut() {
+        if authority.identity.facility_id != command.facility_id
+            || authority.identity.user_id != command.actor_user_id
+        {
+            return Err(access::MedicationAccessError::AuthorityExpired.into());
+        }
+        access::verify(
+            &mut transaction,
+            authority,
+            &[FeatureKey::Patients, FeatureKey::Pharmacy],
+        )
+        .await?;
+        access::local_patient(&mut transaction, authority, patient_id).await?;
+        authority.identity.clone()
+    } else {
+        basis::authorize(
+            &mut transaction,
+            command.facility_id,
+            command.actor_user_id,
+            command.authorization.clone(),
+        )
+        .await?
+    };
     let _group = crate::clinical::prescription_courses::lock_prn_safety_group(
         &mut transaction,
         command.facility_id,
@@ -673,6 +847,7 @@ pub async fn dispense_fulfillment(
             JOIN prescriptions p ON p.id = f.prescription_id
                 AND p.facility_id = f.facility_id AND p.patient_id = f.patient_id
             WHERE f.facility_id = $1 AND f.id = $2 AND c.status = 'active'
+                AND NOT EXISTS(SELECT 1 FROM medication_course_stops s WHERE s.facility_id=c.facility_id AND s.medication_course_id=c.id)
                 AND f.medication_name = p.medication_name AND f.dose = p.dose
                 AND f.route = p.route AND f.frequency = p.frequency
                 AND f.inventory_item_id IS NOT DISTINCT FROM p.inventory_item_id
@@ -899,11 +1074,20 @@ pub async fn dispense_fulfillment(
     .execute(&mut *transaction)
     .await?;
 
+    let mut result_query = queue_query();
+    result_query
+        .push(" WHERE pharmacy_fulfillments.facility_id=")
+        .push_bind(command.facility_id)
+        .push(" AND pharmacy_fulfillments.id=")
+        .push_bind(fulfillment.id);
+    let fulfillment = queue_item_from_row(
+        result_query
+            .build_query_as::<QueueRow>()
+            .fetch_one(&mut *transaction)
+            .await?,
+    )?;
     basis::check_authorization(&mut transaction, &actor).await?;
     transaction.commit().await?;
-    let fulfillment = get_fulfillment(pool, command.facility_id, fulfillment.id)
-        .await?
-        .context("fulfillment_missing_after_dispense")?;
     Ok(PharmacyFulfillmentDispenseResult {
         issued_stock_quantity: stock_quantity,
         issued_stock_unit: stock_unit,
@@ -957,6 +1141,12 @@ fn queue_query() -> QueryBuilder<'static, Postgres> {
         FROM pharmacy_fulfillments
         INNER JOIN patients ON patients.id = pharmacy_fulfillments.patient_id AND patients.facility_id = pharmacy_fulfillments.facility_id
         INNER JOIN medication_courses courses ON courses.id = pharmacy_fulfillments.medication_course_id AND courses.facility_id = pharmacy_fulfillments.facility_id
+            AND courses.patient_id=pharmacy_fulfillments.patient_id AND courses.prescription_id=pharmacy_fulfillments.prescription_id
+            AND courses.admission_case_id=pharmacy_fulfillments.admission_case_id
+        INNER JOIN prescriptions source ON source.id=pharmacy_fulfillments.prescription_id AND source.facility_id=pharmacy_fulfillments.facility_id
+            AND source.patient_id=pharmacy_fulfillments.patient_id
+        INNER JOIN admission_cases episode ON episode.id=pharmacy_fulfillments.admission_case_id AND episode.facility_id=pharmacy_fulfillments.facility_id
+            AND episode.patient_id=pharmacy_fulfillments.patient_id
         LEFT JOIN inventory_items stock ON stock.id=pharmacy_fulfillments.inventory_item_id AND stock.facility_id=pharmacy_fulfillments.facility_id
         "#,
     )
@@ -1056,4 +1246,9 @@ impl MedicationSchedule {
             }
         }
     }
+}
+
+/// Reuse the canonical frequency parser; stock quantities never come from dose text.
+pub(crate) fn reviewed_interval_minutes(frequency: &str) -> anyhow::Result<Option<i32>> {
+    Ok(MedicationSchedule::parse(frequency)?.interval_minutes())
 }

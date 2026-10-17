@@ -120,3 +120,22 @@ See `docs/v2/2026-10-16-patient-handover-scope.md`.
 General nursing task, vital, alert and monitoring APIs apply actual ward relationships before paging, explicit clinical data classes and mandatory live authority proofs. Terminal task decisions preserve first actor/time. See `docs/v2/2026-10-16-nursing-scope-and-decisions.md` for captured/current ward semantics and compatibility limits.
 
 Fluid services require `NetworkContext` deadlines on current and legacy routes. Full visibility protects rows, metadata, category totals, assessment and writes; ClinicalSummary deliberately permits only legacy scalar totals/trends. The minimal context GET verifies the selected patient/admission and returns current status/can-record facts without broader admission management access. Rule publication uses a separate explicit Admin authority proof. See [fluid access and lifetime](../../../../../../docs/v2/2026-10-16-fluid-access-lifetime-scope.md).
+
+Medication services pass mandatory `NetworkContext` proof to authorized MAR/PRN
+repositories. Full bedside medication access includes ordinary patient and actual
+current ward scope. Dated treatment headers remain lean demographic metadata;
+central pharmacy retains its separate Prescription-purpose facility workflow.
+See [medication access and lifetime](../../../../../../docs/v2/2026-10-17-medication-access-scope.md).
+
+Generated medication courses are implemented in `treatment_courses.rs`. The
+workflow requires an explicit patient/admission pair and exposes protected
+context, bounded course/dose/supply pages, admission-local retirement, reviewed
+schedule windows and actor-bound original request receipts. These adapters use
+mandatory live repository proof and contain no SQL. Rich review retains Full
+clinical and ordinary Chronicle/current-ward scope; new management commands
+require current clinical documentation management authority. Exact original
+replay is checked separately from eligibility for another command.
+
+Course counts describe actual generated and supplied doses. Creating a schedule
+window queues canonical pharmacy demand and does not dispense stock or record
+administration. Physical issue and administration retain their canonical paths.

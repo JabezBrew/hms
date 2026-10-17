@@ -75,6 +75,7 @@ Environment:
 EOF
 }
 
+parse_arguments() {
 case "${1:-}" in
   verify)
     ACTION="verify"
@@ -143,6 +144,8 @@ while [ "$#" -gt 0 ]; do
   esac
   shift
 done
+}
+parse_arguments "$@"
 
 case "$TARGET" in
   staging|gcp|gcp-staging)
@@ -157,6 +160,15 @@ require_command() {
   if ! command -v "$1" >/dev/null 2>&1; then
     printf 'Missing required command: %s\n' "$1" >&2
     exit 1
+  fi
+}
+
+require_host_deploy_lease() {
+  lease_helper="$ROOT_DIR/ops/deploy-lease.py"
+  [ -f "$lease_helper" ] || { printf 'Host deployment lease helper is missing.\n' >&2; exit 1; }
+  require_command python3
+  if ! python3 "$lease_helper" --check >/dev/null 2>&1; then
+    exec python3 "$lease_helper" -- /bin/sh "$ROOT_DIR/ops/deploy.sh" "$@"
   fi
 }
 
@@ -493,6 +505,7 @@ run_gcp_in_place() {
 
   if [ "$DRY_RUN" != "true" ]; then
     require_deploy_host_path
+    require_host_deploy_lease "$@"
   fi
 
   if [ -z "$FORCE_SKIP_PULL" ]; then
@@ -537,7 +550,7 @@ ensure_clean_committed_checkout() {
       deploy_sha="$1"
       dirty_deploy_controls="$(
         printf '%s\n' "$status" |
-          grep -E '^...((deploy)|(ops/deploy\.sh)|(ops/gcp-staging/(install-archive|verify-edge)\.sh))$' || true
+          grep -E '^...((deploy)|(ops/deploy\.sh)|(ops/deploy-lease\.py)|(ops/gcp-staging/(install-archive|verify-edge)\.sh))$' || true
       )"
       if [ -n "$dirty_deploy_controls" ]; then
         printf '%s\n' 'Refusing --ignore-dirty because deploy control files have uncommitted changes.' >&2
@@ -568,7 +581,7 @@ print_ignore_dirty_dry_run_notice() {
   deploy_sha="$1"
   dirty_deploy_controls="$(
     printf '%s\n' "$status" |
-      grep -E '^...((deploy)|(ops/deploy\.sh)|(ops/gcp-staging/(install-archive|verify-edge)\.sh))$' || true
+      grep -E '^...((deploy)|(ops/deploy\.sh)|(ops/deploy-lease\.py)|(ops/gcp-staging/(install-archive|verify-edge)\.sh))$' || true
   )"
   if [ -n "$dirty_deploy_controls" ]; then
     printf '%s\n' 'Dirty checkout detected. A real --ignore-dirty deploy would refuse because deploy control files have uncommitted changes.' >&2
@@ -744,52 +757,26 @@ run_gcp_remote() {
   archive="$(mktemp "${TMPDIR:-/tmp}/hms-${sha}.XXXXXX.tgz")"
   runner="$(mktemp "${TMPDIR:-/tmp}/hms-remote-runner-${sha}.XXXXXX.sh")"
   installer="$(mktemp "${TMPDIR:-/tmp}/hms-install-archive-${sha}.XXXXXX.sh")"
+  lease_program="$(mktemp "${TMPDIR:-/tmp}/hms-deploy-lease-${sha}.XXXXXX.py")"
   remote_tmp="/tmp/hms-deploy-$remote_deploy_id"
   archive_name="hms-$sha.tgz"
   remote_log="/tmp/hms-deploy-$remote_deploy_id.log"
   remote_pid_file="$remote_tmp/install.pid"
 
   cleanup() {
-    rm -f "$archive" "$runner" "$installer"
+    rm -f "$archive" "$runner" "$installer" "$lease_program"
   }
   trap cleanup EXIT HUP INT TERM
 
   printf 'Packaging committed checkout %s...\n' "$sha"
   GIT_ATTR_NOSYSTEM=1 git -C "$ROOT_DIR" -c core.attributesFile=/dev/null archive --format=tar "$commit" | gzip >"$archive"
   git -C "$ROOT_DIR" show "$commit:ops/gcp-staging/install-archive.sh" >"$installer"
+  git -C "$ROOT_DIR" show "$commit:ops/deploy-lease.py" >"$lease_program"
   archive_bytes="$(wc -c <"$archive" | tr -d '[:space:]')"
 
   {
     printf '#!/usr/bin/env sh\n'
     printf 'cd "%s"\n' "$remote_tmp"
-    printf 'lock_dir="/tmp/hms-deploy.lock"\n'
-    printf 'if ! mkdir "$lock_dir" 2>/dev/null; then\n'
-    printf '  lock_pid="$(sed -n '\''s/^runner_pid=//p'\'' "$lock_dir/info" 2>/dev/null | tail -n 1 || true)"\n'
-    printf '  if [ -n "$lock_pid" ] && ! kill -0 "$lock_pid" 2>/dev/null; then\n'
-    printf '    printf "Removing stale HMS deploy lock for dead runner pid %%s\\n" "$lock_pid" >&2\n'
-    printf '    stale_lock_dir="${lock_dir}.stale.$$"\n'
-    printf '    mv "$lock_dir" "$stale_lock_dir" 2>/dev/null || {\n'
-    printf '      printf "Another HMS deploy changed the lock during stale-lock cleanup.\\n" >&2\n'
-    printf '      printf "\\nREMOTE_INSTALL_EXIT_STATUS=75\\n"\n'
-    printf '      exit 75\n'
-    printf '    }\n'
-    printf '    mkdir "$lock_dir" 2>/dev/null || {\n'
-    printf '      mv "$stale_lock_dir" "$lock_dir" 2>/dev/null || true\n'
-    printf '      printf "Another HMS deploy is already running and won the lock retry.\\n" >&2\n'
-    printf '      printf "\\nREMOTE_INSTALL_EXIT_STATUS=75\\n"\n'
-    printf '      exit 75\n'
-    printf '    }\n'
-    printf '    rm -rf "$stale_lock_dir"\n'
-    printf '  else\n'
-    printf '  printf "Another HMS deploy is already running. Existing lock:\\n" >&2\n'
-    printf '  cat "$lock_dir/info" >&2 2>/dev/null || true\n'
-    printf '  printf "\\nREMOTE_INSTALL_EXIT_STATUS=75\\n"\n'
-    printf '  exit 75\n'
-    printf '  fi\n'
-    printf 'fi\n'
-    printf 'printf "runner_pid=$$\\n" >"$lock_dir/info"\n'
-    printf 'trap '\''rm -rf "$lock_dir"'\'' EXIT HUP INT TERM\n'
-    printf 'printf "sha=%s\\nrunner_pid=$$\\nremote_tmp=%s\\nremote_log=%s\\nstarted_at=%s\\n" >"$lock_dir/info"\n' "$sha" "$remote_tmp" "$remote_log" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
     printf 'EXTERNAL_DB_BACKUP_CONFIRMED=true GCP_EDGE_VERIFY=skip sh ./install-archive.sh "./%s" "%s" "%s"\n' "$archive_name" "$sha" "$GCP_REMOTE_ROOT"
     printf 'status=$?\n'
     printf 'printf "\\nREMOTE_INSTALL_EXIT_STATUS=%%s\\n" "$status"\n'
@@ -813,6 +800,8 @@ run_gcp_remote() {
   fi
   gcp_compute_ssh \
     --command "cat > '$remote_tmp/install-archive.sh' && chmod +x '$remote_tmp/install-archive.sh'" <"$installer"
+  gcp_compute_ssh \
+    --command "cat > '$remote_tmp/deploy-lease.py' && chmod 600 '$remote_tmp/deploy-lease.py'" <"$lease_program"
   gcp_compute_ssh \
     --command "cat > '$remote_tmp/run-install.sh' && chmod +x '$remote_tmp/run-install.sh'" <"$runner"
 
@@ -853,6 +842,9 @@ run_compose_in_place() {
     exit 1
   fi
   require_rollback_skip_migrations_gate
+  if [ "$DRY_RUN" != "true" ]; then
+    require_host_deploy_lease "$@"
+  fi
 
   set -- "$ROOT_DIR/ops/compose-v2/deploy.sh"
   if [ "$FORCE_SKIP_PULL" = "true" ] || { [ -z "$FORCE_SKIP_PULL" ] && ! has_git_checkout; }; then
@@ -903,7 +895,7 @@ case "$TARGET" in
 
     case "$MODE" in
       in-place)
-        run_gcp_in_place
+        run_gcp_in_place "$@"
         ;;
       remote)
         run_gcp_remote
@@ -919,6 +911,6 @@ case "$TARGET" in
       printf '%s\n' '--ignore-dirty only applies to remote GCP staging deploys.' >&2
       exit 2
     fi
-    run_compose_in_place
+    run_compose_in_place "$@"
     ;;
 esac

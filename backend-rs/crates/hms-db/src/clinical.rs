@@ -1,3 +1,4 @@
+pub mod medication_access;
 pub mod note_records;
 pub mod note_templates;
 pub mod prescription_courses;
@@ -1309,6 +1310,45 @@ pub async fn update_prescription(
     Ok(prescription)
 }
 
+/// HTTP mutation entry point. The source lock precedes live identity and care
+/// proof, and the final clock check includes audit/child reconciliation waits.
+pub async fn update_prescription_authorized(
+    pool: &PgPool,
+    mut actor: medication_access::MedicationActor,
+    prescription_id: Uuid,
+    update: UpdatePrescriptionRequest,
+) -> anyhow::Result<Option<PrescriptionListItem>> {
+    let mut tx = pool.begin().await?;
+    let Some(source) =
+        lock_prescription(&mut tx, actor.identity.facility_id, prescription_id).await?
+    else {
+        return Ok(None);
+    };
+    medication_access::verify(
+        &mut tx,
+        &mut actor,
+        &[
+            hms_domain::deployment::FeatureKey::Patients,
+            hms_domain::deployment::FeatureKey::Encounters,
+        ],
+    )
+    .await?;
+    medication_access::patient(&mut tx, &actor, source.patient_id).await?;
+    let result = update_prescription_in_transaction(
+        &mut tx,
+        actor.identity.facility_id,
+        prescription_id,
+        Some(source.patient_id),
+        update,
+    )
+    .await?;
+    sqlx::query("INSERT INTO audit_events(id,facility_id,actor_user_id,request_id,event_type,resource_type,resource_id,metadata) VALUES($1,$2,$3,$4,'clinical.prescription.updated','prescription',$5,'{}'::jsonb)")
+        .bind(Uuid::new_v4()).bind(actor.identity.facility_id).bind(actor.identity.user_id).bind(&actor.identity.request_id).bind(prescription_id).execute(&mut *tx).await?;
+    medication_access::deadline(&mut tx, &actor).await?;
+    tx.commit().await?;
+    Ok(result)
+}
+
 /// Locks the source before touching generated medication work. Every source-based
 /// writer uses this order so a held/stopped prescription cannot race a dose write.
 pub(crate) async fn lock_prescription(
@@ -1435,17 +1475,17 @@ pub(crate) async fn update_prescription_in_transaction(
         let status = codec::encode(next_status)?;
         // Course/fulfillment metadata and all pending dose state commit with the
         // source. Administered doses, dispensing evidence and stock stay intact.
-        sqlx::query("UPDATE medication_courses SET status = $3, updated_at = now() WHERE facility_id = $1 AND prescription_id = $2 AND ($3 IN ('stopped', 'completed') OR status IN ('active', 'on_hold'))")
+        sqlx::query("UPDATE medication_courses SET status = $3, updated_at = now() WHERE facility_id = $1 AND prescription_id = $2 AND ($3 IN ('stopped', 'completed') OR status IN ('active', 'on_hold')) AND NOT EXISTS(SELECT 1 FROM medication_course_stops local_stop WHERE local_stop.facility_id=medication_courses.facility_id AND local_stop.medication_course_id=medication_courses.id)")
             .bind(facility_id).bind(prescription_id).bind(&status)
             .execute(&mut **transaction).await?;
         match next_status {
             PrescriptionStatus::OnHold => {
-                sqlx::query("UPDATE medication_administrations SET status = 'held', prescription_held = true, updated_at = now() WHERE facility_id = $1 AND prescription_id = $2 AND status = 'scheduled'")
+                sqlx::query("UPDATE medication_administrations SET status = 'held', prescription_held = true, updated_at = now() WHERE facility_id = $1 AND prescription_id = $2 AND status = 'scheduled' AND local_course_stop_id IS NULL")
                     .bind(facility_id).bind(prescription_id).execute(&mut **transaction).await?;
             }
             PrescriptionStatus::Active => {
                 // Do not turn elapsed or independently held doses into due work.
-                sqlx::query("UPDATE medication_administrations SET status = CASE WHEN scheduled_at > now() THEN 'scheduled' ELSE 'held' END, prescription_held = false, updated_at = now() WHERE facility_id = $1 AND prescription_id = $2 AND status = 'held' AND prescription_held")
+                sqlx::query("UPDATE medication_administrations SET status = CASE WHEN scheduled_at > now() THEN 'scheduled' ELSE 'held' END, prescription_held = false, updated_at = now() WHERE facility_id = $1 AND prescription_id = $2 AND status = 'held' AND prescription_held AND local_course_stop_id IS NULL")
                     .bind(facility_id).bind(prescription_id).execute(&mut **transaction).await?;
                 sqlx::query(
                     r#"
@@ -1457,6 +1497,7 @@ pub(crate) async fn update_prescription_in_transaction(
                          AND m.status = 'scheduled' AND NOT m.is_dispensed
                         WHERE f.facility_id = $1 AND f.prescription_id = $2
                           AND f.status IN ('pending', 'partially_dispensed')
+                          AND NOT EXISTS(SELECT 1 FROM medication_course_stops local_stop WHERE local_stop.facility_id=f.facility_id AND local_stop.medication_course_id=f.medication_course_id)
                         GROUP BY f.id
                     )
                     UPDATE pharmacy_fulfillments f
@@ -1474,9 +1515,9 @@ pub(crate) async fn update_prescription_in_transaction(
                 .await?;
             }
             PrescriptionStatus::Stopped | PrescriptionStatus::Completed => {
-                sqlx::query("UPDATE medication_administrations SET status = 'held', prescription_held = false, updated_at = now() WHERE facility_id = $1 AND prescription_id = $2 AND status IN ('scheduled', 'held')")
+                sqlx::query("UPDATE medication_administrations SET status = 'held', prescription_held = false, updated_at = now() WHERE facility_id = $1 AND prescription_id = $2 AND status IN ('scheduled', 'held') AND local_course_stop_id IS NULL")
                     .bind(facility_id).bind(prescription_id).execute(&mut **transaction).await?;
-                sqlx::query("UPDATE pharmacy_fulfillments SET status = 'cancelled', updated_at = now() WHERE facility_id = $1 AND prescription_id = $2 AND status IN ('pending', 'partially_dispensed')")
+                sqlx::query("UPDATE pharmacy_fulfillments SET status = 'cancelled', updated_at = now() WHERE facility_id = $1 AND prescription_id = $2 AND status IN ('pending', 'partially_dispensed') AND NOT EXISTS(SELECT 1 FROM medication_course_stops local_stop WHERE local_stop.facility_id=pharmacy_fulfillments.facility_id AND local_stop.medication_course_id=pharmacy_fulfillments.medication_course_id)")
                     .bind(facility_id).bind(prescription_id).execute(&mut **transaction).await?;
             }
         }

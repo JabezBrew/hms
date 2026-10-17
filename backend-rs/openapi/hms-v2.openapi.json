@@ -6881,6 +6881,47 @@
         ],
         "type": "object"
       },
+      "CreateTreatmentSupplyWindowRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "client_request_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "expected_context_token": {
+            "type": "string"
+          },
+          "expected_course_token": {
+            "type": "string"
+          },
+          "expected_scheduled_through": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "expected_source_token": {
+            "type": "string"
+          },
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "scheduled_before": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "client_request_id",
+          "expected_source_token",
+          "expected_course_token",
+          "expected_context_token",
+          "expected_scheduled_through",
+          "scheduled_before"
+        ],
+        "type": "object"
+      },
       "CreateTriageRequest": {
         "properties": {
           "acuity": {
@@ -18387,6 +18428,357 @@
                 "code",
                 "name",
                 "is_active",
+                "created_at"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "meta": {},
+          "page": {
+            "$ref": "#/components/schemas/PageInfo"
+          }
+        },
+        "required": [
+          "data",
+          "page",
+          "meta"
+        ],
+        "type": "object"
+      },
+      "ListResponse_TreatmentCourseDose": {
+        "properties": {
+          "data": {
+            "items": {
+              "properties": {
+                "administered_at": {
+                  "format": "date-time",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "administration_notes": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "dispensed_at": {
+                  "format": "date-time",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "dispensed_stock_quantity": {
+                  "format": "int64",
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "dispensed_stock_unit": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "dose_sequence": {
+                  "format": "int32",
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "is_dispensed": {
+                  "type": "boolean"
+                },
+                "local_stop_id": {
+                  "format": "uuid",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "original_request_membership": {
+                  "oneOf": [
+                    {
+                      "type": "null"
+                    },
+                    {
+                      "$ref": "#/components/schemas/TreatmentDoseMembership"
+                    }
+                  ]
+                },
+                "outcome_recorded_at": {
+                  "format": "date-time",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "outcome_recorded_by_display_name": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "outcome_recorded_by_user_id": {
+                  "format": "uuid",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "pharmacy_fulfillment_id": {
+                  "format": "uuid",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "prescription_held": {
+                  "type": "boolean"
+                },
+                "prn_indication": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "prn_request_id": {
+                  "format": "uuid",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "reason_not_given": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "scheduled_at": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "status": {
+                  "$ref": "#/components/schemas/MedicationAdministrationStatus"
+                }
+              },
+              "required": [
+                "id",
+                "scheduled_at",
+                "status",
+                "is_dispensed",
+                "prescription_held"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "meta": {},
+          "page": {
+            "$ref": "#/components/schemas/PageInfo"
+          }
+        },
+        "required": [
+          "data",
+          "page",
+          "meta"
+        ],
+        "type": "object"
+      },
+      "ListResponse_TreatmentCourseListItem": {
+        "properties": {
+          "data": {
+            "items": {
+              "properties": {
+                "admission_case_id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "created_at": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "dose": {
+                  "type": "string"
+                },
+                "first_dose_at": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "frequency": {
+                  "type": "string"
+                },
+                "generation_window_end": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "generation_window_start": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "has_local_stop": {
+                  "type": "boolean"
+                },
+                "has_reviewed_stock_policy": {
+                  "type": "boolean"
+                },
+                "id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "inventory_item_id": {
+                  "format": "uuid",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "kind": {
+                  "$ref": "#/components/schemas/TreatmentCourseKind"
+                },
+                "medication_name": {
+                  "type": "string"
+                },
+                "patient_id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "prescription_id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "route": {
+                  "type": "string"
+                },
+                "scheduled_through": {
+                  "format": "date-time",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "source_status": {
+                  "$ref": "#/components/schemas/PrescriptionStatus"
+                },
+                "status": {
+                  "$ref": "#/components/schemas/TreatmentCourseStatus"
+                }
+              },
+              "required": [
+                "id",
+                "patient_id",
+                "admission_case_id",
+                "prescription_id",
+                "kind",
+                "status",
+                "source_status",
+                "medication_name",
+                "dose",
+                "route",
+                "frequency",
+                "first_dose_at",
+                "generation_window_start",
+                "generation_window_end",
+                "created_at",
+                "has_local_stop",
+                "has_reviewed_stock_policy"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "meta": {},
+          "page": {
+            "$ref": "#/components/schemas/PageInfo"
+          }
+        },
+        "required": [
+          "data",
+          "page",
+          "meta"
+        ],
+        "type": "object"
+      },
+      "ListResponse_TreatmentCourseSupplyWindow": {
+        "properties": {
+          "data": {
+            "items": {
+              "properties": {
+                "coverage_end": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "coverage_start": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "created_at": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "dispensed_at": {
+                  "format": "date-time",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "dispensed_dose_count": {
+                  "format": "int64",
+                  "type": "integer"
+                },
+                "dispensing_location_id": {
+                  "format": "uuid",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "inventory_item_id": {
+                  "format": "uuid",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "kind": {
+                  "$ref": "#/components/schemas/TreatmentSupplyKind"
+                },
+                "remaining_scheduled_unsupplied_dose_count": {
+                  "format": "int64",
+                  "type": "integer"
+                },
+                "requested_dose_count": {
+                  "format": "int64",
+                  "type": "integer"
+                },
+                "status": {
+                  "$ref": "#/components/schemas/PharmacyFulfillmentStatus"
+                }
+              },
+              "required": [
+                "id",
+                "kind",
+                "status",
+                "coverage_start",
+                "coverage_end",
+                "requested_dose_count",
+                "dispensed_dose_count",
+                "remaining_scheduled_unsupplied_dose_count",
                 "created_at"
               ],
               "type": "object"
@@ -29950,6 +30342,299 @@
         ],
         "type": "object"
       },
+      "ObjectResponse_TreatmentCourseDetail": {
+        "properties": {
+          "data": {
+            "properties": {
+              "can_request_schedule_window": {
+                "type": "boolean"
+              },
+              "can_stop_course": {
+                "type": "boolean"
+              },
+              "context_token": {
+                "type": "string"
+              },
+              "counts": {
+                "$ref": "#/components/schemas/TreatmentCourseCounts"
+              },
+              "course_token": {
+                "type": "string"
+              },
+              "local_stop": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/TreatmentCourseStopEvidence"
+                  }
+                ]
+              },
+              "prn_policy": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/PrnPolicy"
+                  }
+                ]
+              },
+              "scheduled_stock_policy": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/ScheduledStockPolicy"
+                  }
+                ]
+              },
+              "source_instructions": {
+                "type": "string"
+              },
+              "source_matches_course": {
+                "type": "boolean"
+              },
+              "source_reason": {
+                "type": "string"
+              },
+              "source_token": {
+                "type": "string"
+              },
+              "stock_item_code": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "stock_item_current_unit": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "stock_item_name": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "stop_unavailable_reason": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/TreatmentUnavailableReason"
+                  }
+                ]
+              },
+              "summary": {
+                "$ref": "#/components/schemas/TreatmentCourseListItem"
+              },
+              "supply_window_constraints": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/TreatmentWindowConstraints"
+                  }
+                ]
+              },
+              "window_unavailable_reason": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/TreatmentUnavailableReason"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "summary",
+              "source_token",
+              "course_token",
+              "context_token",
+              "source_instructions",
+              "source_reason",
+              "source_matches_course",
+              "counts",
+              "can_stop_course",
+              "can_request_schedule_window"
+            ],
+            "type": "object"
+          },
+          "meta": {}
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "type": "object"
+      },
+      "ObjectResponse_TreatmentCourseReceipt": {
+        "properties": {
+          "data": {
+            "description": "Original command evidence; fresh context/detail govern future actions.",
+            "oneOf": [
+              {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/TreatmentCourseReceiptMetadata"
+                  },
+                  {
+                    "properties": {
+                      "result": {
+                        "$ref": "#/components/schemas/TreatmentCourseStopEvidence"
+                      },
+                      "reviewed_input": {
+                        "$ref": "#/components/schemas/StopTreatmentCourseRequest"
+                      }
+                    },
+                    "required": [
+                      "reviewed_input",
+                      "result"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "properties": {
+                      "operation": {
+                        "enum": [
+                          "stopped"
+                        ],
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "operation"
+                    ],
+                    "type": "object"
+                  }
+                ]
+              },
+              {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/TreatmentCourseReceiptMetadata"
+                  },
+                  {
+                    "properties": {
+                      "result": {
+                        "$ref": "#/components/schemas/TreatmentSupplyWindowEvidence"
+                      },
+                      "reviewed_input": {
+                        "$ref": "#/components/schemas/CreateTreatmentSupplyWindowRequest"
+                      }
+                    },
+                    "required": [
+                      "reviewed_input",
+                      "result"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "properties": {
+                      "operation": {
+                        "enum": [
+                          "supply_window_created"
+                        ],
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "operation"
+                    ],
+                    "type": "object"
+                  }
+                ]
+              }
+            ]
+          },
+          "meta": {}
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "type": "object"
+      },
+      "ObjectResponse_TreatmentCoursesContext": {
+        "properties": {
+          "data": {
+            "properties": {
+              "admission_case_id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "admission_status": {
+                "$ref": "#/components/schemas/AdmissionStatus"
+              },
+              "can_manage_courses": {
+                "type": "boolean"
+              },
+              "can_view": {
+                "type": "boolean"
+              },
+              "context_token": {
+                "type": "string"
+              },
+              "coverage": {
+                "$ref": "#/components/schemas/TreatmentCoverage"
+              },
+              "current_ward_id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "current_ward_name": {
+                "type": "string"
+              },
+              "generated_course_count": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "management_unavailable_reason": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/TreatmentUnavailableReason"
+                  }
+                ]
+              },
+              "patient_id": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "patient_id",
+              "admission_case_id",
+              "admission_status",
+              "current_ward_id",
+              "current_ward_name",
+              "context_token",
+              "can_view",
+              "can_manage_courses",
+              "generated_course_count",
+              "coverage"
+            ],
+            "type": "object"
+          },
+          "meta": {}
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "type": "object"
+      },
       "ObjectResponse_TreatmentSheetListItem": {
         "properties": {
           "data": {
@@ -38905,6 +39590,35 @@
         },
         "type": "object"
       },
+      "StopTreatmentCourseRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "client_request_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "expected_context_token": {
+            "type": "string"
+          },
+          "expected_course_token": {
+            "type": "string"
+          },
+          "expected_source_token": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "client_request_id",
+          "expected_source_token",
+          "expected_course_token",
+          "expected_context_token",
+          "reason"
+        ],
+        "type": "object"
+      },
       "StorageLocationListItem": {
         "properties": {
           "code": {
@@ -39177,6 +39891,1020 @@
         ],
         "type": "string"
       },
+      "TreatmentCourseCounts": {
+        "properties": {
+          "awaiting_supply_doses": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "days_of_supply": {
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "explicit_non_given_doses": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "generated_scheduled_doses": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "given_doses": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "held_doses": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "issued_stock_quantity": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "issued_stock_unit": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "issued_stock_unrecorded_doses": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "missed_doses": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "refused_doses": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "requested_prn_doses": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "stock_total_unavailable_reason": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/TreatmentStockTotalUnavailableReason"
+              }
+            ]
+          },
+          "supplied_doses": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "supplied_pending_doses": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "unrecorded_held_doses": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "generated_scheduled_doses",
+          "requested_prn_doses",
+          "supplied_doses",
+          "given_doses",
+          "awaiting_supply_doses",
+          "supplied_pending_doses",
+          "missed_doses",
+          "refused_doses",
+          "held_doses",
+          "explicit_non_given_doses",
+          "unrecorded_held_doses",
+          "issued_stock_unrecorded_doses"
+        ],
+        "type": "object"
+      },
+      "TreatmentCourseDetail": {
+        "properties": {
+          "can_request_schedule_window": {
+            "type": "boolean"
+          },
+          "can_stop_course": {
+            "type": "boolean"
+          },
+          "context_token": {
+            "type": "string"
+          },
+          "counts": {
+            "$ref": "#/components/schemas/TreatmentCourseCounts"
+          },
+          "course_token": {
+            "type": "string"
+          },
+          "local_stop": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/TreatmentCourseStopEvidence"
+              }
+            ]
+          },
+          "prn_policy": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PrnPolicy"
+              }
+            ]
+          },
+          "scheduled_stock_policy": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ScheduledStockPolicy"
+              }
+            ]
+          },
+          "source_instructions": {
+            "type": "string"
+          },
+          "source_matches_course": {
+            "type": "boolean"
+          },
+          "source_reason": {
+            "type": "string"
+          },
+          "source_token": {
+            "type": "string"
+          },
+          "stock_item_code": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "stock_item_current_unit": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "stock_item_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "stop_unavailable_reason": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/TreatmentUnavailableReason"
+              }
+            ]
+          },
+          "summary": {
+            "$ref": "#/components/schemas/TreatmentCourseListItem"
+          },
+          "supply_window_constraints": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/TreatmentWindowConstraints"
+              }
+            ]
+          },
+          "window_unavailable_reason": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/TreatmentUnavailableReason"
+              }
+            ]
+          }
+        },
+        "required": [
+          "summary",
+          "source_token",
+          "course_token",
+          "context_token",
+          "source_instructions",
+          "source_reason",
+          "source_matches_course",
+          "counts",
+          "can_stop_course",
+          "can_request_schedule_window"
+        ],
+        "type": "object"
+      },
+      "TreatmentCourseDose": {
+        "properties": {
+          "administered_at": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "administration_notes": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "dispensed_at": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "dispensed_stock_quantity": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "dispensed_stock_unit": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "dose_sequence": {
+            "format": "int32",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "is_dispensed": {
+            "type": "boolean"
+          },
+          "local_stop_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "original_request_membership": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/TreatmentDoseMembership"
+              }
+            ]
+          },
+          "outcome_recorded_at": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "outcome_recorded_by_display_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "outcome_recorded_by_user_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "pharmacy_fulfillment_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "prescription_held": {
+            "type": "boolean"
+          },
+          "prn_indication": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "prn_request_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reason_not_given": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "scheduled_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/MedicationAdministrationStatus"
+          }
+        },
+        "required": [
+          "id",
+          "scheduled_at",
+          "status",
+          "is_dispensed",
+          "prescription_held"
+        ],
+        "type": "object"
+      },
+      "TreatmentCourseDoseQuery": {
+        "additionalProperties": false,
+        "properties": {
+          "cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "is_dispensed": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "limit": {
+            "format": "int32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "request_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "scheduled_before": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "scheduled_from": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/MedicationAdministrationStatus"
+              }
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "TreatmentCourseKind": {
+        "enum": [
+          "scheduled",
+          "prn",
+          "once",
+          "unrecognized"
+        ],
+        "type": "string"
+      },
+      "TreatmentCourseListItem": {
+        "properties": {
+          "admission_case_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "dose": {
+            "type": "string"
+          },
+          "first_dose_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "frequency": {
+            "type": "string"
+          },
+          "generation_window_end": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "generation_window_start": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "has_local_stop": {
+            "type": "boolean"
+          },
+          "has_reviewed_stock_policy": {
+            "type": "boolean"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "inventory_item_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "kind": {
+            "$ref": "#/components/schemas/TreatmentCourseKind"
+          },
+          "medication_name": {
+            "type": "string"
+          },
+          "patient_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "prescription_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "route": {
+            "type": "string"
+          },
+          "scheduled_through": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "source_status": {
+            "$ref": "#/components/schemas/PrescriptionStatus"
+          },
+          "status": {
+            "$ref": "#/components/schemas/TreatmentCourseStatus"
+          }
+        },
+        "required": [
+          "id",
+          "patient_id",
+          "admission_case_id",
+          "prescription_id",
+          "kind",
+          "status",
+          "source_status",
+          "medication_name",
+          "dose",
+          "route",
+          "frequency",
+          "first_dose_at",
+          "generation_window_start",
+          "generation_window_end",
+          "created_at",
+          "has_local_stop",
+          "has_reviewed_stock_policy"
+        ],
+        "type": "object"
+      },
+      "TreatmentCourseListQuery": {
+        "additionalProperties": false,
+        "properties": {
+          "cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "kind": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/TreatmentCourseKind"
+              }
+            ]
+          },
+          "limit": {
+            "format": "int32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "source_status": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PrescriptionStatus"
+              }
+            ]
+          },
+          "status": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/TreatmentCourseStatus"
+              }
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "TreatmentCourseReceipt": {
+        "description": "Original command evidence; fresh context/detail govern future actions.",
+        "oneOf": [
+          {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/TreatmentCourseReceiptMetadata"
+              },
+              {
+                "properties": {
+                  "result": {
+                    "$ref": "#/components/schemas/TreatmentCourseStopEvidence"
+                  },
+                  "reviewed_input": {
+                    "$ref": "#/components/schemas/StopTreatmentCourseRequest"
+                  }
+                },
+                "required": [
+                  "reviewed_input",
+                  "result"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "operation": {
+                    "enum": [
+                      "stopped"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "operation"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/TreatmentCourseReceiptMetadata"
+              },
+              {
+                "properties": {
+                  "result": {
+                    "$ref": "#/components/schemas/TreatmentSupplyWindowEvidence"
+                  },
+                  "reviewed_input": {
+                    "$ref": "#/components/schemas/CreateTreatmentSupplyWindowRequest"
+                  }
+                },
+                "required": [
+                  "reviewed_input",
+                  "result"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "operation": {
+                    "enum": [
+                      "supply_window_created"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "operation"
+                ],
+                "type": "object"
+              }
+            ]
+          }
+        ]
+      },
+      "TreatmentCourseReceiptMetadata": {
+        "properties": {
+          "admission_case_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "client_request_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "course_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "patient_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "prescription_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "recorded_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "recorded_by_display_name": {
+            "type": "string"
+          },
+          "recorded_by_user_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "replayed": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "client_request_id",
+          "replayed",
+          "patient_id",
+          "admission_case_id",
+          "prescription_id",
+          "course_id",
+          "recorded_by_user_id",
+          "recorded_by_display_name",
+          "recorded_at"
+        ],
+        "type": "object"
+      },
+      "TreatmentCourseStatus": {
+        "enum": [
+          "active",
+          "on_hold",
+          "stopped",
+          "completed"
+        ],
+        "type": "string"
+      },
+      "TreatmentCourseStopEvidence": {
+        "properties": {
+          "cancelled_fulfillment_count": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "recorded_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "recorded_by_display_name": {
+            "type": "string"
+          },
+          "recorded_by_user_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "retired_dose_membership_token": {
+            "type": "string"
+          },
+          "retired_pending_dose_count": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "source_status_at_stop": {
+            "$ref": "#/components/schemas/PrescriptionStatus"
+          },
+          "ward_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "ward_name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "reason",
+          "recorded_by_user_id",
+          "recorded_by_display_name",
+          "recorded_at",
+          "ward_id",
+          "ward_name",
+          "source_status_at_stop",
+          "retired_pending_dose_count",
+          "cancelled_fulfillment_count",
+          "retired_dose_membership_token"
+        ],
+        "type": "object"
+      },
+      "TreatmentCourseSupplyQuery": {
+        "additionalProperties": false,
+        "properties": {
+          "cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "kind": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/TreatmentSupplyKind"
+              }
+            ]
+          },
+          "limit": {
+            "format": "int32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "status": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PharmacyFulfillmentStatus"
+              }
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "TreatmentCourseSupplyWindow": {
+        "properties": {
+          "coverage_end": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "coverage_start": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "dispensed_at": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "dispensed_dose_count": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "dispensing_location_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "inventory_item_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "kind": {
+            "$ref": "#/components/schemas/TreatmentSupplyKind"
+          },
+          "remaining_scheduled_unsupplied_dose_count": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "requested_dose_count": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "status": {
+            "$ref": "#/components/schemas/PharmacyFulfillmentStatus"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "status",
+          "coverage_start",
+          "coverage_end",
+          "requested_dose_count",
+          "dispensed_dose_count",
+          "remaining_scheduled_unsupplied_dose_count",
+          "created_at"
+        ],
+        "type": "object"
+      },
+      "TreatmentCoursesContext": {
+        "properties": {
+          "admission_case_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "admission_status": {
+            "$ref": "#/components/schemas/AdmissionStatus"
+          },
+          "can_manage_courses": {
+            "type": "boolean"
+          },
+          "can_view": {
+            "type": "boolean"
+          },
+          "context_token": {
+            "type": "string"
+          },
+          "coverage": {
+            "$ref": "#/components/schemas/TreatmentCoverage"
+          },
+          "current_ward_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "current_ward_name": {
+            "type": "string"
+          },
+          "generated_course_count": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "management_unavailable_reason": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/TreatmentUnavailableReason"
+              }
+            ]
+          },
+          "patient_id": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "patient_id",
+          "admission_case_id",
+          "admission_status",
+          "current_ward_id",
+          "current_ward_name",
+          "context_token",
+          "can_view",
+          "can_manage_courses",
+          "generated_course_count",
+          "coverage"
+        ],
+        "type": "object"
+      },
+      "TreatmentCoverage": {
+        "enum": [
+          "generated_courses_only"
+        ],
+        "type": "string"
+      },
+      "TreatmentCreatedDose": {
+        "properties": {
+          "dose_sequence": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "scheduled_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "scheduled_stock_policy": {
+            "$ref": "#/components/schemas/ScheduledStockPolicy"
+          }
+        },
+        "required": [
+          "id",
+          "scheduled_at",
+          "dose_sequence",
+          "scheduled_stock_policy"
+        ],
+        "type": "object"
+      },
+      "TreatmentDoseMembership": {
+        "description": "Immutable original membership, separate from the dose's current outcome/supply state.",
+        "properties": {
+          "dose_sequence": {
+            "format": "int32",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "medication_administration_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "pharmacy_fulfillment_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "scheduled_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "scheduled_stock_policy": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ScheduledStockPolicy"
+              }
+            ]
+          },
+          "status_at_command": {
+            "$ref": "#/components/schemas/MedicationAdministrationStatus"
+          },
+          "was_dispensed": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "medication_administration_id",
+          "scheduled_at",
+          "status_at_command",
+          "was_dispensed"
+        ],
+        "type": "object"
+      },
       "TreatmentSheetListItem": {
         "properties": {
           "admission_case_id": {
@@ -39298,6 +41026,103 @@
           "closed"
         ],
         "type": "string"
+      },
+      "TreatmentStockTotalUnavailableReason": {
+        "enum": [
+          "missing_evidence",
+          "mixed_units",
+          "quantity_overflow"
+        ],
+        "type": "string"
+      },
+      "TreatmentSupplyKind": {
+        "enum": [
+          "initial_generation",
+          "prn_aggregate",
+          "scheduled_window"
+        ],
+        "type": "string"
+      },
+      "TreatmentSupplyWindowEvidence": {
+        "properties": {
+          "created_dose_count": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "created_doses": {
+            "items": {
+              "$ref": "#/components/schemas/TreatmentCreatedDose"
+            },
+            "maxItems": 512,
+            "minItems": 1,
+            "type": "array"
+          },
+          "fulfillment_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "previous_scheduled_through": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "scheduled_stock_policy": {
+            "$ref": "#/components/schemas/ScheduledStockPolicy"
+          },
+          "scheduled_through": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "previous_scheduled_through",
+          "scheduled_through",
+          "fulfillment_id",
+          "created_dose_count",
+          "created_doses",
+          "scheduled_stock_policy"
+        ],
+        "type": "object"
+      },
+      "TreatmentUnavailableReason": {
+        "enum": [
+          "network_write_unavailable",
+          "admission_inactive",
+          "permission_denied",
+          "course_terminal",
+          "source_not_active",
+          "source_changed",
+          "stock_policy_review_required",
+          "stock_item_not_actionable",
+          "stock_unit_changed",
+          "unsupported_schedule",
+          "window_elapsed",
+          "generation_boundary_unavailable"
+        ],
+        "type": "string"
+      },
+      "TreatmentWindowConstraints": {
+        "description": "Current server bounds, not a preview of exact new dose membership.",
+        "properties": {
+          "maximum_new_doses": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "scheduled_before_max": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "scheduled_from": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "scheduled_from",
+          "scheduled_before_max",
+          "maximum_new_doses"
+        ],
+        "type": "object"
       },
       "TriageAcuity": {
         "enum": [
@@ -70572,6 +72397,986 @@
         ],
         "tags": [
           "wards"
+        ]
+      }
+    },
+    "/api/v2/patients/{patient_id}/chronicle/admissions/{admission_case_id}/medication-courses": {
+      "get": {
+        "operationId": "getPatientChronicleMedicationCourses",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "patient_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "admission_case_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/TreatmentCourseStatus"
+            }
+          },
+          {
+            "in": "query",
+            "name": "source_status",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/PrescriptionStatus"
+            }
+          },
+          {
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/TreatmentCourseKind"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListResponse_TreatmentCourseListItem"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "nursing"
+        ]
+      }
+    },
+    "/api/v2/patients/{patient_id}/chronicle/admissions/{admission_case_id}/medication-courses/context": {
+      "get": {
+        "operationId": "getPatientChronicleMedicationCoursesContext",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "patient_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "admission_case_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_TreatmentCoursesContext"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "nursing"
+        ]
+      }
+    },
+    "/api/v2/patients/{patient_id}/chronicle/admissions/{admission_case_id}/medication-courses/{course_id}": {
+      "get": {
+        "operationId": "getPatientChronicleMedicationCourse",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "patient_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "admission_case_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "course_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_TreatmentCourseDetail"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "nursing"
+        ]
+      }
+    },
+    "/api/v2/patients/{patient_id}/chronicle/admissions/{admission_case_id}/medication-courses/{course_id}/doses": {
+      "get": {
+        "operationId": "getPatientChronicleMedicationCourseDoses",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "patient_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "admission_case_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "course_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/MedicationAdministrationStatus"
+            }
+          },
+          {
+            "in": "query",
+            "name": "is_dispensed",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "scheduled_from",
+            "required": false,
+            "schema": {
+              "format": "date-time",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "scheduled_before",
+            "required": false,
+            "schema": {
+              "format": "date-time",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "request_id",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListResponse_TreatmentCourseDose"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "nursing"
+        ]
+      }
+    },
+    "/api/v2/patients/{patient_id}/chronicle/admissions/{admission_case_id}/medication-courses/{course_id}/requests/{client_request_id}": {
+      "get": {
+        "operationId": "getPatientChronicleMedicationCourseRequest",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "patient_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "admission_case_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "course_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "client_request_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_TreatmentCourseReceipt"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "nursing"
+        ]
+      }
+    },
+    "/api/v2/patients/{patient_id}/chronicle/admissions/{admission_case_id}/medication-courses/{course_id}/stop": {
+      "post": {
+        "operationId": "postPatientChronicleMedicationCourseStop",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "patient_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "admission_case_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "course_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StopTreatmentCourseRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_TreatmentCourseReceipt"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "nursing"
+        ]
+      }
+    },
+    "/api/v2/patients/{patient_id}/chronicle/admissions/{admission_case_id}/medication-courses/{course_id}/supply": {
+      "get": {
+        "operationId": "getPatientChronicleMedicationCourseSupply",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "patient_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "admission_case_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "course_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/PharmacyFulfillmentStatus"
+            }
+          },
+          {
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/TreatmentSupplyKind"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListResponse_TreatmentCourseSupplyWindow"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "nursing"
+        ]
+      }
+    },
+    "/api/v2/patients/{patient_id}/chronicle/admissions/{admission_case_id}/medication-courses/{course_id}/supply-windows": {
+      "post": {
+        "operationId": "postPatientChronicleMedicationCourseSupplyWindow",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "patient_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "admission_case_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "course_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateTreatmentSupplyWindowRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_TreatmentCourseReceipt"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "nursing"
         ]
       }
     },

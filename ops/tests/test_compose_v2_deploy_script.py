@@ -6,6 +6,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from deployment_fixtures import copy_lease_helper
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -19,6 +20,22 @@ GCP_CADDYFILE = REPO_ROOT / 'ops' / 'gcp-staging' / 'Caddyfile'
 LEGACY_DEPLOY_SHIM = REPO_ROOT / 'ops' / 'hetzner-v2' / 'deploy.sh'
 LEGACY_GCP_DEPLOY_SHIM = REPO_ROOT / 'ops' / 'gcp-staging' / 'deploy-cloudsql-staging.sh'
 DUMMY_CLOUDSQL_URL = 'postgres://hms:secret@10.216.13.2:5432/hms'
+
+
+@pytest.fixture(autouse=True)
+def isolated_deployment_scripts(tmp_path, monkeypatch):
+    root = tmp_path / 'release'
+    for relative in ['ops/compose-v2/deploy.sh', 'ops/schema-compatibility.sh',
+                     'ops/compose-v2/runtime-schema-epoch', 'ops/gcp-staging/deploy.sh']:
+        target = root / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(REPO_ROOT / relative, target)
+    migrations = root / 'backend-rs/migrations'
+    migrations.mkdir(parents=True)
+    (migrations / '202610170023_treatment_course_windows.sql').write_text('-- fixture\n')
+    copy_lease_helper(root, tmp_path / '.hms-deploy-state/deploy.lock')
+    monkeypatch.setitem(globals(), 'DEPLOY_SCRIPT', root / 'ops/compose-v2/deploy.sh')
+    monkeypatch.setitem(globals(), 'GCP_DEPLOY_SCRIPT', root / 'ops/gcp-staging/deploy.sh')
 
 
 def _write_executable(path: Path, content: str) -> None:

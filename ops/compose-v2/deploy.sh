@@ -27,6 +27,8 @@ SKIP_PULL="${SKIP_PULL:-false}"
 SKIP_BACKUP="${SKIP_BACKUP:-false}"
 SKIP_HEALTHCHECK="${SKIP_HEALTHCHECK:-false}"
 COMPOSE_CONFIG_FILE=""
+HMS_SCHEMA_FENCE_FILE="${HMS_SCHEMA_FENCE_FILE:-$ROOT_DIR/.hms-schema-compatibility.local}"
+HMS_DEPLOY_ATTEMPT_FILE="${HMS_DEPLOY_ATTEMPT_FILE:-$ROOT_DIR/.hms-deploy-attempt.local}"
 
 usage() {
   cat <<'EOF'
@@ -62,6 +64,10 @@ Environment overrides:
   SKIP_MIGRATIONS      Skip hms-migrator. Default: false
   HMS_ROLLBACK_SKIP_MIGRATIONS_ALLOWED
                        Required true with SKIP_MIGRATIONS=true. Default: false
+  HMS_SCHEMA_FENCE_FILE / HMS_DEPLOY_ATTEMPT_FILE
+                       Private local compatibility/attempt state. Archive installs
+                       place these outside source trees. Do not delete during recovery.
+  Deployment requires python3 for atomic fsynced compatibility-state files.
   HEALTH_TIMEOUT       Default: 180 seconds
   HEALTH_INTERVAL      Default: 5 seconds
   HEALTHCHECK_URL      Default: https://$CLIENT_DOMAIN/api/v2/health/ready
@@ -70,6 +76,7 @@ Environment overrides:
 EOF
 }
 
+parse_arguments() {
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --skip-pull)
@@ -96,6 +103,8 @@ while [ "$#" -gt 0 ]; do
   esac
   shift
 done
+}
+parse_arguments "$@"
 
 step() {
   printf '\n==> %s\n' "$1"
@@ -442,7 +451,11 @@ cd "$ROOT_DIR"
 
 require_command docker
 require_command curl
+require_command python3
 require_file "$ENV_FILE"
+require_file "$ROOT_DIR/ops/schema-compatibility.sh"
+. "$ROOT_DIR/ops/schema-compatibility.sh"
+hms_validate_schema_fence "$HMS_SCHEMA_FENCE_FILE"
 for compose_file in $COMPOSE_FILES; do
   require_file "$compose_file"
 done
@@ -493,6 +506,12 @@ if [ "$DATABASE_MODE" = "external-postgres" ]; then
   reject_external_database_host "$external_database_host" "HMS_DATABASE_URL"
 fi
 
+lease_helper="$ROOT_DIR/ops/deploy-lease.py"
+[ -f "$lease_helper" ] || { printf 'Host deployment lease helper is missing.\n' >&2; exit 1; }
+if ! python3 "$lease_helper" --check >/dev/null 2>&1; then
+  exec python3 "$lease_helper" -- /bin/sh "$ROOT_DIR/ops/compose-v2/deploy.sh" "$@"
+fi
+
 if [ "$SKIP_PULL" != "true" ]; then
   require_command git
   step "Deploying $client_slug ($hms_env, database: $DATABASE_MODE) from $ROOT_DIR"
@@ -504,6 +523,7 @@ fi
 
 step 'Validating SQL migration versions'
 validate_migration_versions
+hms_require_runtime_compatible "$ROOT_DIR" "$(hms_candidate_breaking_epoch "$ROOT_DIR")"
 
 if [ -z "${HMS_BUILD_SHA:-}" ] && command -v git >/dev/null 2>&1; then
   HMS_BUILD_SHA="$(git rev-parse --short=12 HEAD 2>/dev/null || true)"
@@ -578,13 +598,43 @@ else
   printf 'WARNING: skipped hms-migrator check-db because DB_CONNECTIVITY_CHECK=false.\n' >&2
 fi
 
+step 'Checking committed database schema compatibility'
+database_epoch="$(compose run --rm -T hms-migrator hms-migrator schema-compatibility 2>/dev/null)" || {
+  printf 'Database schema compatibility could not be confirmed; application services were not replaced.\n' >&2
+  exit 1
+}
+hms_require_runtime_compatible "$ROOT_DIR" "$database_epoch"
+hms_require_runtime_compatible "$ROOT_DIR" "$(hms_candidate_breaking_epoch "$ROOT_DIR")"
+
 step 'Running database migrations and baseline provisioning'
 if [ "$SKIP_MIGRATIONS" = "true" ]; then
   printf 'Skipped database migrations because SKIP_MIGRATIONS=true.\n'
 else
+  # Record durable intent BEFORE stop: interruption cannot be mistaken for a
+  # pre-quiesce failure by the archive recovery path.
+  attempt_epoch="$(hms_runtime_schema_epoch "$ROOT_DIR")"
+  hms_record_deploy_stage "$HMS_DEPLOY_ATTEMPT_FILE" quiescing
+  step 'Quiescing and draining application writers before migrations'
+  compose stop --timeout 60 hms-api hms-worker
+  running_writers="$(compose ps --status running -q hms-api hms-worker)"
+  if [ -n "$running_writers" ]; then
+    printf 'Application writers are still running; refusing database migration.\n' >&2
+    exit 1
+  fi
+  hms_record_schema_attempt "$HMS_SCHEMA_FENCE_FILE" "$attempt_epoch"
   compose run --rm hms-migrator
 fi
 
+step 'Confirming post-migration runtime schema compatibility'
+database_epoch="$(compose run --rm -T hms-migrator hms-migrator schema-compatibility 2>/dev/null)" || {
+  printf 'Post-migration schema compatibility could not be confirmed; application services remain stopped.\n' >&2
+  exit 1
+}
+hms_require_candidate_schema_ready "$ROOT_DIR" "$database_epoch"
+
+# Skipped migrations can still replace running containers. Recovery must not
+# mistake any replacement attempt for a pre-quiesce/source-only failure.
+hms_record_deploy_stage "$HMS_DEPLOY_ATTEMPT_FILE" quiescing
 step 'Starting application services'
 compose up -d --no-deps hms-api hms-worker frontend
 wait_for_service hms-api "$HEALTH_TIMEOUT"

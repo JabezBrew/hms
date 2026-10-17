@@ -20,6 +20,14 @@ for local development, staging, demo data, and performance data.
 - `hms-migrator check-db`: connect with `HMS_DATABASE_URL`, run `SELECT 1`, and
   print only a redacted target summary. Deploy scripts use this before
   migrations.
+- `hms-migrator schema-compatibility`: print only the committed, explicitly
+  registered breaking-schema epoch (`0` or `202610170023`). The bounded read-only
+  probe takes SQLx's actual migration lock and fails closed on concurrent
+  migration, incoherent metadata or timeout. It does not apply migrations,
+  provision identities or declare a runtime compatible. Deployment compares this
+  result with the release's explicit runtime declaration before starting writers
+  or restoring an old runtime. See
+  `docs/v2/2026-10-17-runtime-schema-compatibility-scope.md`.
 - `hms-migrator configure-network`: explicitly bootstrap/recover a facility
   network policy after migrations. Requires `--facility-code`, repeated
   `--onsite-cidr`, `--offsite-mode`, `--expected-version`, `--request-id`, and

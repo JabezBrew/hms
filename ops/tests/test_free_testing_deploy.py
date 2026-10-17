@@ -10,6 +10,7 @@ import subprocess
 import sys
 
 import pytest
+from deployment_fixtures import copy_lease_helper
 
 ROOT = Path(__file__).resolve().parents[2]
 KIT = ROOT / 'ops' / 'free-testing'
@@ -83,6 +84,7 @@ def test_explicit_public_mode_enforces_origin_and_edge_auth(
     base.mkdir()
     for name in ('deploy.sh', 'prepare-env.py'):
         shutil.copy(KIT / name, kit / name)
+    copy_lease_helper(tmp_path, tmp_path / '.hms-deploy-state/deploy.lock')
     delegate = base / 'deploy.sh'
     delegate.write_text('#!/bin/sh\nexit 0\n')
     delegate.chmod(0o755)

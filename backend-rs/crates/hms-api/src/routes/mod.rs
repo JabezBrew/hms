@@ -23,3 +23,5 @@ pub mod scheduling;
 pub mod search;
 pub mod system;
 pub mod ward;
+
+pub mod treatment_courses;

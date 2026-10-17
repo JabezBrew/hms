@@ -32,6 +32,10 @@ pub struct RequestContext {
     pub reauth: ReauthState,
     #[serde(default)]
     pub authorization_deadline: Option<DateTime<Utc>>,
+    /// Server-resolved network policy used to authorize this request. This is
+    /// separate from any caller-supplied optimistic concurrency value.
+    #[serde(skip)]
+    pub resolved_network_policy_version: Option<i64>,
     pub user: AuthUser,
 }
 
@@ -61,12 +65,18 @@ impl RequestContext {
             offsite,
             reauth,
             authorization_deadline: None,
+            resolved_network_policy_version: None,
             user,
         }
     }
 
     pub fn with_authorization_deadline(mut self, deadline: DateTime<Utc>) -> Self {
         self.authorization_deadline = Some(deadline);
+        self
+    }
+
+    pub fn with_resolved_network_policy_version(mut self, version: i64) -> Self {
+        self.resolved_network_policy_version = (version >= 0).then_some(version);
         self
     }
 
@@ -930,6 +940,23 @@ mod tests {
             OffsiteState::Onsite,
             ReauthState::from_authentication_time(Utc::now()),
         )
+    }
+
+    #[test]
+    fn resolved_network_policy_is_server_only_and_preserves_unconfigured_version() {
+        let context = make_ctx().with_resolved_network_policy_version(0);
+        assert_eq!(context.resolved_network_policy_version, Some(0));
+        let mut serialized = serde_json::to_value(&context).unwrap();
+        assert!(serialized.get("resolved_network_policy_version").is_none());
+        serialized["resolved_network_policy_version"] = serde_json::json!(99);
+        let restored: RequestContext = serde_json::from_value(serialized).unwrap();
+        assert_eq!(restored.resolved_network_policy_version, None);
+        assert_eq!(
+            make_ctx()
+                .with_resolved_network_policy_version(-1)
+                .resolved_network_policy_version,
+            None
+        );
     }
 
     fn patient(facility_id: Uuid) -> PatientRecord {

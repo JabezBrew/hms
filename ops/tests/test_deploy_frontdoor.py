@@ -222,11 +222,14 @@ def test_deploy_remote_refuses_dirty_checkout_by_default():
     assert 'Dirty checkout has' in result.stderr
 
 
-def test_deploy_remote_ignore_dirty_dry_run_prints_explicit_head_release():
-    marker = write_dirty_marker()
+def test_deploy_remote_ignore_dirty_dry_run_prints_explicit_head_release(tmp_path):
+    # Keep this premise independent of real deploy-control edits under review.
+    repository = deployment_repository(tmp_path)
+    marker = repository / '.deploy-ignore-dirty-test'
+    marker.write_text('dirty\n', encoding='utf-8')
     try:
         result = subprocess.run(
-            [*DEPLOY_CMD, 'staging', '--ignore-dirty', '--dry-run'],
+            ['/bin/sh', str(repository / 'deploy'), 'staging', '--ignore-dirty', '--dry-run'],
             check=False,
             capture_output=True,
             text=True,
@@ -301,10 +304,10 @@ def test_deploy_frontdoor_preserves_safety_in_script_text():
     assert 'refusing to wait forever' in script
     assert 'late_status_line' in script
     assert 'polling pid/log in case it launched before SSH disconnected' in script
-    assert 'hms-deploy.lock' in script
-    assert 'stale_lock_dir' in script
-    assert 'runner_pid=$$' in script
-    assert 'Removing stale HMS deploy lock' in script
+    assert 'require_host_deploy_lease' in script
+    assert 'ops/deploy-lease.py' in script
+    assert 'stale_lock_dir' not in script
+    assert 'Removing stale HMS deploy lock' not in script
     assert 'require_positive_integer' in script
     assert 'GCP_EDGE_VERIFY=skip sh ./install-archive.sh' in script
     assert 'EXTERNAL_DB_BACKUP_CONFIRMED="true"' in installer

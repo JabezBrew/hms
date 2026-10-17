@@ -205,8 +205,8 @@ database host against `GCP_CLOUDSQL_HOST` (your Cloud SQL private IP).
 
 The lower-level Compose deploy also validates that every SQL migration version
 prefix under `backend-rs/migrations/` is unique before it builds images or runs
-`hms-migrator`. If an archive deploy fails after schema history has moved
-forward, `ops/gcp-staging/install-archive.sh` restores the previous tree and
+`hms-migrator`. If an archive deploy fails and the committed schema remains
+compatible with the previous artifact, `ops/gcp-staging/install-archive.sh` restores the previous tree and
 uses the rollback-only `--skip-migrations` path so runtime recreation does not
 fail because the old code lacks newly applied migration files. If the restored
 tree predates that flag, the archive installer rebuilds and restarts the
@@ -214,6 +214,20 @@ restored runtime services directly without invoking `hms-migrator`, then waits
 for Redis, API, worker, frontend, and Caddy health. Manual use of
 `--skip-migrations` is refused unless
 `HMS_ROLLBACK_SKIP_MIGRATIONS_ALLOWED=true` is set for this recovery path.
+
+This runtime recreation is conditional on an authoritative schema compatibility
+probe before restoring the previous tree. Failures before quiescence restore
+source only and leave existing containers untouched. After quiescence, unknown
+or incompatible DB state keeps writers stopped and both release anchors intact.
+In particular, migration 202610170023 excludes checkpoint 12 binaries from normal
+runtime rollback; use a reviewed compatible forward artifact or separately
+reviewed database restoration. See the [schema compatibility contract](../../docs/v2/2026-10-17-runtime-schema-compatibility-scope.md).
+The canonical private kernel deployment lease remains held across that probe,
+tree restoration and restart, including nested scripts. Remote packaging uploads
+the committed `ops/deploy-lease.py` beside the standalone installer; manual
+standalone invocation needs the same helper. All supported host mutation paths
+share `/opt/.hms-deploy-state/deploy.lock`. Legacy `/tmp/hms-deploy.lock` presence
+requires operator review and is never removed using PID/staleness assumptions.
 
 The load VM is stopped and should remain stopped except during explicit
 performance test windows.

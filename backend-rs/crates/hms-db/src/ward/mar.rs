@@ -178,6 +178,88 @@ pub async fn list_medication_administrations_scoped(
     cursor: Option<WardCursor>,
     limit: i64,
 ) -> anyhow::Result<Vec<MedicationAdministrationListItem>> {
+    let mut query = medication_list_query(facility_id, filters, cursor, limit, None)?;
+    let rows = observe_db_query(
+        "ward.mar.medication_administrations.list",
+        query
+            .build_query_as::<MedicationAdministrationRow>()
+            .fetch_all(pool),
+    )
+    .await?;
+    rows.into_iter().map(medication_from_row).collect()
+}
+
+pub async fn list_medication_administrations_authorized(
+    pool: &PgPool,
+    mut actor: crate::clinical::medication_access::MedicationActor,
+    filters: MedicationAdministrationFilters,
+    cursor: Option<WardCursor>,
+    limit: i64,
+) -> anyhow::Result<Vec<MedicationAdministrationListItem>> {
+    use crate::clinical::medication_access as access;
+    use hms_domain::deployment::FeatureKey;
+    let mut tx = pool.begin().await?;
+    access::verify(
+        &mut tx,
+        &mut actor,
+        &[FeatureKey::Patients, FeatureKey::Nursing],
+    )
+    .await?;
+    let wards = access::wards(&mut tx, &actor).await?;
+    let patient = if let Some(admission) = filters.admission_case_id {
+        let patient: Uuid = observe_db_query(
+            "ward.medication.scope",
+            sqlx::query_scalar(
+                "SELECT patient_id FROM admission_cases WHERE facility_id=$1 AND id=$2",
+            )
+            .bind(actor.identity.facility_id)
+            .bind(admission)
+            .fetch_optional(&mut *tx),
+        )
+        .await?
+        .ok_or(access::MedicationAccessError::ContextChanged)?;
+        if filters.patient_id.is_some_and(|id| id != patient) {
+            return Err(access::MedicationAccessError::ContextChanged.into());
+        }
+        access::patient(&mut tx, &actor, patient).await?;
+        access::admission(&mut tx, &actor, &wards, admission, patient, false).await?;
+        Some(patient)
+    } else {
+        filters.patient_id
+    };
+    if let Some(patient) = patient {
+        access::patient(&mut tx, &actor, patient).await?;
+    }
+    let mut q = medication_list_query(
+        actor.identity.facility_id,
+        filters,
+        cursor,
+        limit,
+        Some((&actor, wards)),
+    )?;
+    let result = observe_db_query(
+        "ward.mar.medication_administrations.list",
+        q.build_query_as::<MedicationAdministrationRow>()
+            .fetch_all(&mut *tx),
+    )
+    .await?
+    .into_iter()
+    .map(medication_from_row)
+    .collect::<anyhow::Result<_>>()?;
+    access::deadline(&mut tx, &actor).await?;
+    tx.commit().await?;
+    Ok(result)
+}
+fn medication_list_query(
+    facility_id: Uuid,
+    filters: MedicationAdministrationFilters,
+    cursor: Option<WardCursor>,
+    limit: i64,
+    scope: Option<(
+        &crate::clinical::medication_access::MedicationActor,
+        Option<Vec<Uuid>>,
+    )>,
+) -> anyhow::Result<QueryBuilder<'static, Postgres>> {
     // Scope before pagination. The outer status filter uses the effective MAR
     // status, including the fail-closed projection for stale source orders.
     let mut query = QueryBuilder::<Postgres>::new("SELECT * FROM (");
@@ -200,6 +282,19 @@ pub async fn list_medication_administrations_scoped(
         query.push(" AND medication_administrations.scheduled_at < ");
         query.push_bind(scheduled_before);
     }
+    if let Some((actor, wards)) = scope {
+        crate::clinical::medication_access::ordinary_patient_predicate(
+            &mut query,
+            actor,
+            "medication_administrations.patient_id",
+        );
+        if let Some(ids) = wards {
+            query
+                .push(" AND mar_admission.ward_id=ANY(")
+                .push_bind(ids)
+                .push(")");
+        }
+    }
     query.push(") scoped WHERE TRUE");
     if let Some(status) = filters.status {
         query.push(" AND scoped.status = ");
@@ -220,19 +315,31 @@ pub async fn list_medication_administrations_scoped(
     });
     query.push_bind(limit.clamp(1, 101));
 
-    let rows = observe_db_query(
-        "ward.mar.medication_administrations.list",
-        query
-            .build_query_as::<MedicationAdministrationRow>()
-            .fetch_all(pool),
-    )
-    .await?;
-    rows.into_iter().map(medication_from_row).collect()
+    Ok(query)
 }
 
 pub async fn schedule_medication_administration(
     pool: &PgPool,
     medication: NewMedicationAdministration,
+) -> anyhow::Result<MedicationAdministrationListItem> {
+    schedule_medication_inner(pool, medication, None).await
+}
+pub async fn schedule_medication_administration_authorized(
+    pool: &PgPool,
+    medication: NewMedicationAdministration,
+    actor: crate::clinical::medication_access::MedicationActor,
+) -> anyhow::Result<MedicationAdministrationListItem> {
+    crate::clinical::medication_access::bound(
+        &actor,
+        medication.facility_id,
+        medication.actor_user_id,
+    )?;
+    schedule_medication_inner(pool, medication, Some(actor)).await
+}
+async fn schedule_medication_inner(
+    pool: &PgPool,
+    medication: NewMedicationAdministration,
+    mut actor: Option<crate::clinical::medication_access::MedicationActor>,
 ) -> anyhow::Result<MedicationAdministrationListItem> {
     if medication
         .frequency
@@ -240,6 +347,30 @@ pub async fn schedule_medication_administration(
         .is_some_and(|frequency| frequency.trim().eq_ignore_ascii_case("prn"))
     {
         return Err(super::prn::PrnError::Unconfigured.into());
+    }
+    let mut tx = pool.begin().await?;
+    if let Some(actor) = actor.as_mut() {
+        use crate::clinical::medication_access as access;
+        access::verify(
+            &mut tx,
+            actor,
+            &[
+                hms_domain::deployment::FeatureKey::Patients,
+                hms_domain::deployment::FeatureKey::Nursing,
+            ],
+        )
+        .await?;
+        access::patient(&mut tx, actor, medication.patient_id).await?;
+        let wards = access::wards(&mut tx, actor).await?;
+        access::admission(
+            &mut tx,
+            actor,
+            &wards,
+            medication.admission_case_id,
+            medication.patient_id,
+            true,
+        )
+        .await?;
     }
     observe_db_query(
         "ward.mar.medication_administrations.schedule",
@@ -272,11 +403,20 @@ pub async fn schedule_medication_administration(
         .bind(medication.scheduled_at)
         .bind(codec::encode(MedicationAdministrationStatus::Scheduled)?)
         .bind(medication.actor_user_id)
-        .execute(pool),
+        .execute(&mut *tx),
     )
     .await?;
 
-    medication_by_id(pool, medication.facility_id, medication.id).await
+    let result = medication_in_transaction(&mut tx, medication.facility_id, medication.id)
+        .await?
+        .ok_or(MedicationOutcomeError::NotActionable)?;
+    if let Some(actor) = actor.as_ref() {
+        sqlx::query("INSERT INTO audit_events(id,facility_id,actor_user_id,request_id,event_type,resource_type,resource_id,metadata) VALUES($1,$2,$3,$4,'nursing.medication.scheduled','medication_administration',$5,'{}'::jsonb)")
+            .bind(Uuid::new_v4()).bind(actor.identity.facility_id).bind(actor.identity.user_id).bind(&actor.identity.request_id).bind(medication.id).execute(&mut *tx).await?;
+        crate::clinical::medication_access::deadline(&mut tx, actor).await?;
+    }
+    tx.commit().await?;
+    Ok(result)
 }
 
 pub async fn administer_medication(
@@ -306,6 +446,21 @@ pub async fn administer_medication(
 pub async fn record_medication_outcome(
     pool: &PgPool,
     command: RecordMedicationOutcome,
+) -> anyhow::Result<Option<MedicationAdministrationListItem>> {
+    record_medication_outcome_inner(pool, command, None).await
+}
+pub async fn record_medication_outcome_authorized(
+    pool: &PgPool,
+    command: RecordMedicationOutcome,
+    actor: crate::clinical::medication_access::MedicationActor,
+) -> anyhow::Result<Option<MedicationAdministrationListItem>> {
+    crate::clinical::medication_access::bound(&actor, command.facility_id, command.actor_user_id)?;
+    record_medication_outcome_inner(pool, command, Some(actor)).await
+}
+async fn record_medication_outcome_inner(
+    pool: &PgPool,
+    command: RecordMedicationOutcome,
+    mut access_actor: Option<crate::clinical::medication_access::MedicationActor>,
 ) -> anyhow::Result<Option<MedicationAdministrationListItem>> {
     let status = codec::encode(command.status)?;
     let reason = command
@@ -355,13 +510,26 @@ pub async fn record_medication_outcome(
     } else {
         None
     };
-    let actor = basis::authorize(
-        &mut transaction,
-        command.facility_id,
-        command.actor_user_id,
-        command.authorization.clone(),
-    )
-    .await?;
+    let actor = if let Some(actor) = access_actor.as_mut() {
+        crate::clinical::medication_access::verify(
+            &mut transaction,
+            actor,
+            &[
+                hms_domain::deployment::FeatureKey::Patients,
+                hms_domain::deployment::FeatureKey::Nursing,
+            ],
+        )
+        .await?;
+        actor.identity.clone()
+    } else {
+        basis::authorize(
+            &mut transaction,
+            command.facility_id,
+            command.actor_user_id,
+            command.authorization.clone(),
+        )
+        .await?
+    };
     let prn_safety_group = if let Some(source) = prescription
         .as_ref()
         .filter(|source| source.frequency.trim().eq_ignore_ascii_case("prn"))
@@ -378,6 +546,22 @@ pub async fn record_medication_outcome(
     } else {
         None
     };
+    if let Some(actor) = access_actor.as_ref() {
+        use crate::clinical::medication_access as access;
+        access::patient(&mut transaction, actor, patient_id).await?;
+        let wards = access::wards(&mut transaction, actor).await?;
+        // Exact terminal replay remains readable after discharge; only a new
+        // administration requires an active admission below.
+        access::admission(
+            &mut transaction,
+            actor,
+            &wards,
+            admission_id,
+            patient_id,
+            false,
+        )
+        .await?;
+    }
     // All source-based writers lock prescription and PRN group before child rows. Competing
     // dose outcomes then serialize on this row; a terminal decision is immutable.
     let existing = sqlx::query_as::<_, LockedMedicationOutcomeRow>(
@@ -405,9 +589,12 @@ pub async fn record_medication_outcome(
         && existing.administration_notes.as_deref() == notes
         && existing.witness_user_id == command.witness_user_id
     {
+        let receipt =
+            medication_in_transaction(&mut transaction, command.facility_id, command.medication_id)
+                .await?;
         basis::check_authorization(&mut transaction, &actor).await?;
         transaction.commit().await?;
-        return optional_medication_by_id(pool, command.facility_id, command.medication_id).await;
+        return Ok(receipt);
     }
     if prescription_id.is_none()
         && existing
@@ -524,6 +711,7 @@ pub async fn record_medication_outcome(
                 AND c.patient_id = p.patient_id AND c.admission_case_id = m.admission_case_id
             WHERE p.id = m.prescription_id AND p.facility_id = m.facility_id
                 AND p.patient_id = m.patient_id AND p.status = 'active' AND c.status = 'active'
+                AND NOT EXISTS(SELECT 1 FROM medication_course_stops local_stop WHERE local_stop.facility_id=c.facility_id AND local_stop.medication_course_id=c.id)
                 AND m.medication_name = p.medication_name AND m.dose = p.dose
                 AND m.route = p.route AND m.frequency = p.frequency
                 AND c.medication_name = p.medication_name AND c.dose = p.dose
@@ -575,8 +763,12 @@ pub async fn record_medication_outcome(
         .bind(command.request_id).bind(command.medication_id)
         .bind(serde_json::json!({ "outcome": status })).execute(&mut *transaction).await?;
     basis::check_authorization(&mut transaction, &actor).await?;
+    let receipt =
+        medication_in_transaction(&mut transaction, command.facility_id, command.medication_id)
+            .await?;
+    basis::check_authorization(&mut transaction, &actor).await?;
     transaction.commit().await?;
-    optional_medication_by_id(pool, command.facility_id, command.medication_id).await
+    Ok(receipt)
 }
 
 pub async fn get_medication_administration(
@@ -632,10 +824,92 @@ pub async fn list_treatment_sheets_scoped(
     limit: i64,
     filters: TreatmentSheetFilters,
 ) -> anyhow::Result<Vec<TreatmentSheetListItem>> {
+    let mut query = treatment_list_query(facility_id, cursor, limit, filters, None)?;
+    let rows = observe_db_query(
+        "ward.mar.treatment_sheets.list",
+        query.build_query_as::<TreatmentSheetRow>().fetch_all(pool),
+    )
+    .await?;
+    rows.into_iter().map(treatment_sheet_from_row).collect()
+}
+pub async fn list_treatment_sheets_authorized(
+    pool: &PgPool,
+    mut actor: crate::clinical::medication_access::MedicationActor,
+    cursor: Option<WardCursor>,
+    limit: i64,
+    filters: TreatmentSheetFilters,
+) -> anyhow::Result<Vec<TreatmentSheetListItem>> {
+    use crate::clinical::medication_access as access;
+    let mut tx = pool.begin().await?;
+    access::verify(
+        &mut tx,
+        &mut actor,
+        &[
+            hms_domain::deployment::FeatureKey::Patients,
+            hms_domain::deployment::FeatureKey::Nursing,
+        ],
+    )
+    .await?;
+    let wards = access::wards(&mut tx, &actor).await?;
+    if let Some(patient) = filters.patient_id {
+        access::local_patient(&mut tx, &actor, patient).await?;
+    }
+    if let Some(admission) = filters.admission_case_id {
+        let patient: Uuid = observe_db_query(
+            "ward.medication.scope",
+            sqlx::query_scalar(
+                "SELECT patient_id FROM admission_cases WHERE facility_id=$1 AND id=$2",
+            )
+            .bind(actor.identity.facility_id)
+            .bind(admission)
+            .fetch_optional(&mut *tx),
+        )
+        .await?
+        .ok_or(access::MedicationAccessError::ContextChanged)?;
+        if filters.patient_id.is_some_and(|id| id != patient) {
+            return Err(access::MedicationAccessError::ContextChanged.into());
+        }
+        access::admission(&mut tx, &actor, &wards, admission, patient, false).await?;
+    }
+    if filters
+        .ward_id
+        .is_some_and(|ward| wards.as_ref().is_some_and(|ids| !ids.contains(&ward)))
+    {
+        return Err(access::MedicationAccessError::WardDenied.into());
+    }
+    let mut query =
+        treatment_list_query(actor.identity.facility_id, cursor, limit, filters, wards)?;
+    let result = observe_db_query(
+        "ward.mar.treatment_sheets.list",
+        query
+            .build_query_as::<TreatmentSheetRow>()
+            .fetch_all(&mut *tx),
+    )
+    .await?
+    .into_iter()
+    .map(treatment_sheet_from_row)
+    .collect::<anyhow::Result<_>>()?;
+    access::deadline(&mut tx, &actor).await?;
+    tx.commit().await?;
+    Ok(result)
+}
+fn treatment_list_query(
+    facility_id: Uuid,
+    cursor: Option<WardCursor>,
+    limit: i64,
+    filters: TreatmentSheetFilters,
+    wards: Option<Vec<Uuid>>,
+) -> anyhow::Result<QueryBuilder<'static, Postgres>> {
     let mut query = treatment_sheet_query();
     query
         .push(" WHERE treatment_sheets.facility_id = ")
         .push_bind(facility_id);
+    if let Some(wards) = wards {
+        query
+            .push(" AND sheet_admission.ward_id=ANY(")
+            .push_bind(wards)
+            .push(")");
+    }
     if let Some(id) = filters.id {
         query.push(" AND treatment_sheets.id = ").push_bind(id);
     }
@@ -680,19 +954,54 @@ pub async fn list_treatment_sheets_scoped(
         } else {
             " ORDER BY treatment_sheets.updated_at ASC, treatment_sheets.id ASC LIMIT "
         })
-        .push_bind(limit);
-    let rows = observe_db_query(
-        "ward.mar.treatment_sheets.list",
-        query.build_query_as::<TreatmentSheetRow>().fetch_all(pool),
-    )
-    .await?;
-    rows.into_iter().map(treatment_sheet_from_row).collect()
+        .push_bind(limit.clamp(1, 101));
+    Ok(query)
 }
 
 pub async fn create_treatment_sheet(
     pool: &PgPool,
     sheet: NewTreatmentSheet,
 ) -> anyhow::Result<TreatmentSheetListItem> {
+    create_treatment_sheet_inner(pool, sheet, None).await
+}
+pub async fn create_treatment_sheet_authorized(
+    pool: &PgPool,
+    sheet: NewTreatmentSheet,
+    actor: crate::clinical::medication_access::MedicationActor,
+) -> anyhow::Result<TreatmentSheetListItem> {
+    crate::clinical::medication_access::bound(&actor, sheet.facility_id, sheet.actor_user_id)?;
+    create_treatment_sheet_inner(pool, sheet, Some(actor)).await
+}
+async fn create_treatment_sheet_inner(
+    pool: &PgPool,
+    sheet: NewTreatmentSheet,
+    mut actor: Option<crate::clinical::medication_access::MedicationActor>,
+) -> anyhow::Result<TreatmentSheetListItem> {
+    let mut tx = pool.begin().await?;
+    if let Some(actor) = actor.as_mut() {
+        use crate::clinical::medication_access as access;
+        access::verify(
+            &mut tx,
+            actor,
+            &[
+                hms_domain::deployment::FeatureKey::Patients,
+                hms_domain::deployment::FeatureKey::Nursing,
+            ],
+        )
+        .await?;
+        access::local_patient(&mut tx, actor, sheet.patient_id).await?;
+        let wards = access::wards(&mut tx, actor).await?;
+        access::admission(
+            &mut tx,
+            actor,
+            &wards,
+            sheet.admission_case_id,
+            sheet.patient_id,
+            true,
+        )
+        .await?;
+    }
+
     observe_db_query(
         "ward.mar.treatment_sheets.create",
         sqlx::query(
@@ -718,17 +1027,29 @@ pub async fn create_treatment_sheet(
         .bind(sheet.sheet_date)
         .bind(codec::encode(TreatmentSheetStatus::Active)?)
         .bind(sheet.actor_user_id)
-        .execute(pool),
+        .execute(&mut *tx),
     )
     .await?;
 
-    treatment_sheet_by_admission_date(
-        pool,
-        sheet.facility_id,
-        sheet.admission_case_id,
-        sheet.sheet_date,
-    )
-    .await
+    let mut query = treatment_sheet_query();
+    query
+        .push(" WHERE treatment_sheets.facility_id=")
+        .push_bind(sheet.facility_id)
+        .push(" AND treatment_sheets.admission_case_id=")
+        .push_bind(sheet.admission_case_id)
+        .push(" AND treatment_sheets.sheet_date=")
+        .push_bind(sheet.sheet_date);
+    let result = treatment_sheet_from_row(
+        query
+            .build_query_as::<TreatmentSheetRow>()
+            .fetch_one(&mut *tx)
+            .await?,
+    )?;
+    if let Some(actor) = actor.as_ref() {
+        crate::clinical::medication_access::deadline(&mut tx, actor).await?;
+    }
+    tx.commit().await?;
+    Ok(result)
 }
 
 fn medication_query() -> QueryBuilder<'static, Postgres> {
@@ -778,6 +1099,9 @@ fn medication_query() -> QueryBuilder<'static, Postgres> {
         FROM medication_administrations
         JOIN patients ON patients.id = medication_administrations.patient_id
             AND patients.facility_id = medication_administrations.facility_id
+        JOIN admission_cases mar_admission ON mar_admission.id=medication_administrations.admission_case_id
+            AND mar_admission.facility_id=medication_administrations.facility_id
+            AND mar_admission.patient_id=medication_administrations.patient_id
         LEFT JOIN users outcome_actor ON outcome_actor.id = medication_administrations.outcome_recorded_by_user_id
             AND outcome_actor.facility_id = medication_administrations.facility_id
         LEFT JOIN prescriptions ON prescriptions.id = medication_administrations.prescription_id
@@ -814,16 +1138,6 @@ fn treatment_sheet_query() -> QueryBuilder<'static, Postgres> {
     )
 }
 
-async fn medication_by_id(
-    pool: &PgPool,
-    facility_id: Uuid,
-    medication_id: Uuid,
-) -> anyhow::Result<MedicationAdministrationListItem> {
-    optional_medication_by_id(pool, facility_id, medication_id)
-        .await?
-        .ok_or_else(|| anyhow::anyhow!("medication administration was not found after write"))
-}
-
 async fn optional_medication_by_id(
     pool: &PgPool,
     facility_id: Uuid,
@@ -844,25 +1158,23 @@ async fn optional_medication_by_id(
     row.map(medication_from_row).transpose()
 }
 
-async fn treatment_sheet_by_admission_date(
-    pool: &PgPool,
-    facility_id: Uuid,
-    admission_case_id: Uuid,
-    sheet_date: NaiveDate,
-) -> anyhow::Result<TreatmentSheetListItem> {
-    let mut query = treatment_sheet_query();
-    query.push(" WHERE treatment_sheets.facility_id = ");
-    query.push_bind(facility_id);
-    query.push(" AND treatment_sheets.admission_case_id = ");
-    query.push_bind(admission_case_id);
-    query.push(" AND treatment_sheets.sheet_date = ");
-    query.push_bind(sheet_date);
-    let row = observe_db_query(
-        "ward.mar.treatment_sheets.get_by_admission_date",
-        query.build_query_as::<TreatmentSheetRow>().fetch_one(pool),
-    )
-    .await?;
-    treatment_sheet_from_row(row)
+async fn medication_in_transaction(
+    tx: &mut sqlx::Transaction<'_, Postgres>,
+    facility: Uuid,
+    id: Uuid,
+) -> anyhow::Result<Option<MedicationAdministrationListItem>> {
+    let mut query = medication_query();
+    query
+        .push(" WHERE medication_administrations.facility_id=")
+        .push_bind(facility)
+        .push(" AND medication_administrations.id=")
+        .push_bind(id);
+    query
+        .build_query_as::<MedicationAdministrationRow>()
+        .fetch_optional(&mut **tx)
+        .await?
+        .map(medication_from_row)
+        .transpose()
 }
 
 fn medication_from_row(

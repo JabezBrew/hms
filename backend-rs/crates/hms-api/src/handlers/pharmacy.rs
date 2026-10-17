@@ -38,11 +38,14 @@ pub async fn list_locations(
 )]
 pub async fn list_queue(
     State(state): State<AppState>,
-    RequestContext(user): RequestContext,
+    network: crate::extractors::NetworkContext,
     Query(query): Query<PharmacyQueueQuery>,
 ) -> Result<Json<ListResponse<PharmacyQueueItem>>, ApiError> {
     Ok(Json(
-        state.pharmacy_service().list_queue(&user, query).await?,
+        state
+            .pharmacy_service()
+            .list_queue(&network.context, query, network.authorization_deadline)
+            .await?,
     ))
 }
 
@@ -62,11 +65,14 @@ pub async fn list_queue(
 )]
 pub async fn get_queue_item(
     State(state): State<AppState>,
-    RequestContext(user): RequestContext,
+    network: crate::extractors::NetworkContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<PharmacyQueueItem>>, ApiError> {
     Ok(Json(
-        state.pharmacy_service().get_queue_item(&user, id).await?,
+        state
+            .pharmacy_service()
+            .get_queue_item(&network.context, id, network.authorization_deadline)
+            .await?,
     ))
 }
 

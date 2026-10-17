@@ -137,6 +137,21 @@ pub async fn request_prn_dose(
     pool: &PgPool,
     command: RequestPrnDose,
 ) -> anyhow::Result<PrnDoseRequestResult> {
+    request_prn_dose_inner(pool, command, None).await
+}
+pub async fn request_prn_dose_authorized(
+    pool: &PgPool,
+    command: RequestPrnDose,
+    actor: crate::clinical::medication_access::MedicationActor,
+) -> anyhow::Result<PrnDoseRequestResult> {
+    crate::clinical::medication_access::bound(&actor, command.facility_id, command.actor_user_id)?;
+    request_prn_dose_inner(pool, command, Some(actor)).await
+}
+async fn request_prn_dose_inner(
+    pool: &PgPool,
+    command: RequestPrnDose,
+    mut actor: Option<crate::clinical::medication_access::MedicationActor>,
+) -> anyhow::Result<PrnDoseRequestResult> {
     let indication = command.indication.trim();
     if indication.is_empty() || indication.chars().count() > 500 {
         return Err(PrnError::InvalidIndication.into());
@@ -146,6 +161,17 @@ pub async fn request_prn_dose(
         crate::clinical::lock_prescription(&mut tx, command.facility_id, command.prescription_id)
             .await?
             .ok_or(PrnError::NotActionable)?;
+    if let Some(actor) = actor.as_mut() {
+        crate::clinical::medication_access::verify(
+            &mut tx,
+            actor,
+            &[
+                hms_domain::deployment::FeatureKey::Patients,
+                hms_domain::deployment::FeatureKey::Nursing,
+            ],
+        )
+        .await?;
+    }
     let safety_group = crate::clinical::prescription_courses::lock_prn_safety_group(
         &mut tx,
         command.facility_id,
@@ -153,17 +179,34 @@ pub async fn request_prn_dose(
     )
     .await?
     .ok_or(PrnError::Unconfigured)?;
+    if let Some(actor) = actor.as_ref() {
+        use crate::clinical::medication_access as access;
+        access::patient(&mut tx, actor, source.patient_id).await?;
+        let wards = access::wards(&mut tx, actor).await?;
+        access::admission(
+            &mut tx,
+            actor,
+            &wards,
+            command.admission_case_id,
+            source.patient_id,
+            false,
+        )
+        .await?;
+    }
     // Exact replay returns the original record even if it has since been supplied,
     // recorded or stopped. It never creates a new reservation or rewrites evidence.
     let replay: Option<(Uuid,Uuid,Uuid,Uuid,Uuid,String)> = sqlx::query_as("SELECT id,prescription_id,admission_case_id,pharmacy_fulfillment_id,prn_requested_by_user_id,prn_indication FROM medication_administrations WHERE facility_id=$1 AND prn_request_id=$2")
         .bind(command.facility_id).bind(command.client_request_id).fetch_optional(&mut *tx).await?;
-    if let Some((id, prescription, admission, fulfillment, actor, reason)) = replay {
+    if let Some((id, prescription, admission, fulfillment, replay_actor, reason)) = replay {
         if prescription != source.id
             || admission != command.admission_case_id
-            || actor != command.actor_user_id
+            || replay_actor != command.actor_user_id
             || reason != indication
         {
             return Err(PrnError::RequestConflict.into());
+        }
+        if let Some(actor) = actor.as_ref() {
+            crate::clinical::medication_access::deadline(&mut tx, actor).await?;
         }
         tx.commit().await?;
         return Ok(PrnDoseRequestResult {
@@ -175,9 +218,11 @@ pub async fn request_prn_dose(
             created: false,
         });
     }
-    let at: DateTime<Utc> = sqlx::query_scalar("SELECT clock_timestamp()")
-        .fetch_one(&mut *tx)
-        .await?;
+    let at: DateTime<Utc> = hms_observability::observe_db_query(
+        "ward.prn.clock",
+        sqlx::query_scalar("SELECT clock_timestamp()").fetch_one(&mut *tx),
+    )
+    .await?;
     let policy = validate_prn_source(
         &mut tx,
         command.facility_id,
@@ -186,9 +231,11 @@ pub async fn request_prn_dose(
         at,
     )
     .await?;
-    let at: DateTime<Utc> = sqlx::query_scalar("SELECT clock_timestamp()")
-        .fetch_one(&mut *tx)
-        .await?;
+    let at: DateTime<Utc> = hms_observability::observe_db_query(
+        "ward.prn.clock",
+        sqlx::query_scalar("SELECT clock_timestamp()").fetch_one(&mut *tx),
+    )
+    .await?;
     enforce_prn_limits(&mut tx, command.facility_id, safety_group, &policy, at).await?;
     let pending: bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM medication_administrations WHERE facility_id=$1 AND prn_safety_group_id=$2 AND status='scheduled')")
         .bind(command.facility_id).bind(safety_group).fetch_one(&mut *tx).await?;
@@ -209,23 +256,25 @@ pub async fn request_prn_dose(
         AND c.medication_name=$3 AND c.dose=$4 AND c.route=$5 AND c.frequency=$6
         AND c.inventory_item_id IS NOT DISTINCT FROM $7 AND c.prescription_start_date IS NOT DISTINCT FROM $8
         AND c.prescription_duration_days IS NOT DISTINCT FROM $9 AND c.prescription_first_dose_at IS NOT DISTINCT FROM $10
-        AND c.prescription_prn_policy=$11 AND c.first_dose_at <= $12)"#)
+        AND c.prescription_prn_policy=$11 AND c.first_dose_at <= $12
+        AND NOT EXISTS(SELECT 1 FROM medication_course_stops s WHERE s.facility_id=c.facility_id AND s.medication_course_id=c.id))"#)
         .bind(command.facility_id).bind(course_id).bind(&source.medication_name).bind(&source.dose).bind(&source.route).bind(&source.frequency)
         .bind(source.inventory_item_id).bind(source.start_date).bind(source.duration_days).bind(source.first_dose_at).bind(Json(&policy)).bind(at).fetch_one(&mut *tx).await?;
     if !valid {
         return Err(PrnError::NotActionable.into());
     }
     let fulfillment_id=sqlx::query_scalar::<_,Uuid>(r#"
-        INSERT INTO pharmacy_fulfillments(id,facility_id,patient_id,admission_case_id,prescription_id,medication_course_id,status,medication_name,dose,route,frequency,inventory_item_id,coverage_start,coverage_end,requested_dose_count,created_by_user_id)
-        VALUES($1,$2,$3,$4,$5,$6,'pending',$7,$8,$9,$10,$11,$12,$13,1,$14)
-        ON CONFLICT(facility_id,medication_course_id) DO UPDATE
+        INSERT INTO pharmacy_fulfillments(id,facility_id,patient_id,admission_case_id,prescription_id,medication_course_id,status,medication_name,dose,route,frequency,inventory_item_id,coverage_start,coverage_end,requested_dose_count,created_by_user_id,source_kind)
+        VALUES($1,$2,$3,$4,$5,$6,'pending',$7,$8,$9,$10,$11,$12,$13,1,$14,'prn_aggregate')
+        ON CONFLICT(facility_id,medication_course_id) WHERE source_kind IN ('initial_generation','prn_aggregate') DO UPDATE
         SET requested_dose_count=pharmacy_fulfillments.dispensed_dose_count+1,
             status=CASE WHEN pharmacy_fulfillments.dispensed_dose_count>0 THEN 'partially_dispensed' ELSE 'pending' END,
             coverage_end=GREATEST(pharmacy_fulfillments.coverage_end,EXCLUDED.coverage_end),updated_at=now()
+        WHERE pharmacy_fulfillments.source_kind='prn_aggregate'
         RETURNING id"#)
         .bind(Uuid::new_v4()).bind(command.facility_id).bind(source.patient_id).bind(command.admission_case_id).bind(source.id).bind(course_id)
         .bind(&source.medication_name).bind(&source.dose).bind(&source.route).bind(&source.frequency).bind(source.inventory_item_id)
-        .bind(at).bind(at+Duration::seconds(1)).bind(command.actor_user_id).fetch_one(&mut *tx).await?;
+        .bind(at).bind(at+Duration::seconds(1)).bind(command.actor_user_id).fetch_optional(&mut *tx).await?.ok_or(PrnError::NotActionable)?;
     let sequence:i64=sqlx::query_scalar("SELECT COALESCE(max(dose_sequence),0)::bigint+1 FROM medication_administrations WHERE facility_id=$1 AND medication_course_id=$2")
         .bind(command.facility_id).bind(course_id).fetch_one(&mut *tx).await?;
     let sequence = i32::try_from(sequence).map_err(|_| PrnError::NotActionable)?;
@@ -239,6 +288,9 @@ pub async fn request_prn_dose(
     // The free-text indication stays in the clinical record, never audit metadata.
     sqlx::query("INSERT INTO audit_events(id,facility_id,actor_user_id,request_id,event_type,resource_type,resource_id,metadata) VALUES($1,$2,$3,$4,'medication.prn_requested','medication_administration',$5,'{}'::jsonb)")
         .bind(Uuid::new_v4()).bind(command.facility_id).bind(command.actor_user_id).bind(command.request_id).bind(id).execute(&mut *tx).await?;
+    if let Some(actor) = actor.as_ref() {
+        crate::clinical::medication_access::deadline(&mut tx, actor).await?;
+    }
     tx.commit().await?;
     Ok(PrnDoseRequestResult {
         prescription_id: source.id,
@@ -252,6 +304,7 @@ pub async fn request_prn_dose(
 
 #[derive(FromRow)]
 struct PrnRow {
+    course_stopped: bool,
     prn_safety_group_id: Option<Uuid>,
     prescription_id: Uuid,
     patient_id: Uuid,
@@ -281,9 +334,60 @@ pub async fn list_prn_orders(
     cursor: Option<WardCursor>,
     limit: i64,
 ) -> anyhow::Result<Vec<PrnOrderListItem>> {
-    let at = Utc::now();
-    let mut q = QueryBuilder::<Postgres>::new(
-        r#"SELECT p.prn_safety_group_id,p.id AS prescription_id,p.patient_id,p.medication_name,p.dose,p.route,p.prescribed_at,p.prn_policy,p.status,p.start_date,p.first_dose_at,p.duration_days,
+    list_prn_orders_inner(pool, facility, patient, cursor, limit, None).await
+}
+pub async fn list_prn_orders_authorized(
+    pool: &PgPool,
+    actor: crate::clinical::medication_access::MedicationActor,
+    patient: Uuid,
+    admission: Uuid,
+    cursor: Option<WardCursor>,
+    limit: i64,
+) -> anyhow::Result<Vec<PrnOrderListItem>> {
+    let facility = actor.identity.facility_id;
+    list_prn_orders_inner(
+        pool,
+        facility,
+        patient,
+        cursor,
+        limit,
+        Some((actor, admission)),
+    )
+    .await
+}
+async fn list_prn_orders_inner(
+    pool: &PgPool,
+    facility: Uuid,
+    patient: Uuid,
+    cursor: Option<WardCursor>,
+    limit: i64,
+    mut scope: Option<(crate::clinical::medication_access::MedicationActor, Uuid)>,
+) -> anyhow::Result<Vec<PrnOrderListItem>> {
+    let mut tx = pool.begin().await?;
+    if let Some((actor, admission)) = scope.as_mut() {
+        use crate::clinical::medication_access as access;
+        access::verify(
+            &mut tx,
+            actor,
+            &[
+                hms_domain::deployment::FeatureKey::Patients,
+                hms_domain::deployment::FeatureKey::Nursing,
+            ],
+        )
+        .await?;
+        access::patient(&mut tx, actor, patient).await?;
+        let wards = access::wards(&mut tx, actor).await?;
+        access::admission(&mut tx, actor, &wards, *admission, patient, false).await?;
+    }
+    let at: DateTime<Utc> = hms_observability::observe_db_query(
+        "ward.prn.clock",
+        sqlx::query_scalar("SELECT clock_timestamp()").fetch_one(&mut *tx),
+    )
+    .await?;
+    let mut q = QueryBuilder::<Postgres>::new("SELECT EXISTS(SELECT 1 FROM medication_course_stops s WHERE s.facility_id=p.facility_id AND s.prescription_id=p.id AND s.admission_case_id=");
+    q.push_bind(scope.as_ref().map(|(_, id)| *id))
+        .push(") AS course_stopped,");
+    q.push(r#"p.prn_safety_group_id,p.id AS prescription_id,p.patient_id,p.medication_name,p.dose,p.route,p.prescribed_at,p.prn_policy,p.status,p.start_date,p.first_dose_at,p.duration_days,
         i.unit AS stock_unit,i.is_active AS stock_active,i.controlled AS stock_controlled,
         pending.id AS pending_medication_administration_id,pending.is_dispensed AS pending_is_dispensed,
         actual.total AS administered_in_last_24_hours,actual.last_at AS last_administered_at,cap.cap_at AS cap_release_at
@@ -291,8 +395,7 @@ pub async fn list_prn_orders(
         LEFT JOIN LATERAL(SELECT m.id,m.is_dispensed FROM medication_administrations m WHERE m.facility_id=p.facility_id AND m.prn_safety_group_id=p.prn_safety_group_id AND m.status='scheduled' ORDER BY m.scheduled_at,m.id LIMIT 1) pending ON TRUE
         LEFT JOIN LATERAL(SELECT count(*) AS total,max(administered_at) AS last_at FROM medication_administrations m WHERE m.facility_id=p.facility_id AND m.prn_safety_group_id=p.prn_safety_group_id AND m.status='administered' AND m.administered_at>clock_timestamp()-interval '24 hours') actual ON TRUE
         LEFT JOIN LATERAL(SELECT m.administered_at AS cap_at FROM medication_administrations m WHERE m.facility_id=p.facility_id AND m.prn_safety_group_id=p.prn_safety_group_id AND m.status='administered' AND m.administered_at>clock_timestamp()-interval '24 hours' ORDER BY m.administered_at DESC OFFSET COALESCE(GREATEST(0,(p.prn_policy->>'maximum_doses_per_24_hours')::integer-1),0) LIMIT 1) cap ON TRUE
-        WHERE p.facility_id="#,
-    );
+        WHERE p.facility_id="#);
     q.push_bind(facility)
         .push(" AND p.patient_id=")
         .push_bind(patient)
@@ -306,13 +409,18 @@ pub async fn list_prn_orders(
     }
     q.push(" ORDER BY p.prescribed_at DESC,p.id DESC LIMIT ")
         .push_bind(limit.clamp(1, 101));
-    let rows = q.build_query_as::<PrnRow>().fetch_all(pool).await?;
-    Ok(rows
+    let rows = hms_observability::observe_db_query(
+        "ward.prn.orders",
+        q.build_query_as::<PrnRow>().fetch_all(&mut *tx),
+    )
+    .await?;
+    let result = rows
         .into_iter()
         .map(|r| {
             let policy = r.prn_policy.map(|p| p.0);
             let mut next = None;
             let reason = match policy.as_ref() {
+                _ if r.course_stopped => Some("admission_course_stopped"),
                 None => Some("unconfigured"),
                 Some(_) if r.prn_safety_group_id.is_none() => Some("unconfigured"),
                 Some(p)
@@ -376,5 +484,10 @@ pub async fn list_prn_orders(
                 unavailable_reason: reason.map(str::to_owned),
             }
         })
-        .collect())
+        .collect();
+    if let Some((actor, _)) = scope.as_ref() {
+        crate::clinical::medication_access::deadline(&mut tx, actor).await?;
+    }
+    tx.commit().await?;
+    Ok(result)
 }

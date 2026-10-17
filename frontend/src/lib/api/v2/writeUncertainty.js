@@ -5,11 +5,11 @@ const MAX_ENTRIES = 24; const MAX_BYTES = 24000; const UUID = /^[0-9a-f]{8}-[0-9
 const HEX = /^[0-9a-f]{64}$/; const receiptKey = Symbol('write-review');
 const ROOTS = new Set(['admin', 'auth', 'billing', 'clinical', 'encounters', 'inventory', 'laboratory', 'nhis', 'nursing', 'patients', 'pharmacy', 'scheduling', 'visits', 'wards', 'appointments']);
 const FAMILY_ALIASES = { 'nursing/prn-dose-requests': 'nursing/medication-administrations', 'nursing/prn-orders': 'nursing/medication-administrations', 'nhis/batches': 'nhis/claims', 'nhis/exports': 'nhis/claims', 'inventory/catalog-edits': 'inventory/items' };
-const IDEMPOTENT = new Set(['POST /api/v2/nursing/fluid-observations', 'POST /api/v2/nursing/fluid-observations/:id/corrections', 'POST /api/v2/nursing/fluid-observations/:id/void', 'POST /api/v2/nursing/fluid-monitoring/rules', 'POST /api/v2/scheduling/appointment-series', 'POST /api/v2/scheduling/appointment-series/:id/cancel-future', 'POST /api/v2/nursing/prn-dose-requests', 'PUT /api/v2/admin/network-policy', 'PATCH /api/v2/clinical/prescriptions/:id/documentation', 'POST /api/v2/clinical/prescriptions/:id/new-course', 'POST /api/v2/nursing/patient-handovers', 'POST /api/v2/nursing/patient-handovers/:id/amend', 'POST /api/v2/nursing/patient-handovers/:id/void', 'POST /api/v2/patients/:id/clinical/notes/record', 'POST /api/v2/clinical/notes/:id/amendments', 'POST /api/v2/clinical/note-templates/record', 'POST /api/v2/clinical/note-templates/:id/changes', 'POST /api/v2/patients/:id/chronicle/ward-rounds/draft', 'POST /api/v2/patients/:id/chronicle/ward-rounds/:id/commit', 'POST /api/v2/patients/:id/chronicle/admissions/:id/advisories', 'POST /api/v2/patients/:id/chronicle/admissions/:id/advisories/:id/decision']);
+const IDEMPOTENT = new Set(['POST /api/v2/nursing/fluid-observations', 'POST /api/v2/nursing/fluid-observations/:id/corrections', 'POST /api/v2/nursing/fluid-observations/:id/void', 'POST /api/v2/nursing/fluid-monitoring/rules', 'POST /api/v2/scheduling/appointment-series', 'POST /api/v2/scheduling/appointment-series/:id/cancel-future', 'POST /api/v2/nursing/prn-dose-requests', 'PUT /api/v2/admin/network-policy', 'PATCH /api/v2/clinical/prescriptions/:id/documentation', 'POST /api/v2/clinical/prescriptions/:id/new-course', 'POST /api/v2/nursing/patient-handovers', 'POST /api/v2/nursing/patient-handovers/:id/amend', 'POST /api/v2/nursing/patient-handovers/:id/void', 'POST /api/v2/patients/:id/clinical/notes/record', 'POST /api/v2/clinical/notes/:id/amendments', 'POST /api/v2/clinical/note-templates/record', 'POST /api/v2/clinical/note-templates/:id/changes', 'POST /api/v2/patients/:id/chronicle/ward-rounds/draft', 'POST /api/v2/patients/:id/chronicle/ward-rounds/:id/commit']);
 let store; let fault = false; let currentScope = null; let currentContext = null; let activation = 0; let serial = Promise.resolve();
 const active = new Map(); const subscribers = new Set();
 let snapshot = { entries: [], unavailable: false };
-const error = (code = 'write_review_required') => apiErrorFromEnvelope(409, { error: { code, message: 'A previous change needs review before a new change can be submitted. Open and refresh the affected workflow, review its saved records, then acknowledge the recovery notice.' } });
+const error = (code = 'write_review_required', message = 'A previous change needs review before a new change can be submitted. Open and refresh the affected workflow, review its saved records, then acknowledge the recovery notice.') => apiErrorFromEnvelope(409, { error: { code, message } });
 function publish() { snapshot = { entries: (store?.entries || []).filter((entry) => entry.scope === currentScope && (!active.has(entry.id) || entry.state === 'uncertain' || active.get(entry.id).some((handle) => handle.authority !== currentContext?.authority || handle.transport !== currentContext?.transport))).map(({ id, operation, created_at, reviewed_at }) => ({ id, operation, created_at, reviewed: Boolean(reviewed_at) })), unavailable: fault }; subscribers.forEach((notify) => notify()); }
 export const subscribeWriteUncertainty = (notify) => { subscribers.add(notify); return () => subscribers.delete(notify); };
 export const getWriteUncertaintySnapshot = () => snapshot;
@@ -55,12 +55,13 @@ function identifiers(value, result = new Set(), key = '') {
   return result;
 }
 const references = async (...values) => Promise.all([...values.reduce((found, value) => identifiers(value, found), new Set())].map((value) => digest(`reference:${value.toLowerCase()}`)));
-function advisoryRoute(path) {
-  const parts = String(path).split('?')[0].split('/').filter(Boolean);
-  if (parts[0] !== 'api' || parts[1] !== 'v2' || parts[2] !== 'patients' || !UUID.test(parts[3]) || parts[4] !== 'chronicle' || parts[5] !== 'admissions' || !UUID.test(parts[6]) || parts[7] !== 'advisories') return null;
-  return parts.length === 8 || (parts.length === 9 && UUID.test(parts[8])) || (parts.length === 10 && ((parts[8] === 'requests' && UUID.test(parts[9])) || (UUID.test(parts[8]) && parts[9] === 'decision'))) ? parts : null;
+async function admissionScope(request) {
+  const path = String(request.resolvedPath).split('?')[0];
+  if (!path.includes('/chronicle/admissions/') && !path.endsWith('/chronicle/admission-advisory-cases')) return null;
+  try { const module = await import('./admissionWriteScopes'); return module.classifyAdmissionWriteScope(path, request.pathParams); }
+  catch { throw error('write_review_check_unavailable', 'The workflow safety check could not load. No change was submitted. Reload and try again.'); }
 }
-function primaryReference(request) { const advisory = advisoryRoute(request.resolvedPath); if (advisory && request.pathParams?.case_id === advisory[6]) return advisory[6]; for (const key of ['admission_case_id', 'patient_id']) for (const source of [request.body, request.query, request.pathParams]) if (UUID.test(source?.[key])) return source[key]; if (UUID.test(request.pathParams?.id)) return request.pathParams.id; return UUID.test(request.body?.item_id) ? request.body.item_id : null; }
+function primaryReference(request) { for (const key of ['admission_case_id', 'patient_id']) for (const source of [request.body, request.query, request.pathParams]) if (UUID.test(source?.[key])) return source[key]; if (UUID.test(request.pathParams?.id)) return request.pathParams.id; return UUID.test(request.body?.item_id) ? request.body.item_id : null; }
 function sensitive(value) { return value && typeof value === 'object' && Object.entries(value).some(([key, item]) => /password|^(access_token|refresh_token|secret|credential)$/i.test(key) || sensitive(item)); }
 function family(path) { const parts = String(path).split('?')[0].split('/').filter(Boolean); if (parts[0] !== 'api') parts.unshift('api', 'v2'); const alias = FAMILY_ALIASES[parts.slice(2, 4).join('/')]; return alias ? `api/v2/${alias}` : parts.slice(0, 4).map((part) => UUID.test(part) ? part.toLowerCase() : part).join('/'); }
 function template(path) { return String(path).replace(/\{[a-z_]+\}/g, ':id').replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, ':id'); }
@@ -76,9 +77,10 @@ export async function beginWriteAttempt(request, context) {
     const wireBody = serializable ? JSON.stringify(request.body ?? null) : null;
     const replayable = serializable && wireBody.length <= 1000000;
     const input = replayable ? JSON.stringify(canonical([method, request.resolvedPath, request.query || null, JSON.parse(wireBody)])) : crypto.randomUUID();
-    const primary = primaryReference(request);
-    const [fingerprint, referenceHashes, familyHash, primaryHash] = await Promise.all([digest(input), references(request.body, request.pathParams, request.query), digest(`family:${family(request.resolvedPath)}`), primary ? digest(`reference:${primary.toLowerCase()}`) : null]);
-    const uuid = replayable && IDEMPOTENT.has(`${method} ${route}`) && UUID.test(request.body?.client_request_id) ? request.body.client_request_id : null;
+    const admission = await admissionScope(request);
+    const primary = admission?.primary || primaryReference(request);
+    const [fingerprint, referenceHashes, familyHash, primaryHash] = await Promise.all([digest(input), references(request.body, request.pathParams, request.query), digest(`family:${admission?.family || family(request.resolvedPath)}`), primary ? digest(`reference:${primary.toLowerCase()}`) : null]);
+    const uuid = replayable && (IDEMPOTENT.has(`${method} ${route}`) || admission?.retryTemplate === `${method} ${route}`) && UUID.test(request.body?.client_request_id) ? request.body.client_request_id : null;
     const unresolved = load().entries.filter((entry) => entry.scope === scope && (entry.state === 'uncertain' || !active.has(entry.id) || active.get(entry.id).some((live) => live.authority !== context.authority || live.transport !== context.transport)));
     const exact = unresolved.find((entry) => uuid && entry.uuid === uuid && entry.fingerprint === fingerprint);
     if (unresolved.length && (!exact || unresolved.some((entry) => entry.id !== exact.id))) throw error();
@@ -114,15 +116,18 @@ export function markWriteResponseUncertain(response) { markWriteAttemptUncertain
 export function acknowledgeWriteResponse(response) { const handle = response?.[receiptKey]; if (handle) remove(handle); }
 export function captureWriteRecoveryRead() { try { return load().entries.filter((entry) => !active.has(entry.id)).map(({ id, uncertainty_id }) => ({ id, uncertainty_id })); } catch { return []; } }
 export async function recordWriteRecoveryRead(request, response, context) {
-  // Eligibility and lean headers are not a read of the saved clinical evidence.
-  const readPath = String(request.resolvedPath).split('?')[0];
-  const readParts = readPath.split('/').filter(Boolean);
-  const advisoryPicker = readParts.length === 6 && readParts[0] === 'api' && readParts[1] === 'v2' && readParts[2] === 'patients' && UUID.test(readParts[3]) && readParts[4] === 'chronicle' && readParts[5] === 'admission-advisory-cases';
-  if (readPath === '/api/v2/nursing/fluid-observations/context' || advisoryRoute(readPath)?.length === 8 || advisoryPicker) return;
+  if (context.isCurrentScope?.() === false) return;
   if (!context.principal?.id || !response || typeof response !== 'object' || !('data' in response)) return;
   if (!context.readEvidence?.length || !load().entries.length) return;
-  const [scope, familyHash, related] = await Promise.all([scopeFor(context.principal), digest(`family:${family(request.resolvedPath)}`), references(request.pathParams, request.query, request.body, response.data)]); let changed = false;
+  // Lean eligibility/header reads cannot establish saved-record review. No
+  // deferred bookkeeping is needed when there is no unresolved command.
+  if (String(request.resolvedPath).split('?')[0] === '/api/v2/nursing/fluid-observations/context') return;
+  const admission = await admissionScope(request);
+  if (admission?.excludeRead || context.isCurrentScope?.() === false) return;
+  const [scope, familyHash, related] = await Promise.all([scopeFor(context.principal), digest(`family:${admission?.family || family(request.resolvedPath)}`), references(request.pathParams, request.query, request.body, response.data)]); let changed = false;
   const readProofs = new Map(context.readEvidence.map((proof) => [proof.id, proof.uncertainty_id])); const relatedIds = new Set(related);
+  if (admission?.extraReference) relatedIds.add(await digest(`reference:${admission.extraReference.toLowerCase()}`));
+  if (context.isCurrentScope?.() === false) return;
   const pathParts = String(request.resolvedPath).split('?')[0].split('/').filter(Boolean); if (pathParts[0] !== 'api') pathParts.unshift('api', 'v2');
   const collectionResponse = Array.isArray(response.data) && (pathParts.length === 4 || (pathParts.length === 5 && pathParts[4] === 'search'));
   for (const entry of load().entries) {

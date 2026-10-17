@@ -8,7 +8,7 @@ import MobileWorkspaceContextDock from '@/features/patients/components/MobileWor
 const chronicleWorkspaceComponents = Object.freeze(Object.fromEntries(
   Object.entries(chronicleWorkspaceLoaders).map(([id, loader]) => [id, lazy(loader)]),
 ));
-const retainedIds = ['fluids', 'handover', 'note', 'admissionAdvisory'];
+const retainedIds = ['fluids', 'handover', 'note', 'admissionAdvisory', 'medicationCourses'];
 function useRetainedClinicalWorkspaces(activeWorkspace, context) {
   const [visited, setVisited] = useState([]);
   const active = isRustV2ApiMode() && retainedIds.includes(activeWorkspace)

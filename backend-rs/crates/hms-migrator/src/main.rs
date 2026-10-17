@@ -9,6 +9,7 @@ use hms_domain::deployment::DeploymentProfile;
 use uuid::Uuid;
 mod auth_factor;
 mod network_policy;
+mod schema_compatibility;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -16,6 +17,7 @@ async fn main() -> anyhow::Result<()> {
     if let Some(command) = command.as_deref() {
         match command {
             "check-db" => return check_database_connectivity().await,
+            "schema-compatibility" => return schema_compatibility::run().await,
             "auth-readiness" | "bootstrap-factor" | "retire-factor" => {
                 return auth_factor::run(command, env::args().skip(2)).await
             }

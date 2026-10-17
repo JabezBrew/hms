@@ -14,6 +14,7 @@ import { ChronicleEmergencyAccess } from './ChronicleEmergencyAccess';
 import { PrescriptionPatientProvider } from '@/features/pharmacy/prescribing/PrescriptionPatientProvider';
 import { userHasCapability } from '@/shared/lib/access';
 import { canUseAdmissionAdvisories } from '@/features/admissions/advisory/access';
+import { canUseTreatmentCourses } from '@/features/nursing/treatment/access';
 
 const ClinicalSummarySidebar = lazy(() => import('@/components/chronicle/ClinicalSummarySidebar'));
 const ChronicleTimelinePanel = lazy(() => import('@/features/patients/chronicle/ChronicleTimelinePanel'));
@@ -273,6 +274,7 @@ export function PatientChroniclePageContent({
     handleStartDischarge,
     handleViewMedicationHistory,
     handleViewTreatmentSheet,
+    handleViewMedicationCourses,
     handleViewPatientHandover,
     handleViewAdmissionFollowUp,
     handleViewTrends,
@@ -334,6 +336,7 @@ export function PatientChroniclePageContent({
             onReceiveRecord={fullClinical ? handleReceiveRecord : undefined}
             onScheduleFollowUp={handleScheduleFollowUp}
             onViewTreatmentSheet={fullClinical && nursing ? handleViewTreatmentSheet : undefined}
+            onViewMedicationCourses={rustV2Mode && canUseTreatmentCourses(user, fullClinical) ? handleViewMedicationCourses : undefined}
             onViewAdmissionFollowUp={rustV2Mode && canUseAdmissionAdvisories(user, fullClinical) ? handleViewAdmissionFollowUp : undefined}
             onViewPatientHandover={rustV2Mode && fullClinical && userHasCapability(user, 'nursing.task.manage') && user?.accessContext?.features?.includes('nursing') ? handleViewPatientHandover : undefined}
             onViewMedicationHistory={fullClinical && nursing ? handleViewMedicationHistory : undefined}
@@ -445,7 +448,7 @@ export function PatientChroniclePageContent({
               <Suspense fallback={null}>
                 <ChronicleWorkspaceHost
                   activeWorkspace={slideOvers.activeSlideOver}
-                  workspaceContext={workspaceContext}
+                  workspaceContext={{ ...workspaceContext, onReviewPrescriptions: () => { workspaceContext.onClose?.(); setActiveFilter('medication'); } }}
                 />
               </Suspense>
             </div>

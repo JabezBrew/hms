@@ -1,6 +1,16 @@
 mod support;
 use support::*;
 
+async fn owner_token(app: &TestApp) -> String {
+    grant_test_patient_visibility(
+        app,
+        Uuid::from_u128(hms_db::provision::OWNER_USER_ID),
+        PatientDataVisibility::FullClinical,
+    )
+    .await;
+    login(app.clone(), "owner@hms.local").await.0
+}
+
 async fn context(app: &TestApp) -> (Uuid, Uuid) {
     let pool = app.db_pool().await;
     let facility = app.state().facility_id();
@@ -16,6 +26,8 @@ async fn context(app: &TestApp) -> (Uuid, Uuid) {
         .unwrap();
     let admission = Uuid::new_v4();
     sqlx::query("INSERT INTO admission_cases(id,facility_id,patient_id,ward_id,status) VALUES($1,$2,$3,$4,'admitted')").bind(admission).bind(facility).bind(patient).bind(ward).execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO patient_contexts(id,facility_id,user_id,patient_id,context_kind) VALUES(gen_random_uuid(),$1,$2,$3,'inpatient') ON CONFLICT DO NOTHING")
+        .bind(facility).bind(Uuid::from_u128(hms_db::provision::OWNER_USER_ID)).bind(patient).execute(&pool).await.unwrap();
     (patient, admission)
 }
 async fn post(app: &TestApp, token: &str, path: String, value: Value) -> axum::response::Response {
@@ -48,7 +60,7 @@ async fn dose(app: &TestApp, token: &str, admission: Uuid, future: bool) -> Uuid
 async fn explicit_dose_outcomes_preserve_reason_evidence_and_never_claim_nonadministration_was_given(
 ) {
     let app = app().await;
-    let (token, _, _) = login(app.clone(), "owner@hms.local").await;
+    let token = owner_token(&app).await;
     let (patient, admission) = context(&app).await;
     for status in ["missed", "refused", "held"] {
         let id = dose(&app, &token, admission, false).await;
@@ -103,7 +115,7 @@ async fn explicit_dose_outcomes_preserve_reason_evidence_and_never_claim_nonadmi
 #[tokio::test]
 async fn outcome_route_requires_explicit_typed_decision_valid_reason_and_patient_permissions() {
     let app = app().await;
-    let (token, _, _) = login(app.clone(), "owner@hms.local").await;
+    let token = owner_token(&app).await;
     let (_, admission) = context(&app).await;
     let id = dose(&app, &token, admission, false).await;
     let path = format!("/api/v2/nursing/medication-administrations/{id}/outcome");
@@ -200,7 +212,7 @@ async fn outcome_route_requires_explicit_typed_decision_valid_reason_and_patient
 #[tokio::test]
 async fn source_based_administration_requires_supply_but_refusal_does_not_invent_it() {
     let app = app().await;
-    let (token, _, _) = login(app.clone(), "owner@hms.local").await;
+    let token = owner_token(&app).await;
     let (patient, admission) = context(&app).await;
     let pool = app.db_pool().await;
     let facility = app.state().facility_id();
@@ -289,7 +301,7 @@ async fn source_based_administration_requires_supply_but_refusal_does_not_invent
 async fn generic_storage_failures_report_an_uncertain_outcome_without_leaking_or_inviting_a_different_decision(
 ) {
     let app = app().await;
-    let (token, _, _) = login(app.clone(), "owner@hms.local").await;
+    let token = owner_token(&app).await;
     let (_, admission) = context(&app).await;
     let id = dose(&app, &token, admission, false).await;
     let pool = app.db_pool().await;

@@ -4,9 +4,11 @@ import json
 import os
 import subprocess
 import sys
+import shutil
 from pathlib import Path
 
 import pytest
+from deployment_fixtures import copy_lease_helper
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -17,6 +19,15 @@ class SimulatedDeploy:
     """Exercise the deploy interface without containers, networking, or secrets."""
 
     def __init__(self, directory: Path):
+        release = directory / 'release'
+        self.script = release / 'ops/compose-v2/deploy.sh'
+        self.script.parent.mkdir(parents=True)
+        for relative in ['ops/compose-v2/deploy.sh', 'ops/schema-compatibility.sh', 'ops/compose-v2/runtime-schema-epoch']:
+            shutil.copy2(REPO_ROOT / relative, release / relative)
+        migrations = release / 'backend-rs/migrations'
+        migrations.mkdir(parents=True)
+        (migrations / '202610170023_treatment_course_windows.sql').write_text('-- fixture\n')
+        copy_lease_helper(release, directory / '.hms-deploy-state/deploy.lock')
         self.env_file = directory / 'deploy.env'
         self.compose_file = directory / 'compose.yml'
         self.config_file = directory / 'rendered-compose.yml'
@@ -85,11 +96,13 @@ elif tool == 'docker':
             print(Path(os.environ['TEST_COMPOSE_CONFIG']).read_text())
         elif command[:2] == ['ps', '-q']:
             print(command[-1])
+        elif command[-2:] == ['hms-migrator', 'schema-compatibility']:
+            print('202610170023')
         elif command[0] == 'build':
             rust_services = {'hms-api', 'hms-worker', 'hms-migrator'}
             if len(rust_services.intersection(command[1:])) > 1:
                 sys.exit('multiple exporters selected for the shared Rust image')
-        elif command[0] not in ('up', 'build', 'run', 'ps', 'logs'):
+        elif command[0] not in ('up', 'build', 'run', 'ps', 'logs', 'stop'):
             sys.exit('unexpected Compose operation')
     else:
         sys.exit('unexpected Docker operation')
@@ -106,6 +119,7 @@ elif tool == 'docker':
             'ALLOW_UNSAFE_SKIP_EXTERNAL_DB_BACKUP', 'HMS_DATABASE_URL',
             'SKIP_MIGRATIONS', 'SKIP_BACKUP', 'SKIP_HEALTHCHECK', 'HEALTHCHECK_URL',
             'DB_CONNECTIVITY_CHECK', 'EXTERNAL_DB_STOP_LOCAL_SERVICES',
+            'HMS_SCHEMA_FENCE_FILE', 'HMS_DEPLOY_ATTEMPT_FILE',
         ):
             self.env.pop(key, None)
         self.env.update(
@@ -120,6 +134,8 @@ elif tool == 'docker':
                 'TEST_COMMAND_LOG': str(self.log_file),
                 'TEST_CLOCK_FILE': str(self.clock_file),
                 'TEST_COMPOSE_CONFIG': str(self.config_file),
+                'HMS_SCHEMA_FENCE_FILE': str(directory / 'schema-fence'),
+                'HMS_DEPLOY_ATTEMPT_FILE': str(directory / 'deploy-attempt'),
             }
         )
 
@@ -139,7 +155,7 @@ elif tool == 'docker':
 
     def run(self) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
-            [str(DEPLOY_SCRIPT), '--skip-pull'],
+            [str(self.script), '--skip-pull'],
             env=self.env,
             check=False,
             capture_output=True,

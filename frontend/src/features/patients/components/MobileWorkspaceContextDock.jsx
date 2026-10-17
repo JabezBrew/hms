@@ -23,6 +23,7 @@ const WORKSPACE_LABELS = Object.freeze({
   receiveRecord: 'Receive record',
   medicationHistory: 'Medication history',
   treatmentSheet: 'Treatment sheet',
+  medicationCourses: 'Medication courses',
   fluids: 'Record fluids',
   trends: 'Review trends',
   insurance: 'Insurance',

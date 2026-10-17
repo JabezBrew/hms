@@ -53,6 +53,12 @@ export function useChronicleWorkspaceActions({
   const [trendReviewTab, setTrendReviewTab] = useState('vitals');
   const handleViewPatientHandover = useCallback(() => openChronicleWorkspace('handover'), [openChronicleWorkspace]);
   const handleViewAdmissionFollowUp = useCallback(() => openChronicleWorkspace('admissionAdvisory'), [openChronicleWorkspace]);
+  const handleViewMedicationCourses = useCallback(() => openChronicleWorkspace('medicationCourses'), [openChronicleWorkspace]);
+  const handleViewSelectedAdmissionMar = useCallback(() => {
+    if (isAllVisitsScope || !chartContextAdmissionId) return;
+    setRequestedTreatmentSheetAdmissionId(String(chartContextAdmissionId));
+    openChronicleWorkspace('treatmentSheet');
+  }, [chartContextAdmissionId, isAllVisitsScope, openChronicleWorkspace, setRequestedTreatmentSheetAdmissionId]);
 
   const refreshData = useCallback(() => {
     if (rustV2Mode) {
@@ -143,7 +149,8 @@ export function useChronicleWorkspaceActions({
     setCopyForwardData(null);
     setEditNoteData(null);
     setRequestedDischargeAdmissionId(null);
-  }, [setRequestedDischargeAdmissionId, slideOvers]);
+    setRequestedTreatmentSheetAdmissionId?.(null);
+  }, [setRequestedDischargeAdmissionId, setRequestedTreatmentSheetAdmissionId, slideOvers]);
 
   const handleNoteCreated = useCallback(() => {
     refreshData();
@@ -292,6 +299,7 @@ export function useChronicleWorkspaceActions({
     onWardRoundCompleted: closeAfterRefresh,
     onConsultationCompleted: handleConsultationCompleted,
     onDischargeCompleted: handleDischargeCompleted,
+    onReviewSelectedAdmissionMar: handleViewSelectedAdmissionMar,
   }), [
     id,
     clinicalPermissions,
@@ -316,6 +324,7 @@ export function useChronicleWorkspaceActions({
     refreshData,
     handleConsultationCompleted,
     handleDischargeCompleted,
+    handleViewSelectedAdmissionMar,
   ]);
 
   return {
@@ -336,6 +345,8 @@ export function useChronicleWorkspaceActions({
     handleStartDischarge,
     handleViewMedicationHistory,
     handleViewTreatmentSheet,
+    handleViewMedicationCourses,
+    handleViewSelectedAdmissionMar,
     handleViewPatientHandover,
     handleViewAdmissionFollowUp,
     handleViewTrends,

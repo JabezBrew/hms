@@ -23,5 +23,6 @@ pub mod pharmacy;
 pub mod referrals;
 pub mod scheduling;
 pub mod search;
+pub mod treatment_courses;
 pub mod ward;
 pub mod ward_rounds;

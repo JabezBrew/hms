@@ -45,6 +45,15 @@ if [ "$LOCAL_ONLY" = false ] && [ "$PUBLIC" = false ]; then
   done
 fi
 
+lease_helper="$ROOT_DIR/ops/deploy-lease.py"
+[ -f "$lease_helper" ] || { printf 'Host deployment lease helper is missing.\n' >&2; exit 1; }
+if ! python3 "$lease_helper" --check >/dev/null 2>&1; then
+  set --
+  if [ "$LOCAL_ONLY" = true ]; then set -- --local-only; fi
+  if [ "$PUBLIC" = true ]; then set -- --public; fi
+  exec python3 "$lease_helper" -- /bin/sh "$KIT_DIR/deploy.sh" "$@"
+fi
+
 export ENV_FILE
 COMPOSE_FILES="$ROOT_DIR/ops/compose-v2/compose.yml $KIT_DIR/compose.yml"
 export COMPOSE_FILES

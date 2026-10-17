@@ -324,6 +324,7 @@ function MoreActionsMenu({ actions, activeAdmission, prefetchAction }) {
           </DropdownMenuItem>
         )}
         {actions.onViewAdmissionFollowUp && <DropdownMenuItem onClick={actions.onViewAdmissionFollowUp}>Admission follow-up</DropdownMenuItem>}
+        {actions.onViewMedicationCourses && <DropdownMenuItem onClick={actions.onViewMedicationCourses}>Medication courses</DropdownMenuItem>}
         {actions.onViewPatientHandover && <DropdownMenuItem onClick={actions.onViewPatientHandover}>Patient handover</DropdownMenuItem>}
         {activeAdmission && actions.onStartWardRound && (
           <>

@@ -860,7 +860,7 @@ pub async fn get_prescription(
 )]
 pub async fn update_prescription(
     State(state): State<AppState>,
-    RequestContext(user): RequestContext,
+    network: crate::extractors::NetworkContext,
     Path(id): Path<Uuid>,
     payload: Result<Json<UpdatePrescriptionRequest>, axum::extract::rejection::JsonRejection>,
 ) -> Result<Json<ObjectResponse<PrescriptionListItem>>, ApiError> {
@@ -868,7 +868,12 @@ pub async fn update_prescription(
     Ok(Json(
         state
             .clinical_service()
-            .update_prescription(&user, id, payload)
+            .update_prescription(
+                &network.context,
+                id,
+                payload,
+                network.authorization_deadline,
+            )
             .await?,
     ))
 }

@@ -32,12 +32,9 @@ impl MarService {
         &self,
         ctx: &hms_access::RequestContext,
         query: hms_domain::ward::PrnOrdersQuery,
+        authorization_deadline: chrono::DateTime<chrono::Utc>,
     ) -> Result<ListResponse<hms_domain::ward::PrnOrderListItem>, ApiError> {
-        common::require_patient_workflow_access(
-            ctx,
-            self.state.facility_id(),
-            PermissionCode::NursingTaskManage,
-        )?;
+        crate::services::clinical::medication_access::require_nursing(ctx)?;
         let admission =
             common::load_admission_case_for_access(&self.state, ctx, query.admission_case_id)
                 .await?;
@@ -46,17 +43,16 @@ impl MarService {
             limit: query.limit,
         })?;
         let fetch_limit = page.fetch_limit();
-        let mut rows = hms_db::ward::list_prn_orders(
+        let mut rows = hms_db::ward::list_prn_orders_authorized(
             self.state.db_pool(),
-            self.state.facility_id(),
+            crate::services::clinical::medication_access::actor(ctx, authorization_deadline),
             admission.patient_id,
+            admission.id,
             page.cursor,
             fetch_limit,
         )
         .await
-        .map_err(|_| {
-            ApiError::conflict("prn_orders_failed", "As-needed orders could not be loaded.")
-        })?;
+        .map_err(|error| crate::services::clinical::medication_access::error(error, false))?;
         if !matches!(
             admission.status,
             hms_domain::ward::AdmissionStatus::Admitted
@@ -75,12 +71,9 @@ impl MarService {
         &self,
         ctx: &hms_access::RequestContext,
         payload: hms_domain::ward::RequestPrnDoseRequest,
+        authorization_deadline: chrono::DateTime<chrono::Utc>,
     ) -> Result<ObjectResponse<hms_domain::ward::PrnDoseRequestResult>, ApiError> {
-        common::require_facility_permission(
-            ctx,
-            self.state.facility_id(),
-            PermissionCode::NursingTaskManage,
-        )?;
+        crate::services::clinical::medication_access::require_nursing(ctx)?;
         let admission =
             common::load_admission_for_access(&self.state, ctx, payload.admission_case_id).await?;
         let source = hms_db::clinical::get_prescription(
@@ -103,10 +96,11 @@ impl MarService {
             )
         })?;
         let _patient = common::load_patient_for_access(&self.state, ctx, source.patient_id).await?;
-        let result=hms_db::ward::request_prn_dose(self.state.db_pool(),hms_db::ward::RequestPrnDose{
+        let result=hms_db::ward::request_prn_dose_authorized(self.state.db_pool(),hms_db::ward::RequestPrnDose{
             facility_id:self.state.facility_id(),prescription_id:source.id,admission_case_id:admission.id,
             client_request_id:payload.client_request_id,indication:payload.indication,actor_user_id:ctx.user_id,request_id:Some(ctx.request_id.clone()),
-        }).await.map_err(|error|{
+        },crate::services::clinical::medication_access::actor(ctx,authorization_deadline)).await.map_err(|error|{
+            if error.is::<hms_db::clinical::medication_access::MedicationAccessError>() {return crate::services::clinical::medication_access::error(error,true);}
             if let Some(reason)=error.downcast_ref::<hms_db::ward::PrnError>() {
                 return if *reason==hms_db::ward::PrnError::InvalidIndication {ApiError::bad_request("invalid_prn_request",reason.message())}
                     else {ApiError::conflict("prn_request_not_actionable",reason.message())};
@@ -121,12 +115,9 @@ impl MarService {
         &self,
         ctx: &hms_access::RequestContext,
         query: MedicationAdministrationListQuery,
+        authorization_deadline: chrono::DateTime<chrono::Utc>,
     ) -> Result<ListResponse<MedicationAdministrationListItem>, ApiError> {
-        common::require_patient_workflow_access(
-            ctx,
-            self.state.facility_id(),
-            PermissionCode::NursingTaskManage,
-        )?;
+        crate::services::clinical::medication_access::require_nursing(ctx)?;
         if let Some(admission_case_id) = query.admission_case_id {
             let admission =
                 common::load_admission_for_access(&self.state, ctx, admission_case_id).await?;
@@ -156,9 +147,9 @@ impl MarService {
         })?;
         let page_size = page.limit;
         let fetch_limit = page.fetch_limit();
-        let rows = hms_db::ward::list_medication_administrations_scoped(
+        let rows = hms_db::ward::list_medication_administrations_authorized(
             self.state.db_pool(),
-            self.state.facility_id(),
+            crate::services::clinical::medication_access::actor(ctx, authorization_deadline),
             MedicationAdministrationFilters {
                 patient_id: query.patient_id,
                 admission_case_id: query.admission_case_id,
@@ -171,12 +162,7 @@ impl MarService {
             fetch_limit,
         )
         .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "med_admin_list_failed",
-                "Medication administrations could not be loaded.",
-            )
-        })?;
+        .map_err(|error| crate::services::clinical::medication_access::error(error, false))?;
 
         Ok(common::page_response(rows, page_size, |item| {
             common::encode_cursor(item.scheduled_at, item.id)
@@ -187,12 +173,9 @@ impl MarService {
         &self,
         ctx: &hms_access::RequestContext,
         payload: ScheduleMedicationAdministrationRequest,
+        authorization_deadline: chrono::DateTime<chrono::Utc>,
     ) -> Result<ObjectResponse<MedicationAdministrationListItem>, ApiError> {
-        common::require_facility_permission(
-            ctx,
-            self.state.facility_id(),
-            PermissionCode::NursingTaskManage,
-        )?;
+        crate::services::clinical::medication_access::require_nursing(ctx)?;
         let admission =
             common::load_admission_for_access(&self.state, ctx, payload.admission_case_id).await?;
         if payload
@@ -203,7 +186,7 @@ impl MarService {
             return Err(ApiError::bad_request("prn_source_required","As-needed doses require a source prescription with explicit limits. Request one dose from the as-needed medication panel."));
         }
         let medication_name = required_text(payload.medication_name, "medication_name")?;
-        let medication = hms_db::ward::schedule_medication_administration(
+        let medication = hms_db::ward::schedule_medication_administration_authorized(
             self.state.db_pool(),
             NewMedicationAdministration {
                 id: Uuid::new_v4(),
@@ -217,14 +200,10 @@ impl MarService {
                 scheduled_at: payload.scheduled_at,
                 actor_user_id: ctx.user_id,
             },
+            crate::services::clinical::medication_access::actor(ctx, authorization_deadline),
         )
         .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "med_admin_create_failed",
-                "Medication administration could not be scheduled.",
-            )
-        })?;
+        .map_err(|error| crate::services::clinical::medication_access::error(error, true))?;
 
         self.state.invalidate_ward_board_cache();
         Ok(object(medication))
@@ -258,11 +237,7 @@ impl MarService {
         payload: AdministerMedicationRequest,
         authorization_deadline: chrono::DateTime<chrono::Utc>,
     ) -> Result<ObjectResponse<MedicationAdministrationListItem>, ApiError> {
-        common::require_facility_permission(
-            ctx,
-            self.state.facility_id(),
-            PermissionCode::NursingTaskManage,
-        )?;
+        crate::services::clinical::medication_access::require_nursing(ctx)?;
         let existing = hms_db::ward::get_medication_administration(
             self.state.db_pool(),
             self.state.facility_id(),
@@ -283,7 +258,7 @@ impl MarService {
         })?;
         let _patient =
             common::load_patient_for_access(&self.state, ctx, existing.patient_id).await?;
-        let medication = hms_db::ward::record_medication_outcome(
+        let medication = hms_db::ward::record_medication_outcome_authorized(
             self.state.db_pool(),
             RecordMedicationOutcome {
  authorization: Some(crate::services::clinical::prescription_courses::authorization(ctx, authorization_deadline)),
@@ -295,9 +270,11 @@ impl MarService {
                 administration_notes: payload.administration_notes,
                 request_id: Some(ctx.request_id.clone()),
             },
+            crate::services::clinical::medication_access::actor(ctx,authorization_deadline),
         )
         .await
         .map_err(|error| {
+            if error.is::<hms_db::clinical::medication_access::MedicationAccessError>() {return crate::services::clinical::medication_access::error(error,true);}
             if error.is::<hms_db::clinical::stock_basis::StockBasisError>() || error.is::<hms_db::clinical::prescription_courses::PrescriptionCourseError>() {return crate::services::clinical::prescription_courses::write_error(error);}
 
             if let Some(reason) = error.downcast_ref::<MedicationOutcomeError>() {
@@ -331,6 +308,7 @@ impl MarService {
         &self,
         ctx: &hms_access::RequestContext,
         query: TreatmentSheetListQuery,
+        authorization_deadline: chrono::DateTime<chrono::Utc>,
     ) -> Result<ListResponse<TreatmentSheetListItem>, ApiError> {
         common::require_patient_workflow_access(
             ctx,
@@ -395,20 +373,15 @@ impl MarService {
         })?;
         let page_size = page.limit;
         let fetch_limit = page.fetch_limit();
-        let rows = hms_db::ward::list_treatment_sheets_scoped(
+        let rows = hms_db::ward::list_treatment_sheets_authorized(
             self.state.db_pool(),
-            self.state.facility_id(),
+            crate::services::clinical::medication_access::actor(ctx, authorization_deadline),
             page.cursor,
             fetch_limit,
             filters,
         )
         .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "treatment_sheet_list_failed",
-                "Treatment sheets could not be loaded.",
-            )
-        })?;
+        .map_err(|error| crate::services::clinical::medication_access::error(error, false))?;
         Ok(common::page_response(rows, page_size, |item| {
             common::encode_cursor(item.updated_at, item.id)
         }))
@@ -418,6 +391,7 @@ impl MarService {
         &self,
         ctx: &hms_access::RequestContext,
         payload: CreateTreatmentSheetRequest,
+        authorization_deadline: chrono::DateTime<chrono::Utc>,
     ) -> Result<ObjectResponse<TreatmentSheetListItem>, ApiError> {
         common::require_patient_workflow_access(
             ctx,
@@ -426,7 +400,7 @@ impl MarService {
         )?;
         let admission =
             common::load_admission_for_access(&self.state, ctx, payload.admission_case_id).await?;
-        let sheet = hms_db::ward::create_treatment_sheet(
+        let sheet = hms_db::ward::create_treatment_sheet_authorized(
             self.state.db_pool(),
             NewTreatmentSheet {
                 id: Uuid::new_v4(),
@@ -436,14 +410,10 @@ impl MarService {
                 sheet_date: payload.sheet_date,
                 actor_user_id: ctx.user_id,
             },
+            crate::services::clinical::medication_access::actor(ctx, authorization_deadline),
         )
         .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "treatment_sheet_create_unconfirmed",
-                "Treatment sheet could not be created.",
-            )
-        })?;
+        .map_err(|error| crate::services::clinical::medication_access::error(error, true))?;
 
         Ok(object(sheet))
     }

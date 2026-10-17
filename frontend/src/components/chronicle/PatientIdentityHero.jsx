@@ -162,6 +162,7 @@ const PatientIdentityHero = ({
   onActionIntent,
   onScheduleFollowUp,
   onViewTreatmentSheet,
+  onViewMedicationCourses,
   onViewPatientHandover,
   onViewAdmissionFollowUp,
   onViewMedicationHistory,
@@ -207,6 +208,7 @@ const PatientIdentityHero = ({
         onStartWardRound,
         onViewMedicationHistory,
         onViewTreatmentSheet,
+        onViewMedicationCourses,
         onViewPatientHandover,
         onViewAdmissionFollowUp,
       }}

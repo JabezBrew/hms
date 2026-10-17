@@ -27,6 +27,7 @@ query details.
 | `nursing_task_board.rs` | nursing tasks and board projections. |
 | `observations_monitoring.rs` | observation/vital monitoring projections. |
 | `staff_assignments.rs` | active/inactive ward staff assignments and assignment-based ward-board scope checks. |
+| `treatment_courses.rs`, `treatment_courses/` | generated admission courses, immutable local stops, reviewed schedule windows, canonical demand membership and actor-bound receipts. |
 | `ward_stock.rs` | ward stock request and movement persistence. |
 
 ## Query Rules
@@ -82,3 +83,9 @@ proof cost. See `docs/v2/2026-10-16-patient-handover-scope.md`.
 General nursing task, vital, alert and monitoring APIs apply actual ward relationships before paging, explicit clinical data classes and mandatory live authority proofs. Terminal task decisions preserve first actor/time. See `docs/v2/2026-10-16-nursing-scope-and-decisions.md` for captured/current ward semantics and compatibility limits.
 
 Fluid HTTP workflows use the mandatory `FluidActor` live nursing proof and the protected helpers in `fluid/access.rs`, including legacy scalar reads. Actual admission ward predicates apply before page bounds and totals; pool-only helpers are trusted fixture/import compatibility, not HTTP authorization. See [fluid access and lifetime](../../../../../docs/v2/2026-10-16-fluid-access-lifetime-scope.md).
+
+MAR/PRN HTTP callers use authorized repository variants backed by
+`clinical::medication_access`. Rich bedside records require ordinary patient and
+current ward scope; lean dated treatment headers retain their demographic data
+class. Central pharmacy uses its distinct prescription-purpose policy. See
+[medication access and lifetime](../../../../../docs/v2/2026-10-17-medication-access-scope.md).

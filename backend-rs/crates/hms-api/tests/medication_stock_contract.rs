@@ -207,7 +207,7 @@ async fn assert_source_wait_revocation(action: Action) {
     let status = response.status();
     let body = json_body(response).await;
     assert_eq!(status, StatusCode::FORBIDDEN, "{}", body["error"]["code"]);
-    assert_eq!(body["error"]["code"], "prescription_actor_invalid");
+    assert_eq!(body["error"]["code"], "medication_authorization_expired");
 }
 #[tokio::test]
 async fn generation_wait_cannot_use_revoked_session() {
@@ -249,6 +249,23 @@ async fn assert_item_wait_expiry(action: Action) {
     }
     grant_test_patient_visibility(&f.app, limited, PatientDataVisibility::Demographics).await;
     grant_test_patient_visibility(&f.app, limited, PatientDataVisibility::FullClinical).await;
+    if !matches!(action, Action::Supply) {
+        let (patient, ward): (Uuid, Uuid) = sqlx::query_as(
+            "SELECT patient_id,ward_id FROM admission_cases WHERE facility_id=$1 AND id=$2",
+        )
+        .bind(facility)
+        .bind(f.admission)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        sqlx::query("INSERT INTO patient_contexts(id,facility_id,user_id,patient_id,context_kind) VALUES(gen_random_uuid(),$1,$2,$3,'inpatient') ON CONFLICT DO NOTHING")
+            .bind(facility).bind(limited).bind(patient).execute(&pool).await.unwrap();
+        let practitioner =
+            create_test_practitioner_for_user(&f.app, limited, "STOCK-WAIT", "STOCK-WAIT-LIC")
+                .await;
+        sqlx::query("INSERT INTO ward_staff_assignments(id,facility_id,ward_id,practitioner_profile_id,role_code,role_name,role_category) VALUES(gen_random_uuid(),$1,$2,$3,'staff_nurse','Nurse','nursing')")
+            .bind(facility).bind(ward).bind(practitioner).execute(&pool).await.unwrap();
+    }
     let permission = match action {
         Action::Generate => PermissionCode::ClinicalDocumentationManage,
         Action::Supply => PermissionCode::PharmacyDispense,

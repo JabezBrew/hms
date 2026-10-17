@@ -1,3 +1,4 @@
+pub(crate) mod medication_access;
 pub mod note_records;
 pub mod prescription_courses;
 mod visibility;
@@ -794,6 +795,7 @@ impl ClinicalService {
         ctx: &hms_access::RequestContext,
         id: Uuid,
         mut payload: UpdatePrescriptionRequest,
+        authorization_deadline: DateTime<Utc>,
     ) -> Result<ObjectResponse<PrescriptionListItem>, ApiError> {
         require_clinical_write_access(ctx, self.facility_id())?;
         let _current = load_prescription_for_access(&self.state, ctx, id).await?;
@@ -821,9 +823,12 @@ impl ClinicalService {
         }
 
         let prescription =
-            hms_db::clinical::update_prescription(self.pool(), self.facility_id(), id, payload)
+            hms_db::clinical::update_prescription_authorized(self.pool(), medication_access::actor(ctx,authorization_deadline), id, payload)
                 .await
                 .map_err(|error| {
+                    if error.is::<hms_db::clinical::medication_access::MedicationAccessError>() {
+                        return medication_access::error(error,true);
+                    }
                     if error.to_string() == "prescription_inventory_item_invalid" {
                         validation_error("inventory_item_id", "Select an inventory item from this facility.")
                     } else if error.to_string() == "prescription_regimen_locked" {
@@ -831,7 +836,7 @@ impl ClinicalService {
                     } else if error.to_string() == "prescription_course_closed" {
                         ApiError::conflict("prescription_course_closed", "A stopped or completed medication schedule cannot be resumed. Create a replacement prescription.")
                     } else {
-                        ApiError::conflict("prescription_update_failed", "Prescription could not be updated.")
+                        ApiError::conflict("prescription_update_unconfirmed", "The prescription change could not be confirmed. Reload and review the saved medication plan before making another change.")
                     }
                 })?
                 .ok_or_else(|| {
@@ -868,7 +873,7 @@ impl ClinicalService {
             ));
         }
         let _patient = load_patient_for_access(&self.state, ctx, admission.patient_id).await?;
-        let result = hms_db::pharmacy::generate_mar_for_prescription(
+        let result = hms_db::pharmacy::generate_mar_for_prescription_authorized(
             self.pool(),
             hms_db::pharmacy::GenerateMarCommand {
  authorization: Some(crate::services::clinical::prescription_courses::authorization(ctx, authorization_deadline)),
@@ -879,9 +884,11 @@ impl ClinicalService {
                 first_dose_at: payload.first_dose_at,
                 actor_user_id: ctx.user_id,
             },
+            medication_access::actor(ctx,authorization_deadline),
         )
         .await
         .map_err(|error| {
+            if error.is::<hms_db::clinical::medication_access::MedicationAccessError>() {return medication_access::error(error,true);}
             if error.is::<hms_db::clinical::stock_basis::StockBasisError>() || error.is::<hms_db::clinical::prescription_courses::PrescriptionCourseError>() {return crate::services::clinical::prescription_courses::write_error(error);}
 
             let message = error.to_string();

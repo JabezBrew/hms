@@ -10,6 +10,11 @@ Compose stack, with Cloudflare Tunnel on `staging.thehms.systems`. The default
 requires Cloudflare Access; explicit `--public` mode uses HMS login alone.
 Postgres, PgBouncer and Redis run on the VM; this path does not need Cloud SQL
 or a paid load balancer. The existing domain's renewal remains a separate cost.
+The wrapper participates in the same host-wide deployment lease as GCP,
+standalone Compose and archive installs, retaining it through tunnel changes.
+Python 3 and the private canonical lease under `/opt/.hms-deploy-state/` are
+required; unsafe ownership or a pre-existing legacy deployment lock fails closed.
+See the [runtime schema compatibility contract](../../docs/v2/2026-10-17-runtime-schema-compatibility-scope.md).
 
 ## 1. Obtain the host
 

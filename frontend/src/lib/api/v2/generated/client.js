@@ -2027,6 +2027,96 @@ export const operations = {
     "queryParamNames": [],
     "hasBody": false
   },
+  "getPatientChronicleMedicationCourse": {
+    "operationId": "getPatientChronicleMedicationCourse",
+    "method": "GET",
+    "path": "/api/v2/patients/{patient_id}/chronicle/admissions/{admission_case_id}/medication-courses/{course_id}",
+    "pathParamNames": [
+      "patient_id",
+      "admission_case_id",
+      "course_id"
+    ],
+    "queryParamNames": [],
+    "hasBody": false
+  },
+  "getPatientChronicleMedicationCourseDoses": {
+    "operationId": "getPatientChronicleMedicationCourseDoses",
+    "method": "GET",
+    "path": "/api/v2/patients/{patient_id}/chronicle/admissions/{admission_case_id}/medication-courses/{course_id}/doses",
+    "pathParamNames": [
+      "patient_id",
+      "admission_case_id",
+      "course_id"
+    ],
+    "queryParamNames": [
+      "cursor",
+      "limit",
+      "status",
+      "is_dispensed",
+      "scheduled_from",
+      "scheduled_before",
+      "request_id"
+    ],
+    "hasBody": false
+  },
+  "getPatientChronicleMedicationCourseRequest": {
+    "operationId": "getPatientChronicleMedicationCourseRequest",
+    "method": "GET",
+    "path": "/api/v2/patients/{patient_id}/chronicle/admissions/{admission_case_id}/medication-courses/{course_id}/requests/{client_request_id}",
+    "pathParamNames": [
+      "patient_id",
+      "admission_case_id",
+      "course_id",
+      "client_request_id"
+    ],
+    "queryParamNames": [],
+    "hasBody": false
+  },
+  "getPatientChronicleMedicationCourses": {
+    "operationId": "getPatientChronicleMedicationCourses",
+    "method": "GET",
+    "path": "/api/v2/patients/{patient_id}/chronicle/admissions/{admission_case_id}/medication-courses",
+    "pathParamNames": [
+      "patient_id",
+      "admission_case_id"
+    ],
+    "queryParamNames": [
+      "cursor",
+      "limit",
+      "status",
+      "source_status",
+      "kind"
+    ],
+    "hasBody": false
+  },
+  "getPatientChronicleMedicationCoursesContext": {
+    "operationId": "getPatientChronicleMedicationCoursesContext",
+    "method": "GET",
+    "path": "/api/v2/patients/{patient_id}/chronicle/admissions/{admission_case_id}/medication-courses/context",
+    "pathParamNames": [
+      "patient_id",
+      "admission_case_id"
+    ],
+    "queryParamNames": [],
+    "hasBody": false
+  },
+  "getPatientChronicleMedicationCourseSupply": {
+    "operationId": "getPatientChronicleMedicationCourseSupply",
+    "method": "GET",
+    "path": "/api/v2/patients/{patient_id}/chronicle/admissions/{admission_case_id}/medication-courses/{course_id}/supply",
+    "pathParamNames": [
+      "patient_id",
+      "admission_case_id",
+      "course_id"
+    ],
+    "queryParamNames": [
+      "cursor",
+      "limit",
+      "status",
+      "kind"
+    ],
+    "hasBody": false
+  },
   "getPatientChroniclePrint": {
     "operationId": "getPatientChroniclePrint",
     "method": "GET",
@@ -4388,6 +4478,30 @@ export const operations = {
     "queryParamNames": [],
     "hasBody": true
   },
+  "postPatientChronicleMedicationCourseStop": {
+    "operationId": "postPatientChronicleMedicationCourseStop",
+    "method": "POST",
+    "path": "/api/v2/patients/{patient_id}/chronicle/admissions/{admission_case_id}/medication-courses/{course_id}/stop",
+    "pathParamNames": [
+      "patient_id",
+      "admission_case_id",
+      "course_id"
+    ],
+    "queryParamNames": [],
+    "hasBody": true
+  },
+  "postPatientChronicleMedicationCourseSupplyWindow": {
+    "operationId": "postPatientChronicleMedicationCourseSupplyWindow",
+    "method": "POST",
+    "path": "/api/v2/patients/{patient_id}/chronicle/admissions/{admission_case_id}/medication-courses/{course_id}/supply-windows",
+    "pathParamNames": [
+      "patient_id",
+      "admission_case_id",
+      "course_id"
+    ],
+    "queryParamNames": [],
+    "hasBody": true
+  },
   "postPatientChronicleWardRoundActions": {
     "operationId": "postPatientChronicleWardRoundActions",
     "method": "POST",
@@ -5186,6 +5300,12 @@ export function createGeneratedClient(request) {
     getPatientChronicleAdmissionAdvisoryCases: createOperation(request, operations.getPatientChronicleAdmissionAdvisoryCases),
     getPatientChronicleAdmissionAdvisoryRequest: createOperation(request, operations.getPatientChronicleAdmissionAdvisoryRequest),
     getPatientChronicleCurrentWardRound: createOperation(request, operations.getPatientChronicleCurrentWardRound),
+    getPatientChronicleMedicationCourse: createOperation(request, operations.getPatientChronicleMedicationCourse),
+    getPatientChronicleMedicationCourseDoses: createOperation(request, operations.getPatientChronicleMedicationCourseDoses),
+    getPatientChronicleMedicationCourseRequest: createOperation(request, operations.getPatientChronicleMedicationCourseRequest),
+    getPatientChronicleMedicationCourses: createOperation(request, operations.getPatientChronicleMedicationCourses),
+    getPatientChronicleMedicationCoursesContext: createOperation(request, operations.getPatientChronicleMedicationCoursesContext),
+    getPatientChronicleMedicationCourseSupply: createOperation(request, operations.getPatientChronicleMedicationCourseSupply),
     getPatientChroniclePrint: createOperation(request, operations.getPatientChroniclePrint),
     getPatientChronicleTimeline: createOperation(request, operations.getPatientChronicleTimeline),
     getPatientChronicleWardRound: createOperation(request, operations.getPatientChronicleWardRound),
@@ -5422,6 +5542,8 @@ export function createGeneratedClient(request) {
     postPatientChartEntries: createOperation(request, operations.postPatientChartEntries),
     postPatientChronicleAdmissionAdvisory: createOperation(request, operations.postPatientChronicleAdmissionAdvisory),
     postPatientChronicleAdmissionAdvisoryDecision: createOperation(request, operations.postPatientChronicleAdmissionAdvisoryDecision),
+    postPatientChronicleMedicationCourseStop: createOperation(request, operations.postPatientChronicleMedicationCourseStop),
+    postPatientChronicleMedicationCourseSupplyWindow: createOperation(request, operations.postPatientChronicleMedicationCourseSupplyWindow),
     postPatientChronicleWardRoundActions: createOperation(request, operations.postPatientChronicleWardRoundActions),
     postPatientChronicleWardRoundCommit: createOperation(request, operations.postPatientChronicleWardRoundCommit),
     postPatientChronicleWardRoundDraft: createOperation(request, operations.postPatientChronicleWardRoundDraft),

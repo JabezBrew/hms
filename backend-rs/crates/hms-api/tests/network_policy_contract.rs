@@ -538,7 +538,15 @@ async fn warm_protected_request_reuses_context_instead_of_resolving_auth_twice()
         .extensions()
         .get::<hms_observability::RequestMetricsSnapshot>()
         .expect("production telemetry records this request");
-    assert_eq!(metrics.db_query_count,2,"one durable auth version read and one observed network-policy read; handler must reuse context");
+    // The existing clinical proof queries are now instrumented as well. They
+    // must not be mistaken for a second request-context hydration/resolution.
+    let auth_and_connection_reads = 2;
+    let clinical_identity_and_deadline_reads = 4;
+    assert_eq!(
+        metrics.db_query_count,
+        auth_and_connection_reads + clinical_identity_and_deadline_reads,
+        "one auth-version read, one connection-policy read and four existing clinical-proof reads; handler must reuse context"
+    );
 }
 
 #[tokio::test]

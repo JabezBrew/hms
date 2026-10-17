@@ -16,6 +16,7 @@ mod observations_monitoring;
 pub mod patient_handover;
 pub(crate) mod prn;
 mod staff_assignments;
+pub mod treatment_courses;
 mod ward_stock;
 
 pub use admin::{
@@ -45,9 +46,12 @@ pub use handoff::{
     HandoffError, HandoffFilters, NewHandoff,
 };
 pub use mar::{
-    administer_medication, create_treatment_sheet, get_medication_administration,
-    list_medication_administrations, list_medication_administrations_scoped, list_treatment_sheets,
-    list_treatment_sheets_scoped, record_medication_outcome, schedule_medication_administration,
+    administer_medication, create_treatment_sheet, create_treatment_sheet_authorized,
+    get_medication_administration, list_medication_administrations,
+    list_medication_administrations_authorized, list_medication_administrations_scoped,
+    list_treatment_sheets, list_treatment_sheets_authorized, list_treatment_sheets_scoped,
+    record_medication_outcome, record_medication_outcome_authorized,
+    schedule_medication_administration, schedule_medication_administration_authorized,
     treatment_sheet_access_context, MedicationAdministrationFilters, MedicationOutcomeError,
     NewMedicationAdministration, NewTreatmentSheet, RecordMedicationOutcome, TreatmentSheetFilters,
 };
@@ -67,7 +71,10 @@ pub use observations_monitoring::{
     list_patient_vitals, list_patient_vitals_for_actor, FluidBalanceFilters, NewFluidBalanceEntry,
     NewMonitoringEvent, NewNursingAlert, NewPatientVitals, NursingAlertFilters,
 };
-pub use prn::{list_prn_orders, request_prn_dose, PrnError, RequestPrnDose};
+pub use prn::{
+    list_prn_orders, list_prn_orders_authorized, request_prn_dose, request_prn_dose_authorized,
+    PrnError, RequestPrnDose,
+};
 pub use staff_assignments::{
     create_ward_staff_assignment, deactivate_ward_staff_assignment, get_ward_staff_assignment,
     list_user_ward_board_assignments, list_ward_staff, list_ward_staff_assignments,

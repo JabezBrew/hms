@@ -6,7 +6,6 @@ async fn mar_patient_and_admission_filters_page_without_unrelated_doses() {
     let app = app().await;
     let pool = app.db_pool().await;
     let facility_id = app.state().facility_id();
-    let (token, _, _) = login(app.clone(), "owner@hms.local").await;
     let owner_id: Uuid = sqlx::query_scalar(
         "SELECT id FROM users WHERE facility_id = $1 AND email = 'owner@hms.local'",
     )
@@ -14,6 +13,7 @@ async fn mar_patient_and_admission_filters_page_without_unrelated_doses() {
     .fetch_one(&pool)
     .await
     .unwrap();
+    grant_test_patient_visibility(&app, owner_id, PatientDataVisibility::FullClinical).await;
     let ward_id: Uuid = sqlx::query_scalar("SELECT id FROM wards WHERE facility_id = $1 LIMIT 1")
         .bind(facility_id)
         .fetch_one(&pool)
@@ -39,6 +39,8 @@ async fn mar_patient_and_admission_filters_page_without_unrelated_doses() {
         )
         .await
         .unwrap();
+        sqlx::query("INSERT INTO patient_contexts(id,facility_id,user_id,patient_id,context_kind) VALUES(gen_random_uuid(),$1,$2,$3,'inpatient')")
+            .bind(facility_id).bind(owner_id).bind(patient.id).execute(&pool).await.unwrap();
         let admission_id = Uuid::new_v4();
         sqlx::query("INSERT INTO admission_cases (id, facility_id, patient_id, ward_id, status) VALUES ($1, $2, $3, $4, 'admitted')")
             .bind(admission_id).bind(facility_id).bind(patient.id).bind(ward_id).execute(&pool).await.unwrap();
@@ -49,6 +51,7 @@ async fn mar_patient_and_admission_filters_page_without_unrelated_doses() {
             .bind(count).execute(&pool).await.unwrap();
         scopes.push((patient.id, admission_id));
     }
+    let (token, _, _) = login(app.clone(), "owner@hms.local").await;
     let (patient_id, admission_id) = scopes[0];
     let request = |query: String| {
         Request::builder()
