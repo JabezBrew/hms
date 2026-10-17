@@ -256,6 +256,7 @@ export function PatientChroniclePageContent({
   visitScopeOptions,
   visitState,
   workspaceActions,
+  externallyHostedConsultation = false,
 }) {
   const {
     handleAddNote,
@@ -452,7 +453,7 @@ export function PatientChroniclePageContent({
 
               <Suspense fallback={null}>
                 <ChronicleWorkspaceHost
-                  activeWorkspace={slideOvers.activeSlideOver}
+                  activeWorkspace={externallyHostedConsultation && slideOvers.activeSlideOver === 'consultation' ? null : slideOvers.activeSlideOver}
                   workspaceContext={{ ...workspaceContext, onReviewPrescriptions: () => { workspaceContext.onClose?.(); setActiveFilter('medication'); } }}
                 />
               </Suspense>

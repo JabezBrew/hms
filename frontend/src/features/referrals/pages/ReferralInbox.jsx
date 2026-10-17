@@ -403,7 +403,7 @@ function ReferralCardActions({ referral, onStartConsultation, onActionClick }) {
             className="bg-primary hover:bg-primary/90 text-primary-foreground font-mono text-xs"
           >
             <PlayCircle className="size-4 mr-2" />
-            {isRustV2ApiMode() ? 'Open patient' : 'Start Consultation'}
+            {isRustV2ApiMode() ? 'Review consultation in Chronicle' : 'Start Consultation'}
           </Button>
           <Button
             variant="outline"
@@ -423,7 +423,7 @@ function ReferralCardActions({ referral, onStartConsultation, onActionClick }) {
             className="bg-primary hover:bg-primary/90 text-primary-foreground font-mono text-xs"
           >
             <Stethoscope className="size-4 mr-2" />
-            View Patient
+            {isRustV2ApiMode() ? 'Review consultation in Chronicle' : 'View Patient'}
           </Button>
           <Button
             variant="outline"
@@ -647,12 +647,12 @@ const ReferralInbox = () => {
   const breachedCount = slaDashboard?.risk_summary?.breached || 0;
 
   const handleStartConsultation = (referral) => {
-    const patientId = referral.patient;
-    if (!patientId) {
+    const patientId = typeof referral.patient === 'string' ? referral.patient : referral.patient?.id;
+    if (!patientId || (isRustV2ApiMode() && !referral.id)) {
       toast.error('Unable to navigate', { description: 'Patient ID not found' });
       return;
     }
-    navigate(isRustV2ApiMode() ? `/patients/${patientId}` : `/patients/${patientId}?action=add_note&referral_id=${referral.id}`);
+    navigate(isRustV2ApiMode() ? `/patients/${patientId}/chronicle?action=consultation&referral_id=${referral.id}` : `/patients/${patientId}?action=add_note&referral_id=${referral.id}`);
   };
 
   const handleActionClick = (referral, action) => {

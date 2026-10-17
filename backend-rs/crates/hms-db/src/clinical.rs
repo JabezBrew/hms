@@ -325,6 +325,7 @@ pub struct ChronicleTimelineFilters {
 pub struct ChronicleEncounterRead {
     pub id: Uuid,
     pub patient_id: Uuid,
+    pub visit_id: Option<Uuid>,
     pub encounter_type: String,
     pub status: String,
     pub started_at: DateTime<Utc>,
@@ -1793,7 +1794,7 @@ async fn patient_chronicle_sections(
 
 const CHRONICLE_STARTUP_SQL: &str = r#"
 WITH encounter_choices AS MATERIALIZED (
-  SELECT id,patient_id,encounter_type,status,started_at,ended_at
+  SELECT id,patient_id,visit_id,encounter_type,status,started_at,ended_at
   FROM encounters WHERE facility_id=$1 AND patient_id=$2
   ORDER BY started_at DESC,id DESC LIMIT 50
 ),

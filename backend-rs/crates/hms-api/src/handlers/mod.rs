@@ -21,6 +21,7 @@ pub mod ops;
 pub mod patient_handover;
 pub mod patients;
 pub mod pharmacy;
+pub mod referral_consultations;
 pub mod referrals;
 pub mod scheduling;
 pub mod search;

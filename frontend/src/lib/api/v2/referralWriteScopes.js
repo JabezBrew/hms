@@ -54,7 +54,9 @@ async function checkedStamp(data, kind, scope, state) {
   if (!stamp || stamp.kind !== kind || !sameScope(stamp, scope) || !currentStamp(stamp, state) || await contentHash(data) !== stamp.hash || !currentStamp(stamp, state)) throw failure();
   return stamp;
 }
-export async function referralManualProtocol(action, input, store) {
+export async function referralManualProtocol(action, input, store, protocol = 'response') {
+  if (protocol === 'consultation') return consultationManualProtocol(action, input, store);
+  if (protocol !== 'response') throw failure();
   if (action === 'cancel') { proofs.delete(input.proof); return; }
   if (action === 'candidate') return (await matching(input.scope, store)).entries.length === 1;
   if (action === 'prepare') {
@@ -84,4 +86,15 @@ export async function referralManualProtocol(action, input, store) {
     store.remove(proof.entryId, proof.uncertaintyId);
   });
   throw failure();
+}
+
+// Route selection remains lazy and exact; the established response protocol and
+// its synchronous classifier keep their existing interface and predicates.
+export async function classifyReferralWriteScope(path) {
+  const parts = String(path).split('?')[0].split('/').filter(Boolean);
+  if (parts[6] === 'consultation') return (await import('./consultationWriteScopes')).classifyConsultationWriteScope(path);
+  return classifyReferralResponseWriteScope(path);
+}
+export async function consultationManualProtocol(...args) {
+  return (await import('./consultationWriteScopes')).consultationManualProtocol(...args);
 }

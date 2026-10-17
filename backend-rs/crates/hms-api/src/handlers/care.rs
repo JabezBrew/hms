@@ -525,7 +525,8 @@ pub async fn call_visit(
         (status = 200, description = "Visit moved to consultation", body = ObjectResponse<VisitListItem>),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Permission denied", body = ApiErrorResponse),
-        (status = 404, description = "Visit not found", body = ApiErrorResponse)
+        (status = 404, description = "Visit not found", body = ApiErrorResponse),
+        (status = 409, description = "Reviewed care context changed or requires its owning workflow", body = ApiErrorResponse)
     )
 )]
 pub async fn start_visit_consultation(
@@ -839,7 +840,8 @@ pub async fn search_encounters(
     responses(
         (status = 200, description = "Encounter created", body = ObjectResponse<EncounterListItem>),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
-        (status = 403, description = "Permission denied", body = ApiErrorResponse)
+        (status = 403, description = "Permission denied", body = ApiErrorResponse),
+        (status = 409, description = "Reviewed care context changed or requires its owning workflow", body = ApiErrorResponse)
     )
 )]
 pub async fn create_encounter(
@@ -919,7 +921,8 @@ pub async fn update_encounter(
         (status = 200, description = "Encounter completed", body = ObjectResponse<EncounterListItem>),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Permission denied", body = ApiErrorResponse),
-        (status = 404, description = "Encounter not found", body = ApiErrorResponse)
+        (status = 404, description = "Encounter not found", body = ApiErrorResponse),
+        (status = 409, description = "Reviewed care context changed or requires its owning workflow", body = ApiErrorResponse)
     )
 )]
 pub async fn complete_encounter(
@@ -943,7 +946,8 @@ pub async fn complete_encounter(
         (status = 200, description = "Encounter cancelled", body = ObjectResponse<EncounterListItem>),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Permission denied", body = ApiErrorResponse),
-        (status = 404, description = "Encounter not found", body = ApiErrorResponse)
+        (status = 404, description = "Encounter not found", body = ApiErrorResponse),
+        (status = 409, description = "Reviewed care context changed or requires its owning workflow", body = ApiErrorResponse)
     )
 )]
 pub async fn cancel_encounter(

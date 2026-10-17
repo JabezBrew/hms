@@ -55,6 +55,7 @@ export function useChronicleWorkspaceActions({
   const handleViewAdmissionFollowUp = useCallback(() => openChronicleWorkspace('admissionAdvisory'), [openChronicleWorkspace]);
   const handleMoveAdmission = useCallback(() => openChronicleWorkspace('admissionMove'), [openChronicleWorkspace]);
   const handleViewMedicationCourses = useCallback(() => openChronicleWorkspace('medicationCourses'), [openChronicleWorkspace]);
+  const handleConsultationResponse = useCallback((referralId) => openChronicleWorkspace('referralResponse', { referralId }), [openChronicleWorkspace]);
   const handleViewSelectedAdmissionMar = useCallback(() => {
     if (isAllVisitsScope || !chartContextAdmissionId) return;
     setRequestedTreatmentSheetAdmissionId(String(chartContextAdmissionId));
@@ -309,6 +310,7 @@ export function useChronicleWorkspaceActions({
     onFluidRecorded: refreshData,
     onWardRoundCompleted: closeAfterRefresh,
     onConsultationCompleted: handleConsultationCompleted,
+    onConsultationResponse: handleConsultationResponse,
     onDischargeCompleted: handleDischargeCompleted,
     onReviewSelectedAdmissionMar: handleViewSelectedAdmissionMar,
   }), [
@@ -322,6 +324,7 @@ export function useChronicleWorkspaceActions({
     trendReviewTab,
     patientIdentityId,
     referralIdParam,
+    handleConsultationResponse,
     copilotPatientName,
     copyForwardData,
     editNoteData,

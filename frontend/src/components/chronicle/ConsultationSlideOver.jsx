@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useRef } from "react";
+import { lazy, Suspense, useCallback, useEffect, useRef } from "react";
+import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
 
 import { useWorkflowKeyboard } from "@/components/ui/workflow-steps";
 import { ConsultationSlideOverPanel } from "./ConsultationSlideOverSections";
@@ -29,7 +30,12 @@ const TERMINAL_VISIT_STATUSES = new Set([
  * - Step progress visualization with keyboard navigation
  * - URL-driven state (can be linked directly)
  */
-const ConsultationSlideOver = ({
+const RustConsultationPanel = lazy(() => import('@/features/referrals/consultations/components/ReferralConsultationPanel'));
+function ConsultationSlideOver(props) {
+  if (isRustV2ApiMode()) return <Suspense fallback={null}><RustConsultationPanel {...props} requestedReferralId={props.requestedReferralId ?? props.referralId ?? null} /></Suspense>;
+  return <LegacyConsultationSlideOver {...props} />;
+}
+const LegacyConsultationSlideOver = ({
   open,
   onClose,
   patient,

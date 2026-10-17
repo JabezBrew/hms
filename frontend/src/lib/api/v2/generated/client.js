@@ -2560,6 +2560,29 @@ export const operations = {
     "queryParamNames": [],
     "hasBody": false
   },
+  "getReferralConsultationContext": {
+    "operationId": "getReferralConsultationContext",
+    "method": "GET",
+    "path": "/api/v2/patients/{patient_id}/referrals/{referral_id}/consultation",
+    "pathParamNames": [
+      "patient_id",
+      "referral_id"
+    ],
+    "queryParamNames": [],
+    "hasBody": false
+  },
+  "getReferralConsultationRequestReceipt": {
+    "operationId": "getReferralConsultationRequestReceipt",
+    "method": "GET",
+    "path": "/api/v2/patients/{patient_id}/referrals/{referral_id}/consultation/requests/{request_id}",
+    "pathParamNames": [
+      "patient_id",
+      "referral_id",
+      "request_id"
+    ],
+    "queryParamNames": [],
+    "hasBody": false
+  },
   "getReferralResponseContext": {
     "operationId": "getReferralResponseContext",
     "method": "GET",
@@ -5292,6 +5315,17 @@ export const operations = {
     ],
     "queryParamNames": [],
     "hasBody": true
+  },
+  "startReferralConsultation": {
+    "operationId": "startReferralConsultation",
+    "method": "POST",
+    "path": "/api/v2/patients/{patient_id}/referrals/{referral_id}/consultation/start",
+    "pathParamNames": [
+      "patient_id",
+      "referral_id"
+    ],
+    "queryParamNames": [],
+    "hasBody": true
   }
 };
 
@@ -5509,6 +5543,8 @@ export function createGeneratedClient(request) {
     getPurchaseOrders: createOperation(request, operations.getPurchaseOrders),
     getRealtimeSubscriptions: createOperation(request, operations.getRealtimeSubscriptions),
     getReferralById: createOperation(request, operations.getReferralById),
+    getReferralConsultationContext: createOperation(request, operations.getReferralConsultationContext),
+    getReferralConsultationRequestReceipt: createOperation(request, operations.getReferralConsultationRequestReceipt),
     getReferralResponseContext: createOperation(request, operations.getReferralResponseContext),
     getReferralResponseHistory: createOperation(request, operations.getReferralResponseHistory),
     getReferralResponseRequestReceipt: createOperation(request, operations.getReferralResponseRequestReceipt),
@@ -5793,6 +5829,7 @@ export function createGeneratedClient(request) {
     previewClinicalNoteTemplate: createOperation(request, operations.previewClinicalNoteTemplate),
     putAdminNetworkPolicy: createOperation(request, operations.putAdminNetworkPolicy),
     putAdminStaffPractitionerProfile: createOperation(request, operations.putAdminStaffPractitionerProfile),
+    startReferralConsultation: createOperation(request, operations.startReferralConsultation),
   };
 }
 

@@ -7,6 +7,18 @@ use crate::state::AppState;
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route(
+            "/api/v2/patients/:patient_id/referrals/:referral_id/consultation",
+            get(crate::handlers::referral_consultations::context),
+        )
+        .route(
+            "/api/v2/patients/:patient_id/referrals/:referral_id/consultation/start",
+            post(crate::handlers::referral_consultations::start),
+        )
+        .route(
+            "/api/v2/patients/:patient_id/referrals/:referral_id/consultation/requests/:request_id",
+            get(crate::handlers::referral_consultations::receipt),
+        )
+        .route(
             "/api/v2/patients/:patient_id/referrals/:referral_id/response",
             get(referrals::response_context),
         )

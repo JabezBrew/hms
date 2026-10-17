@@ -19,7 +19,7 @@ async fn historical(pool: &hms_db::PgPool, before: i64) {
         .expect("historical migrations apply");
 }
 #[tokio::test]
-async fn new_runtime_requires_placement_epoch_while_probe_preserves_historical_epochs() {
+async fn new_runtime_requires_consultation_epoch_while_probe_preserves_historical_epochs() {
     let database = hms_db::test_support::TestDatabase::create().unwrap();
     let pool = hms_db::connect(database.database_url()).await.unwrap();
     assert_eq!(committed_breaking_epoch(&pool).await.unwrap(), 0);
@@ -37,8 +37,11 @@ async fn new_runtime_requires_placement_epoch_while_probe_preserves_historical_e
     historical(&pool, 202610170025).await;
     assert_eq!(committed_breaking_epoch(&pool).await.unwrap(), 202610170024);
     assert!(require_runtime_schema(&pool).await.is_err());
-    hms_db::migrate::run(&pool).await.unwrap();
+    historical(&pool, 202610170026).await;
     assert_eq!(committed_breaking_epoch(&pool).await.unwrap(), 202610170025);
+    assert!(require_runtime_schema(&pool).await.is_err());
+    hms_db::migrate::run(&pool).await.unwrap();
+    assert_eq!(committed_breaking_epoch(&pool).await.unwrap(), 202610170026);
     require_runtime_schema(&pool).await.unwrap();
     let identities:(i64,i64,i64)=sqlx::query_as("SELECT (SELECT count(*) FROM facilities),(SELECT count(*) FROM users),(SELECT count(*) FROM audit_events)").fetch_one(&pool).await.unwrap();
     assert_eq!(identities, (0, 0, 0));
@@ -275,4 +278,168 @@ async fn placement_runtime_columns_must_exist_before_startup() {
         .unwrap();
         require_runtime_schema(&pool).await.unwrap();
     }
+}
+
+#[tokio::test]
+async fn consultation_metadata_and_all_essential_columns_must_agree() {
+    let database = hms_db::test_support::TestDatabase::create().unwrap();
+    let pool = hms_db::connect(database.database_url()).await.unwrap();
+    hms_db::migrate::run(&pool).await.unwrap();
+    require_runtime_schema(&pool).await.unwrap();
+    let checksum = hms_db::migrate::MIGRATOR
+        .iter()
+        .find(|migration| migration.version == 202610170026)
+        .unwrap()
+        .checksum
+        .as_ref();
+    for mutation in [
+        "UPDATE _sqlx_migrations SET success=false WHERE version=202610170026",
+        "UPDATE _sqlx_migrations SET success=true,checksum=decode('00','hex') WHERE version=202610170026",
+        "UPDATE _sqlx_migrations SET success=true,version=209901010003 WHERE version=202610170026",
+    ] {
+        sqlx::query(mutation).execute(&pool).await.unwrap();
+        assert!(require_runtime_schema(&pool).await.is_err());
+        sqlx::query("UPDATE _sqlx_migrations SET version=202610170026,success=true,checksum=$1 WHERE version IN(202610170026,209901010003)")
+            .bind(checksum).execute(&pool).await.unwrap();
+        require_runtime_schema(&pool).await.unwrap();
+    }
+    for (relation, columns) in [
+        (
+            "referral_consultation_starts",
+            vec![
+                "id",
+                "facility_id",
+                "patient_id",
+                "referral_id",
+                "encounter_id",
+                "visit_id",
+                "admission_case_id",
+                "actor_user_id",
+                "practitioner_profile_id",
+                "source_mode",
+                "recorded_at",
+                "detail",
+            ],
+        ),
+        (
+            "referral_consultation_start_commands",
+            vec![
+                "facility_id",
+                "request_key_hash",
+                "patient_id",
+                "referral_id",
+                "actor_user_id",
+                "payload_digest",
+                "result_id",
+                "receipt",
+                "recorded_at",
+            ],
+        ),
+    ] {
+        for column in columns {
+            sqlx::query(&format!(
+                "ALTER TABLE {relation} RENAME COLUMN {column} TO unconfirmed_runtime_field"
+            ))
+            .execute(&pool)
+            .await
+            .unwrap();
+            assert!(
+                require_runtime_schema(&pool).await.is_err(),
+                "every runtime column is required"
+            );
+            sqlx::query(&format!(
+                "ALTER TABLE {relation} RENAME COLUMN unconfirmed_runtime_field TO {column}"
+            ))
+            .execute(&pool)
+            .await
+            .unwrap();
+            require_runtime_schema(&pool).await.unwrap();
+        }
+    }
+    sqlx::query("ALTER TABLE referral_consultation_starts ALTER COLUMN detail DROP NOT NULL")
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert!(require_runtime_schema(&pool).await.is_err());
+    sqlx::query("ALTER TABLE referral_consultation_starts ALTER COLUMN detail SET NOT NULL")
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("ALTER TABLE referral_consultation_starts ALTER COLUMN visit_id SET NOT NULL")
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert!(
+        require_runtime_schema(&pool).await.is_err(),
+        "nullable no-visit identity remains supported"
+    );
+    sqlx::query("ALTER TABLE referral_consultation_starts ALTER COLUMN visit_id DROP NOT NULL")
+        .execute(&pool)
+        .await
+        .unwrap();
+    require_runtime_schema(&pool).await.unwrap();
+}
+
+#[tokio::test]
+async fn consultation_guards_and_actual_index_keys_are_required() {
+    let database = hms_db::test_support::TestDatabase::create().unwrap();
+    let pool = hms_db::connect(database.database_url()).await.unwrap();
+    hms_db::migrate::run(&pool).await.unwrap();
+    for (relation, trigger) in [
+        (
+            "referral_consultation_starts",
+            "referral_consultation_start_scope",
+        ),
+        (
+            "referral_consultation_starts",
+            "referral_consultation_start_immutable",
+        ),
+        (
+            "referral_consultation_starts",
+            "referral_consultation_start_complete",
+        ),
+        (
+            "referral_consultation_start_commands",
+            "referral_consultation_command_immutable",
+        ),
+        (
+            "referral_consultation_start_commands",
+            "referral_consultation_command_complete",
+        ),
+        ("encounters", "encounter_care_identity"),
+        ("admission_cases", "admission_encounter_binding"),
+    ] {
+        sqlx::query(&format!("ALTER TABLE {relation} DISABLE TRIGGER {trigger}"))
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert!(require_runtime_schema(&pool).await.is_err());
+        sqlx::query(&format!("ALTER TABLE {relation} ENABLE TRIGGER {trigger}"))
+            .execute(&pool)
+            .await
+            .unwrap();
+        require_runtime_schema(&pool).await.unwrap();
+    }
+    let index = "referral_consultation_patient_actor_idx";
+    let original: String = sqlx::query_scalar("SELECT pg_get_indexdef($1::regclass)")
+        .bind(index)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    sqlx::query("DROP INDEX referral_consultation_patient_actor_idx")
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert!(require_runtime_schema(&pool).await.is_err());
+    sqlx::query("CREATE INDEX referral_consultation_patient_actor_idx ON referral_consultation_starts(facility_id,patient_id)").execute(&pool).await.unwrap();
+    assert!(
+        require_runtime_schema(&pool).await.is_err(),
+        "same-name incomplete actor keys are unsafe"
+    );
+    sqlx::query("DROP INDEX referral_consultation_patient_actor_idx")
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query(&original).execute(&pool).await.unwrap();
+    require_runtime_schema(&pool).await.unwrap();
 }

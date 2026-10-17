@@ -211,31 +211,38 @@ impl AdmissionCasesService {
         let _patient =
             common::load_patient_for_access(&self.state, ctx, payload.patient_id).await?;
         let _ward = common::load_ward(&self.state, payload.ward_id).await?;
-        let care_context = common::validate_care_context(
+        let _care_context = common::validate_care_context(
             &self.state,
             payload.patient_id,
             payload.encounter_id,
             payload.visit_id,
         )
         .await?;
-        let admission_case = hms_db::ward::create_admission_case(
+        let admission_case = hms_db::ward::create_admission_case_authorized(
             self.state.db_pool(),
             NewAdmissionCase {
                 id: Uuid::new_v4(),
                 facility_id: self.state.facility_id(),
                 patient_id: payload.patient_id,
                 ward_id: payload.ward_id,
-                encounter_id: care_context.encounter_id,
-                visit_id: care_context.visit_id,
+                // Preserve the explicit request. Persistence derives any omitted
+                // visit from the freshly gated encounter inside its transaction.
+                encounter_id: payload.encounter_id,
+                visit_id: payload.visit_id,
                 actor_user_id: ctx.user_id,
             },
+            crate::services::care::care_actor(ctx, PermissionCode::AdmissionManage)?,
         )
         .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "admission_case_create_failed",
-                "Admission case could not be created.",
-            )
+        .map_err(|error| {
+            if let Some(error) = ApiError::network_publication(&error) { return error; }
+            use hms_db::care::lifecycle::CareLifecycleError as E;
+            match error.downcast_ref::<E>() {
+                Some(E::Unavailable) => ApiError::forbidden("care_authorization_expired", "Current admission authority is required."),
+                Some(E::NotFound | E::ContextChanged) => ApiError::conflict("admission_care_context_changed", "The admission care context changed. Refresh before continuing."),
+                Some(_) => ApiError::conflict("admission_care_context_changed", "The selected care context is unavailable for this admission."),
+                None => ApiError::conflict("admission_case_create_unconfirmed", "The admission outcome could not be confirmed. Refresh and review the saved admission before another change."),
+            }
         })?;
 
         self.state.invalidate_ward_board_cache();

@@ -28,10 +28,10 @@ pub use admin::{
 };
 pub use admission_cases::{
     activate_admission_case, admit_patient, admit_patient_authorized, cancel_admission_case,
-    cancel_admission_case_authorized, create_admission_case, get_admission_case,
-    get_admission_context, get_ward_board_admission, list_admission_cases, list_ward_board,
-    reserve_admission_bed, AdmissionContext, AdmissionPlacementRejected, NewAdmission,
-    NewAdmissionCase,
+    cancel_admission_case_authorized, create_admission_case, create_admission_case_authorized,
+    get_admission_case, get_admission_context, get_ward_board_admission, list_admission_cases,
+    list_ward_board, reserve_admission_bed, AdmissionContext, AdmissionPlacementRejected,
+    NewAdmission, NewAdmissionCase,
 };
 pub use analytics::ward_analytics;
 pub use bed_management::{

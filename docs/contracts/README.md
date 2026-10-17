@@ -399,3 +399,28 @@ destination automatically. Lost-payload saved-state review is manual, single-use
 and invalidated by later denial or scope transitions, including during awaits.
 Migration025 requires coordinated runtime/schema/ops deployment; old024 rollback
 is refused. See checkpoint18 verification for the current acceptance boundary.
+
+Referral consultation commands preserve explicit care context:
+
+- One immutable start belongs to the exact patient/referral. New outpatient care
+  requires an explicit existing-visit or no-visit choice. Reusing an admission
+  retains its exact encounter, visit, encounter type and admission chronology.
+- Selected waiting/called/in-triage/triaged/in-consultation/on-hold visits may
+  transition to consultation after explicit review. This transition does not
+  assert that triage finished. Checkout-ready or terminal visits cannot be
+  revived through a new encounter or generic consultation start.
+- Scheduled referrals require an eligible exact local appointment and retain its
+  bounded status/time/clinic/practitioner snapshot. There is no implicit check-in
+  or inferred appointment. Accepted referrals with a stored booking are
+  inconsistent and must be resolved before first start.
+- UUID receipts preserve the original reviewed command and resulting link.
+  Current link state does not prove an uncertain earlier request's outcome.
+  Start capability grants neither clinical-documentation view nor note editing.
+- An encounter bound to an admission or consultation keeps its original care
+  identity after closure. A recorded non-null admission visit cannot be replaced
+  while attaching a first encounter. First attachment must match that visit.
+- Restricted-record intake overrides remain intake decisions. They do not grant
+  historical Chronicle access. A limited preparation surface must rely on its
+  own protected context, keep the chart hidden and obtain current authority for
+  each command. An immutable original start actor may supply historical ordinary
+  relationship evidence under independently current clinical read grants.

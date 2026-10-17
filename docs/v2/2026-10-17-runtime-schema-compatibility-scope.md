@@ -17,7 +17,7 @@ runtime's maximum reviewed breaking-schema epoch. An older artifact without the
 declaration supports epoch zero. A migration filename is never evidence that an
 artifact's code is compatible. The shell guard checks the explicit declaration
 against both the actual database and the candidate's known breaking migration.
-The current runtime requires025: a declaration of025 with its required
+The current runtime requires026: a declaration of026 with its required
 migration omitted is an invalid artifact, not an epoch-zero candidate. A fresh
 post-migration probe must report the required epoch before any API or worker is
 started. `--skip-migrations` cannot bypass either the minimum or maximum check.
@@ -117,7 +117,7 @@ No unrelated containers are stopped, pruned or removed.
 
 Before any rollback tree move or runtime restart, the installer probes with the
 candidate image's `hms-migrator schema-compatibility` command. It emits exactly
-one decimal epoch: `0`, `202610170023`, `202610170024` or `202610170025`. It creates no schema,
+one decimal epoch: `0`, `202610170023`, `202610170024`, `202610170025` or `202610170026`. It creates no schema,
 identities, policy or audit data. The DB helper uses a read-only transaction,
 bounded statement/lock/idle waits and SQLx's actual migration advisory lock. Its
 dedicated connection closes on every path, including cancellation, so a session
@@ -171,3 +171,22 @@ opt-in was not enabled; no new proxy behavior is claimed. The four actual
 migrator-binary tests passed against isolated Docker Postgres databases. Shell
 syntax and owned diff checks also passed. These results do not authorize or
 claim a remote deployment, host rollback drill or automatic database restore.
+
+## Breaking referral consultation boundary
+
+Migration202610170026 adds immutable referral consultation links and request
+receipts, retained encounter identity, and admission encounter/visit bindings.
+The new runtime requires026 before provisioning, listening or worker readiness.
+Its bounded read-only probe checks the embedded checksum and committed metadata,
+every essential column type/nullability, enabled scope/immutability/deferred
+completeness guards and the actual keys of seven valid/ready indexes. It does not
+certify arbitrary SQL function bodies or all operator modifications.
+
+The deployment protocol recognizes026 explicitly, requires the complete preceding
+breaking-migration chain and refuses recovery to an epoch025-or-earlier runtime
+after026 commits. Old binaries are not assumed to discover future migrations.
+The current copied-shell and local-process ops gate passes161 tests with four
+existing opt-in skips. Actual026 focused gates pass21 cases: database8, migrator7, API3 and worker3.
+The schema/migration fingerprints stay unchanged through the run. New API and
+worker processes refuse epoch025 before provisioning/readiness and accept026.
+Neither local gate establishes a live deploy or rollback drill.

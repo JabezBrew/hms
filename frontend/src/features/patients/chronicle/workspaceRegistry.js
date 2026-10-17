@@ -277,8 +277,13 @@ export function buildChronicleWorkspaceProps(workspaceId, context) {
         open: true,
         onClose,
         patient,
-        encounterId: activeEncounter?.id || null,
-        referralId,
+        encounterId: isRustV2ApiMode() ? context.selectedEncounter?.id || null : activeEncounter?.id || null,
+        selectedEncounter: isRustV2ApiMode() ? context.selectedEncounter || null : activeEncounter,
+        allHistory: chronicleAllHistory === true,
+        referralId: context.requestedReferralId || referralId || null,
+        requestedReferralId: context.requestedReferralId || referralId || null,
+        onResponse: context.onConsultationResponse,
+        onNoteCreated,
         onComplete: onConsultationCompleted,
       };
     case 'discharge':

@@ -1,10 +1,20 @@
+import { webcrypto } from 'node:crypto'
+import { useState } from 'react'
+import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import PatientChroniclePage from '../PatientChroniclePage'
 import { SidebarProvider } from '@/components/ui/sidebar'
+import { ReadOnlyModeProvider } from '@/contexts/ReadOnlyModeContext'
+import { __resetV2ApiClientForTests, configureV2ApiClient, getV2ClientScopeKey } from '@/lib/api/v2/client'
+import { bindNetworkAccessGuard } from '@/lib/api/v2/networkAccessGuard'
+import { activateWriteUncertainty } from '@/lib/api/v2/writeUncertainty'
+import { authorizationIdentity } from '@/shared/lib/authorizationScope'
+import { inputDigest, redactedIntent } from '@/features/referrals/consultations/model'
+import { actorId, at, context as consultationContext, facilityId, link, linked, patientId, referralId, selected } from '@/features/referrals/consultations/__tests__/fixtures'
 
 const authState = vi.hoisted(() => ({ user: null }));
 const patientHookState = vi.hoisted(() => ({
@@ -98,13 +108,15 @@ vi.mock('@/features/patients/hooks/usePatientQueries', () => ({
     refetch: vi.fn(),
   }),
   usePatientChronicleStartup: (patientId, params, options) => {
+    const [, refresh] = useState(0)
+    chronicleStartupState.force = () => refresh(value => value + 1)
     chronicleStartupState.calls.push({ patientId, params, options })
-    if (chronicleStartupState.calls.length > 100) throw new Error('Bounded referral-response route render diagnostic')
+    if (chronicleStartupState.calls.length > 100) throw new Error('Synthetic bounded render diagnostic')
     return {
       data: chronicleStartupState.data,
       isLoading: false,
       error: chronicleStartupState.error,
-      refetch: vi.fn(),
+      refetch: async () => { const result = await chronicleStartupState.refetch?.(); refresh(value => value + 1); return result },
     }
   },
   usePatientChronicleTimeline: (patientId, params, options) => {
@@ -147,6 +159,7 @@ vi.mock('@/hooks/useTimelineQueries', () => ({
   flattenTimelinePages: (data) => data?.pages?.flatMap((page) => page.results || []) || [],
   getTimelineTotalCount: (data) => data?.pages?.[0]?.count || 0,
   useInvalidateTimeline: () => vi.fn(),
+  invalidatePatientTimelineQueries: vi.fn().mockResolvedValue(undefined),
 }))
 
 vi.mock('@/features/encounters/hooks/useEncounterQueries', () => ({
@@ -286,6 +299,7 @@ function renderPage(initialEntry = '/patients/patient-1/chronicle') {
 
   return render(
     <QueryClientProvider client={queryClient}>
+<ReadOnlyModeProvider network={{ confirmed: true, decision: { access_allowed: true, read_only: false, classification: 'onsite', policy_version: 1 } }}>
       <SidebarProvider>
         <MemoryRouter initialEntries={[initialEntry]}>
           <RouteCommandProbe />
@@ -296,6 +310,7 @@ function renderPage(initialEntry = '/patients/patient-1/chronicle') {
           </Routes>
         </MemoryRouter>
       </SidebarProvider>
+      </ReadOnlyModeProvider>
     </QueryClientProvider>
   )
 }
@@ -353,6 +368,7 @@ describe('PatientChroniclePage Rust V2 workflow guards', () => {
       },
     }
     chronicleStartupState.error = null
+    chronicleStartupState.refetch = null
     workspaceHostState.lastProps = null
     summarySidebarState.lastProps = null
     patientHookState.data = {
@@ -793,6 +809,60 @@ describe('PatientChroniclePage Rust V2 workflow guards', () => {
     window.__HMS_RUNTIME_CONFIG__ = { apiMode: 'rust-v2' }; authState.user = { ...authState.user, adminAccess: { capabilities: ['clinical_documentation.view'] }, accessContext: { ...authState.user.accessContext, features: state === 'missing-patients' ? ['encounters'] : ['patients', 'encounters'], patient_visibility: state === 'summary' ? ['demographics', 'clinical_summary'] : ['demographics', 'clinical_summary', 'full_clinical'] } }; chronicleStartupState.data.permissions = { can_view_full_clinical: state !== 'summary', can_add_note: false, can_record_vitals: false, can_prescribe: false }; renderPage(); await screen.findByTestId('clinical-summary'); expect(screen.getByTestId('preview-template-action')).toHaveTextContent(String(state === 'full-read')); expect(screen.getByTestId('note-action')).toHaveTextContent('false');
   });
 
+  describe('restricted consultation preparation entry', () => {
+    const originalFetch = globalThis.fetch;
+    let current, writes, finishStartup, startup200, mode;
+    const envelope = (data, status = 200) => new Response(JSON.stringify({ data }), { status, headers: { 'Content-Type': 'application/json' } });
+    beforeEach(() => {
+      vi.stubGlobal('crypto', webcrypto); __resetV2ApiClientForTests();
+      window.__HMS_RUNTIME_CONFIG__ = { apiMode: 'rust-v2', v2ApiBaseUrl: 'http://localhost:8080/api/v2' };
+      authState.user = { id: actorId, adminAccess: { capabilities: ['patient.demographics.view', 'encounter.view', 'encounter.manage', 'referral.manage', 'patient.update', 'clinical_documentation.view', 'clinical_documentation.manage'] }, accessContext: { facility_id: facilityId, active_profile: 'hospital', permission_version: 1, features: ['patients', 'referrals', 'encounters'], patient_visibility: ['demographics', 'full_clinical'] } };
+      startup200 = { ...chronicleStartupState.data, patient: { id: patientId, name: 'Synthetic freshly authorized chart patient' }, active_encounter: null, active_admission: null };
+      chronicleStartupState.data = { ...startup200, patient: { id: patientId, name: 'Synthetic stale chart must stay hidden' } };
+      chronicleStartupState.error = { status: 403, message: 'Forbidden' };
+      chronicleStartupState.refetch = vi.fn(() => new Promise(resolve => { finishStartup = () => { chronicleStartupState.error = null; chronicleStartupState.data = startup200; resolve({ data: startup200, error: null }); }; }));
+      configureV2ApiClient({ getAccessToken: () => 'SYNTHETIC-CONSULTATION-TOKEN', getFacilityCode: () => 'QA', canRefreshSession: () => false });
+      const principal = { id: actorId, facility_id: facilityId, active_profile: 'hospital' }, binding = { transportScope: getV2ClientScopeKey(), authorityScope: authorizationIdentity(authState.user), principal };
+      bindNetworkAccessGuard(binding).update({ confirmed: true, decision: { access_allowed: true, read_only: false, classification: 'onsite', policy_version: 1 } }); activateWriteUncertainty(principal, { authority: binding.authorityScope, transport: binding.transportScope });
+      current = structuredClone(consultationContext); writes = []; finishStartup = null; mode = 'ready';
+      globalThis.fetch = vi.fn(async (url, options = {}) => {
+        const request = new URL(url);
+        if (mode === 'denied') return new Response(JSON.stringify({ error: { code: 'patient_access_denied', message: 'Forbidden' } }), { status: 403, headers: { 'Content-Type': 'application/json' } });
+        if (options.method === 'POST') {
+          const payload = JSON.parse(options.body); writes.push(payload); current = structuredClone(linked);
+          if (mode === 'lost') throw new TypeError('Synthetic consultation reply lost');
+          return envelope({ client_request_id: payload.client_request_id, recorded_at: at, replayed: writes.length > 1, input_digest: await inputDigest(payload), reviewed_input: redactedIntent(payload), link });
+        }
+        if (request.pathname.endsWith('/consultation')) return envelope(request.searchParams.has('mode') && !current.link ? { ...selected, patient: current.patient, context_token: current.context_token } : current);
+        throw new Error('Unexpected synthetic consultation request');
+      });
+    });
+    afterEach(() => { globalThis.fetch = originalFetch; __resetV2ApiClientForTests(); vi.unstubAllGlobals(); });
+    async function reviewStart() {
+      const ev = userEvent.setup(); await ev.click(await screen.findByLabelText('Create a new outpatient encounter')); await ev.click(screen.getByLabelText('Start without a visit. No visit or check-in is created.'));
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Review consultation start' })).toBeEnabled()); await ev.click(screen.getByRole('button', { name: 'Review consultation start' })); await ev.click(await screen.findByLabelText('I reviewed this patient, referral and exact consultation source.')); await ev.click(screen.getByRole('button', { name: 'Confirm consultation start' })); return ev;
+    }
+    it('reaches protected own context from Chronicle403 and requires fresh Chronicle200 after a reviewed saved start', async () => {
+      renderPage(`/patients/${patientId}/chronicle?action=consultation&referral_id=${referralId}`);
+      await screen.findByLabelText('Consultation source'); expect(screen.getByText('Synthetic consultation patient')).toBeInTheDocument(); expect(screen.getByText(/SYNTHETIC-CONSULTATION-001/)).toBeInTheDocument();
+      expect(screen.queryByText('Synthetic stale chart must stay hidden')).not.toBeInTheDocument(); expect(screen.queryByTestId('clinical-summary')).not.toBeInTheDocument(); expect(writes).toHaveLength(0);
+      await reviewStart(); await screen.findByRole('region', { name: 'Original consultation start result' }); await waitFor(() => expect(finishStartup).toBeTypeOf('function'));
+      expect(screen.queryByTestId('clinical-summary')).not.toBeInTheDocument(); expect(screen.queryByLabelText('Note title')).not.toBeInTheDocument(); expect(writes).toHaveLength(1);
+      await act(async () => finishStartup()); await screen.findByTestId('clinical-summary'); expect(screen.getByRole('region', { name: 'Original consultation start result' })).toBeInTheDocument(); expect(workspaceHostState.lastProps.activeWorkspace).not.toBe('consultation');
+    });
+    it('keeps an exact unknown start across an independently authorized Chronicle200 and retries its unchanged UUID/body', async () => {
+      renderPage(`/patients/${patientId}/chronicle?action=consultation&referral_id=${referralId}`); mode = 'lost'; const ev = await reviewStart(); await screen.findByRole('button', { name: 'Retry exact reviewed start' }); const original = structuredClone(writes[0]);
+      await act(async () => { chronicleStartupState.error = null; chronicleStartupState.data = startup200; chronicleStartupState.force(); }); await screen.findByTestId('clinical-summary');
+      mode = 'ready'; await ev.click(screen.getByRole('button', { name: 'Retry exact reviewed start' })); await screen.findByRole('region', { name: 'Original consultation start result' }); expect(writes).toEqual([original, original]);
+    });
+    it('clears protected own copies when the consultation context itself denies the reader', async () => {
+      mode = 'denied'; renderPage(`/patients/${patientId}/chronicle?action=consultation&referral_id=${referralId}`); await screen.findByText('Consultation unavailable'); expect(screen.queryByText('Synthetic consultation patient')).not.toBeInTheDocument(); expect(screen.queryByTestId('clinical-summary')).not.toBeInTheDocument(); expect(writes).toHaveLength(0);
+    });
+    it.each(['action=add_note', 'consultation=true', 'action=consultation&referral_id=invalid'])('does not bypass Chronicle403 for a nonexplicit or invalid preparation action (%s)', async query => {
+      renderPage(`/patients/${patientId}/chronicle?${query}${query.includes('referral_id') ? '' : `&referral_id=${referralId}`}`); await screen.findByText('Team-based access required'); await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); }); expect(globalThis.fetch).not.toHaveBeenCalled(); expect(screen.queryByLabelText('Consultation source')).not.toBeInTheDocument(); expect(writes).toHaveLength(0);
+    });
+  });
+
   it.each(['response', 'no-action'])('whole-page response entry consumes its command without a render loop (%s)', async mode => {
     window.__HMS_RUNTIME_CONFIG__ = { apiMode: 'rust-v2' };
     chronicleStartupState.error = { status: 403, message: 'Forbidden' }; chronicleStartupState.data = null;
@@ -801,4 +871,5 @@ describe('PatientChroniclePage Rust V2 workflow guards', () => {
     expect(chronicleStartupState.calls.length).toBeLessThan(100);
     expect(screen.queryByTestId('clinical-summary')).not.toBeInTheDocument();
   });
+
 })

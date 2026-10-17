@@ -498,3 +498,10 @@ marks the backend unhealthy and direct VM HTTP redirects to HTTPS, redeploy with
 the GCP override so Caddy mounts `ops/gcp-staging/Caddyfile`. If GCP marks the
 backend healthy but public requests still fail, verify the backend service did
 not drift to protocol `HTTPS` or port name `https`.
+
+Migration `202610170026` requires runtime epoch `202610170026`. It preserves referral
+consultation commands and bound encounter identity. The deployment lease, writer
+drain, read-only candidate probe and compatibility declaration prevent unsupported
+rollback to epoch025 or earlier after this migration commits. Older binaries are
+not assumed to recognize migrations introduced after their build. The new runtime
+refuses an epoch025 database before provisioning or readiness.

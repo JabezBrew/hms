@@ -1,5 +1,5 @@
 /* oxlint-disable react-doctor/prefer-useReducer -- These components keep independent UI states; a reducer would add dispatch indirection without a shared transition invariant. */
-import { useState, useMemo, useCallback, useEffect, useSyncExternalStore } from "react";
+import { useState, useMemo, useCallback, useEffect, useSyncExternalStore, lazy, Suspense } from "react";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "@/lib/auth";
 import { useQueryClient } from "@tanstack/react-query";
@@ -28,7 +28,10 @@ import { useDebounce } from "@/hooks/use-debounce";
 
 import { authorizationScope } from '@/shared/lib/authorizationScope';
 import { getV2ClientScopeKey, subscribeV2ClientScope } from '@/lib/api/v2/client';
+import { useRestrictedConsultationEntry } from '@/features/referrals/consultations/hooks/useRestrictedConsultationEntry';
 import { chronicleClinicalPermissions } from '@/features/patients/chronicle/clinicalPermissions';
+
+const ChronicleConsultationPreparation = lazy(() => import('@/features/referrals/consultations/components/ChronicleConsultationPreparation'));
 
 const DISCHARGE_CASE_ROLES = new Set([
   'admin',
@@ -403,8 +406,23 @@ function usePatientChroniclePageModel(defaultAction) {
     accessSource: chronicleContext?.access_source,
   });
 
+  const consultationPreparationEnabled = useRestrictedConsultationEntry({ accessDenied, rustV2Mode, activeWorkspace: slideOvers.activeSlideOver, workspaceOptions });
   return {
     accessDenied,
+    consultationPreparation: {
+      enabled: consultationPreparationEnabled,
+      patientId: id,
+      clinicalPermissions,
+      preparationOnly: !hasClinicalAccess || !clinicalPermissions.can_view_full_clinical,
+      open: slideOvers.activeSlideOver === 'consultation',
+      requestedReferralId: workspaceOptions?.referralId || null,
+      selectedEncounter: hasClinicalAccess ? selectedEncounter : null,
+      allHistory: !hasClinicalAccess || isAllVisitsScope,
+      onClose: slideOvers.close,
+      onRecorded: refetchStartup,
+      onResponse: workspaceActions.workspaceContext.onConsultationResponse,
+      onNoteCreated: workspaceActions.workspaceContext.onNoteCreated,
+    },
     accessDeniedProps: {
       breakGlassExpiresAt,
       breakGlassReason,
@@ -426,6 +444,7 @@ function usePatientChroniclePageModel(defaultAction) {
       onBreakGlassRefresh: refreshBreakGlassAccess,
     },
     contentProps: {
+      externallyHostedConsultation: consultationPreparationEnabled,
       emergencyAccess: rustV2Mode && canRequestBreakGlass ? {
         expiresAt: breakGlassExpiresAt,
         error: breakGlassError,
@@ -508,25 +527,18 @@ const PatientChroniclePageBody = ({ defaultAction }) => {
     accessDenied,
     accessDeniedProps,
     contentProps,
+    consultationPreparation,
     errorProps,
     isGateError,
     isGateLoading,
     pageMeta,
   } = usePatientChroniclePageModel(defaultAction);
 
-  if (accessDenied) {
-    return <ChronicleAccessDeniedState {...accessDeniedProps} />;
-  }
-
-  if (isGateLoading) {
-    return <ChronicleLoadingState pageMeta={pageMeta} />;
-  }
-
-  if (isGateError) {
-    return <ChronicleErrorState {...errorProps} />;
-  }
-
-  return <PatientChroniclePageContent {...contentProps} />;
+  const page = accessDenied ? <ChronicleAccessDeniedState {...accessDeniedProps} />
+    : isGateLoading ? <ChronicleLoadingState pageMeta={pageMeta} />
+      : isGateError ? <ChronicleErrorState {...errorProps} />
+        : <PatientChroniclePageContent {...contentProps} />;
+  return <>{page}{consultationPreparation.enabled && <Suspense fallback={null}><ChronicleConsultationPreparation {...consultationPreparation} /></Suspense>}</>;
 };
 
 export default function PatientChroniclePage(props) {

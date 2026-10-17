@@ -102,6 +102,7 @@ pub struct PatientChronicleActiveContext {
 pub struct PatientChronicleEncounterSummary {
     pub id: Uuid,
     pub patient_id: Uuid,
+    pub visit_id: Option<Uuid>,
     pub encounter_type: String,
     pub status: String,
     pub started_at: DateTime<Utc>,
@@ -1014,7 +1015,7 @@ async fn load_patient_for_chronicle_access(
     )
     .await?;
     let now = Utc::now();
-    let evidence = hms_db::auth::clinical_patient_access_evidence(
+    let mut evidence = hms_db::auth::clinical_patient_access_evidence(
         state.db_pool(),
         state.facility_id(),
         ctx.user_id,
@@ -1028,6 +1029,61 @@ async fn load_patient_for_chronicle_access(
             "Patient access could not be checked.",
         )
     })?;
+    // Referral consultation is a separate ordinary read purpose. Its real actor
+    // evidence applies only here; global auth facts and clinical writers keep
+    // their existing policies. Intake overrides never substitute for Full or
+    // actual documentation read authority.
+    if hms_access::evaluate_clinical_patient_access(ctx, &patient, &evidence, now).is_err()
+        && ctx.has_patient_visibility(hms_domain::auth::PatientDataVisibility::FullClinical)
+        && ctx.has_feature(hms_domain::deployment::FeatureKey::Referrals)
+        && hms_access::require_chronicle_read_access(ctx, state.facility_id()).is_ok()
+        && ctx.has_permission(PermissionCode::EncounterView)
+    {
+        let deadline = ctx.authorization_deadline.ok_or_else(|| {
+            ApiError::forbidden(
+                "patient_access_denied",
+                "Current Chronicle authority is required.",
+            )
+        })?;
+        let allowed = hms_db::referral_consultations::chronicle_access::ordinary_evidence(
+            state.db_pool(),
+            hms_db::referral_consultations::ConsultationActor {
+                facility_id: ctx.facility_id,
+                user_id: ctx.user_id,
+                request_id: Some(ctx.request_id.clone()),
+                authorization: crate::services::clinical::prescription_courses::authorization(
+                    ctx, deadline,
+                ),
+            },
+            patient.id,
+        )
+        .await
+        .map_err(|error| {
+            if let Some(error) = ApiError::network_publication(&error) {
+                return error;
+            }
+            if error.is::<hms_db::referral_consultations::ConsultationError>()
+                && error.downcast_ref::<hms_db::referral_consultations::ConsultationError>()
+                    != Some(&hms_db::referral_consultations::ConsultationError::Busy)
+                || error.is::<hms_db::clinical::prescription_courses::PrescriptionCourseError>()
+                || error.is::<hms_db::clinical::medication_access::MedicationAccessError>()
+            {
+                ApiError::forbidden(
+                    "patient_access_denied",
+                    "Current full clinical and documentation read authority is required.",
+                )
+            } else {
+                ApiError::conflict(
+                    "patient_access_check_failed",
+                    "Patient Chronicle access could not be checked.",
+                )
+            }
+        })?;
+        if allowed {
+            evidence.workflow_reason =
+                Some(hms_domain::auth::ClinicalPatientAccessReason::ActiveClinicalRelationship);
+        }
+    }
     let decision = hms_access::evaluate_clinical_patient_access(ctx, &patient, &evidence, now)
         .map_err(|_| {
             ApiError::forbidden(
@@ -1573,6 +1629,7 @@ fn patient_chronicle_encounter_from_read(
     PatientChronicleEncounterSummary {
         id: read.id,
         patient_id: read.patient_id,
+        visit_id: read.visit_id,
         encounter_type: read.encounter_type,
         status: read.status,
         started_at: read.started_at,

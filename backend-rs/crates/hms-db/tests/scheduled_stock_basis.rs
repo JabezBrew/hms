@@ -673,85 +673,87 @@ async fn controlled_units_are_immutable_even_without_history_and_labels_remain_c
 }
 #[tokio::test]
 async fn legacy_null_discharge_context_is_derived_from_locked_active_admission_and_revalidated() {
-    let f = Fixture::new(true).await;
-    let encounter = Uuid::new_v4();
-    let discharge = Uuid::new_v4();
-    sqlx::query("INSERT INTO encounters(id,facility_id,patient_id,encounter_type,status,created_by_user_id) VALUES($1,$2,$3,'inpatient','completed',$4)").bind(encounter).bind(f.db.facility_id()).bind(f.patient).bind(f.db.owner_user_id()).execute(f.db.pool()).await.unwrap();
-    sqlx::query("UPDATE admission_cases SET encounter_id=$2 WHERE id=$1")
-        .bind(f.admission)
-        .bind(encounter)
-        .execute(f.db.pool())
-        .await
-        .unwrap();
-    sqlx::query("INSERT INTO discharge_cases(id,facility_id,admission_case_id,patient_id,status,created_by_user_id) VALUES($1,$2,$3,$4,'requested',$5)").bind(discharge).bind(f.db.facility_id()).bind(f.admission).bind(f.patient).bind(f.db.owner_user_id()).execute(f.db.pool()).await.unwrap();
-    let input = || NewPrescription {
-        id: Uuid::new_v4(),
-        facility_id: f.db.facility_id(),
-        patient_id: f.patient,
-        encounter_id: None,
-        visit_id: None,
-        discharge_case_id: Some(discharge),
-        medication_name: "Synthetic discharge review".into(),
-        dose: "Explicit dose".into(),
-        route: "oral".into(),
-        frequency: "daily".into(),
-        inventory_item_id: None,
-        start_date: None,
-        duration_days: None,
-        first_dose_at: None,
-        actor_user_id: f.db.owner_user_id(),
-    };
-    assert_eq!(
-        create_with_stock_policy(
+    // Independent origins preserve the first terminal outcome of the negative case.
+    for initially_completed in [true, false] {
+        let f = Fixture::new(true).await;
+        let encounter = Uuid::new_v4();
+        let discharge = Uuid::new_v4();
+        sqlx::query("INSERT INTO encounters(id,facility_id,patient_id,encounter_type,status,created_by_user_id) VALUES($1,$2,$3,'inpatient',$5,$4)").bind(encounter).bind(f.db.facility_id()).bind(f.patient).bind(f.db.owner_user_id()).bind(if initially_completed { "completed" } else { "in_progress" }).execute(f.db.pool()).await.unwrap();
+        sqlx::query("UPDATE admission_cases SET encounter_id=$2 WHERE id=$1")
+            .bind(f.admission)
+            .bind(encounter)
+            .execute(f.db.pool())
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO discharge_cases(id,facility_id,admission_case_id,patient_id,status,created_by_user_id) VALUES($1,$2,$3,$4,'requested',$5)").bind(discharge).bind(f.db.facility_id()).bind(f.admission).bind(f.patient).bind(f.db.owner_user_id()).execute(f.db.pool()).await.unwrap();
+        let input = || NewPrescription {
+            id: Uuid::new_v4(),
+            facility_id: f.db.facility_id(),
+            patient_id: f.patient,
+            encounter_id: None,
+            visit_id: None,
+            discharge_case_id: Some(discharge),
+            medication_name: "Synthetic discharge review".into(),
+            dose: "Explicit dose".into(),
+            route: "oral".into(),
+            frequency: "daily".into(),
+            inventory_item_id: None,
+            start_date: None,
+            duration_days: None,
+            first_dose_at: None,
+            actor_user_id: f.db.owner_user_id(),
+        };
+        if initially_completed {
+            assert_eq!(
+                create_with_stock_policy(
+                    f.db.pool(),
+                    input(),
+                    None,
+                    None,
+                    PrescriptionDocumentation::default(),
+                    None,
+                    None
+                )
+                .await
+                .unwrap_err()
+                .downcast_ref::<PrescriptionCourseError>(),
+                Some(&PrescriptionCourseError::InvalidContext)
+            );
+            continue;
+        }
+        let saved = create_with_stock_policy(
             f.db.pool(),
             input(),
             None,
             None,
             PrescriptionDocumentation::default(),
             None,
-            None
+            None,
         )
-        .await
-        .unwrap_err()
-        .downcast_ref::<PrescriptionCourseError>(),
-        Some(&PrescriptionCourseError::InvalidContext)
-    );
-    sqlx::query("UPDATE encounters SET status='in_progress' WHERE id=$1")
-        .bind(encounter)
-        .execute(f.db.pool())
         .await
         .unwrap();
-    let saved = create_with_stock_policy(
-        f.db.pool(),
-        input(),
-        None,
-        None,
-        PrescriptionDocumentation::default(),
-        None,
-        None,
-    )
-    .await
-    .unwrap();
-    assert_eq!(saved.prescription.encounter_id, Some(encounter));
-    f.close().await;
-    // Canonical closure also completes its real discharge record. That terminal
-    // source is refused before the later inactive-admission stock fence.
-    assert_eq!(
-        create_with_stock_policy(
-            f.db.pool(),
-            input(),
-            None,
-            None,
-            PrescriptionDocumentation::default(),
-            None,
-            None
-        )
-        .await
-        .unwrap_err()
-        .downcast_ref::<PrescriptionCourseError>(),
-        Some(&PrescriptionCourseError::InvalidContext)
-    );
+        assert_eq!(saved.prescription.encounter_id, Some(encounter));
+        f.close().await;
+        // Canonical closure also completes its real discharge record. That terminal
+        // source is refused before the later inactive-admission stock fence.
+        assert_eq!(
+            create_with_stock_policy(
+                f.db.pool(),
+                input(),
+                None,
+                None,
+                PrescriptionDocumentation::default(),
+                None,
+                None
+            )
+            .await
+            .unwrap_err()
+            .downcast_ref::<PrescriptionCourseError>(),
+            Some(&PrescriptionCourseError::InvalidContext)
+        );
+    }
 }
+
 #[tokio::test]
 async fn manual_dispense_rejects_controlled_type_even_when_legacy_flag_is_false_without_moving_stock(
 ) {

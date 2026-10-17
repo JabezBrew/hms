@@ -302,3 +302,10 @@ Before cutover:
 - a successful production backup and a tested restore drill
 - `PUBLIC_HEALTHCHECK_MODE=required ops/compose-v2/deploy.sh` after DNS and
   Cloudflare proxy records resolve to the VPS
+
+Migration `202610170026` requires runtime epoch `202610170026`. It preserves referral
+consultation commands and bound encounter identity. The deployment lease, writer
+drain, read-only candidate probe and compatibility declaration prevent unsupported
+rollback to epoch025 or earlier after this migration commits. Older binaries are
+not assumed to recognize migrations introduced after their build. The new runtime
+refuses an epoch025 database before provisioning or readiness.

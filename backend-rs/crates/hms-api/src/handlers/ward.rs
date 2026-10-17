@@ -925,7 +925,8 @@ pub async fn get_admission_case(
         (status = 200, description = "Admission case created", body = ObjectResponse<AdmissionCaseListItem>),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Permission denied", body = ApiErrorResponse),
-        (status = 404, description = "Patient or ward not found", body = ApiErrorResponse)
+        (status = 404, description = "Patient or ward not found", body = ApiErrorResponse),
+        (status = 409, description = "Reviewed care context changed or requires its owning workflow", body = ApiErrorResponse)
     )
 )]
 pub async fn create_admission_case(

@@ -878,12 +878,19 @@ async fn encounter_detail_update_repository_stays_patient_and_facility_scoped() 
     );
     // Existing inpatient seeds use this historical spelling. Both detail reads
     // and the canonical completed filter must preserve that encounter.
-    sqlx::query("UPDATE encounters SET encounter_type='inpatient',status='finished' WHERE id=$1")
-        .bind(encounter.id)
+    // Establish imported historical evidence directly. Rewriting a previously
+    // completed episode into another stored terminal spelling would contradict
+    // its first outcome, which the lifecycle guard deliberately preserves.
+    let historical_id = uuid::Uuid::new_v4();
+    sqlx::query("INSERT INTO encounters(id,facility_id,patient_id,encounter_type,status,started_at,ended_at,created_by_user_id) VALUES($1,$2,$3,'inpatient','finished',clock_timestamp()-interval '1 day',clock_timestamp()-interval '23 hours',$4)")
+        .bind(historical_id)
+        .bind(facility_id)
+        .bind(patient_id)
+        .bind(owner_id)
         .execute(&pool)
         .await
         .unwrap();
-    let historical = hms_db::care::get_encounter(&pool, facility_id, encounter.id)
+    let historical = hms_db::care::get_encounter(&pool, facility_id, historical_id)
         .await
         .unwrap()
         .unwrap();
@@ -904,7 +911,7 @@ async fn encounter_detail_update_repository_stays_patient_and_facility_scoped() 
     .await
     .unwrap();
     assert_eq!(history.len(), 1);
-    assert_eq!(history[0].id, encounter.id);
+    assert_eq!(history[0].id, historical_id);
 }
 
 #[tokio::test]

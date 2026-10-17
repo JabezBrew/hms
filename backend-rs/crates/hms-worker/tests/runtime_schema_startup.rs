@@ -115,6 +115,11 @@ async fn actual_worker_refuses_023_before_serving() {
 }
 
 #[tokio::test]
-async fn actual_worker_refuses_024_and_serves_after_required_025() {
+async fn actual_worker_refuses_024_and_serves_after_required_schema() {
     refuses_before_serving_and_serves_required_schema(202610170025).await;
+}
+
+#[tokio::test]
+async fn actual_worker_refuses_025_and_serves_after_required_026() {
+    refuses_before_serving_and_serves_required_schema(202610170026).await;
 }

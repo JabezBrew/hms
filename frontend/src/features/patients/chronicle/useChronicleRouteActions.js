@@ -51,8 +51,8 @@ function handleChronicleRouteAction({
       openWardRoundMode();
     }
   } else if (action === 'consultation' || consultationParam === 'true') {
-    openChronicleWorkspace('consultation');
-    if (actionParam || consultationParam) clearQueryParams();
+    openChronicleWorkspace('consultation', { referralId: referralIdParam || null, explicitConsultationEntry: actionParam === 'consultation' });
+    if (actionParam || consultationParam || referralIdParam) clearQueryParams();
   } else if (action === 'discharge') {
     const admissionId = admissionParam
       || patient?.local_data?.current_admission_id

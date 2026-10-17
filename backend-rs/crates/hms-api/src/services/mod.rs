@@ -15,6 +15,7 @@ pub mod network;
 pub mod ops;
 pub mod patients;
 pub mod pharmacy;
+pub mod referral_consultations;
 pub mod referrals;
 pub mod scheduling;
 pub mod ward;

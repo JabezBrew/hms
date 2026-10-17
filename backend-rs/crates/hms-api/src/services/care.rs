@@ -1162,14 +1162,17 @@ impl CareService {
         permission: PermissionCode,
     ) -> Result<ObjectResponse<VisitListItem>, ApiError> {
         require_action_permission(ctx, self.facility_id(), permission)?;
-        let _visit = load_visit_for_access(&self.state, ctx, visit_id).await?;
-        let updated =
-            hms_db::care::update_visit_status(self.pool(), self.facility_id(), visit_id, status)
-                .await
-                .map_err(|_| {
-                    ApiError::conflict("visit_update_failed", "Visit could not be updated.")
-                })?
-                .ok_or_else(|| ApiError::not_found("visit_not_found", "Visit was not found."))?;
+        let visit = load_visit_for_access(&self.state, ctx, visit_id).await?;
+        let updated = hms_db::care::lifecycle::update_visit_status_authorized(
+            self.pool(),
+            care_actor(ctx, permission)?,
+            visit.patient_id,
+            visit_id,
+            status,
+        )
+        .await
+        .map_err(care_lifecycle_write_error)?
+        .ok_or_else(|| ApiError::not_found("visit_not_found", "Visit was not found."))?;
 
         Ok(object(updated))
     }
@@ -1390,8 +1393,9 @@ impl CareService {
                 ));
             }
         }
-        let encounter = hms_db::care::create_encounter(
+        let encounter = hms_db::care::lifecycle::create_encounter_authorized(
             self.pool(),
+            care_actor(ctx, PermissionCode::EncounterManage)?,
             NewEncounter {
                 id: Uuid::new_v4(),
                 facility_id: self.facility_id(),
@@ -1402,9 +1406,7 @@ impl CareService {
             },
         )
         .await
-        .map_err(|_| {
-            ApiError::conflict("encounter_create_failed", "Encounter could not be created.")
-        })?;
+        .map_err(care_lifecycle_write_error)?;
 
         self.state.invalidate_patient_chronicle_cache();
         Ok(object(encounter))
@@ -1446,8 +1448,9 @@ impl CareService {
             }
         }
 
-        let updated = hms_db::care::update_encounter(
+        let updated = hms_db::care::lifecycle::update_encounter_authorized(
             self.pool(),
+            care_actor(ctx, PermissionCode::EncounterManage)?,
             EncounterUpdate {
                 id,
                 facility_id: self.facility_id(),
@@ -1457,9 +1460,7 @@ impl CareService {
             },
         )
         .await
-        .map_err(|_| {
-            ApiError::conflict("encounter_update_failed", "Encounter could not be updated.")
-        })?
+        .map_err(care_lifecycle_write_error)?
         .ok_or_else(|| {
             ApiError::conflict(
                 "encounter_update_not_allowed",
@@ -1565,16 +1566,14 @@ impl CareService {
             PermissionCode::EncounterManage,
         )
         .await?;
-        let updated = hms_db::care::update_encounter_status(
+        let updated = hms_db::care::lifecycle::terminal_encounter_authorized(
             self.pool(),
-            self.facility_id(),
+            care_actor(ctx, PermissionCode::EncounterManage)?,
             encounter_id,
             status,
         )
         .await
-        .map_err(|_| {
-            ApiError::conflict("encounter_update_failed", "Encounter could not be updated.")
-        })?
+        .map_err(care_lifecycle_write_error)?
         .ok_or_else(|| ApiError::not_found("encounter_not_found", "Encounter was not found."))?;
 
         self.state.invalidate_patient_chronicle_cache();
@@ -1819,16 +1818,14 @@ async fn load_patient_for_intake(
     care_area: &'static str,
 ) -> Result<PatientRecord, ApiError> {
     let patient = load_patient_for_access(state, ctx, patient_id).await?;
+    if patient.vital_status == PatientVitalStatus::Deceased {
+        return Err(ApiError::conflict(
+            "patient_deceased_intake_blocked",
+            "Deceased patient records cannot be used for normal intake.",
+        ));
+    }
     match patient.record_status {
-        PatientRecordStatus::Registered => {
-            if patient.vital_status == PatientVitalStatus::Deceased {
-                return Err(ApiError::conflict(
-                    "patient_deceased_intake_blocked",
-                    "Deceased patient records cannot be used for normal intake.",
-                ));
-            }
-            Ok(patient)
-        }
+        PatientRecordStatus::Registered => Ok(patient),
         PatientRecordStatus::Restricted => {
             let Some(override_reason) = restricted_override else {
                 return Err(ApiError::conflict(
@@ -1878,7 +1875,7 @@ async fn load_patient_for_intake(
     }
 }
 
-fn normalize_record_override_reason_code(reason_code: &str) -> Result<String, ApiError> {
+pub(crate) fn normalize_record_override_reason_code(reason_code: &str) -> Result<String, ApiError> {
     let reason_code = reason_code.trim();
     if reason_code.is_empty() || reason_code.len() > 64 {
         return Err(ApiError::bad_request(
@@ -1889,7 +1886,7 @@ fn normalize_record_override_reason_code(reason_code: &str) -> Result<String, Ap
     Ok(reason_code.to_owned())
 }
 
-fn normalize_record_override_reason_note(
+pub(crate) fn normalize_record_override_reason_note(
     reason_note: Option<&str>,
 ) -> Result<Option<String>, ApiError> {
     let Some(reason_note) = reason_note.map(str::trim).filter(|value| !value.is_empty()) else {
@@ -2031,4 +2028,50 @@ where
 
 fn encode_cursor(occurred_at: DateTime<Utc>, id: Uuid) -> String {
     cursor_list::encode_cursor(occurred_at, id)
+}
+
+pub(crate) fn care_actor(
+    ctx: &hms_access::RequestContext,
+    permission: PermissionCode,
+) -> Result<hms_db::care::lifecycle::CareActor, ApiError> {
+    let deadline = ctx.authorization_deadline.ok_or_else(|| {
+        ApiError::forbidden(
+            "care_authorization_expired",
+            "Current care authority is required.",
+        )
+    })?;
+    Ok(hms_db::care::lifecycle::CareActor {
+        identity: hms_db::clinical::prescription_courses::PrescriptionActor {
+            facility_id: ctx.facility_id,
+            user_id: ctx.user_id,
+            request_id: Some(ctx.request_id.clone()),
+            authorization: Some(
+                crate::services::clinical::prescription_courses::authorization(ctx, deadline),
+            ),
+        },
+        permission,
+        feature: match permission {
+            PermissionCode::AppointmentManage => hms_domain::deployment::FeatureKey::Appointments,
+            PermissionCode::AdmissionManage => hms_domain::deployment::FeatureKey::Admissions,
+            _ => hms_domain::deployment::FeatureKey::Encounters,
+        },
+    })
+}
+
+fn care_lifecycle_write_error(error: anyhow::Error) -> ApiError {
+    use hms_db::care::lifecycle::CareLifecycleError as E;
+    if let Some(error) = ApiError::network_publication(&error) {
+        return error;
+    }
+    match error.downcast_ref::<E>() {
+        Some(E::Unavailable) => ApiError::forbidden("care_authorization_expired", "Current care authority is required."),
+        Some(E::NotFound) => ApiError::not_found("care_context_not_found", "The selected care context was not found."),
+        Some(E::IdentityBound) => ApiError::conflict("encounter_identity_bound", "This encounter is linked to a recorded care journey. Its identity cannot be changed."),
+        Some(E::WorkflowRequired) => ApiError::conflict("encounter_admission_workflow_required", "Complete the admission workflow to close its encounter."),
+        Some(E::TerminalConflict) => ApiError::conflict("encounter_terminal_conflict", "The encounter already has a different final outcome."),
+        Some(E::ContextChanged) => ApiError::conflict("care_context_changed", "The selected care context changed. Refresh before continuing."),
+        Some(E::VisitUnavailable) => ApiError::conflict("visit_not_available_for_consultation", "The selected visit cannot start a consultation in its current state."),
+        Some(E::Busy) => ApiError::conflict("care_context_busy", "The selected care context is changing. Refresh before continuing."),
+        None => ApiError::conflict("encounter_write_unconfirmed", "The encounter outcome could not be confirmed. Refresh and review the saved encounter before another change."),
+    }
 }

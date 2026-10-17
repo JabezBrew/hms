@@ -58,7 +58,7 @@ const references = async (...values) => Promise.all([...values.reduce((found, va
 async function admissionScope(request) {
   const path = String(request.resolvedPath).split('?')[0];
   if (path.includes('/referrals/')) {
-    try { return (await import('./referralWriteScopes')).classifyReferralResponseWriteScope(path); }
+    try { return (await import('./referralWriteScopes')).classifyReferralWriteScope(path); }
     catch { throw error('write_review_check_unavailable'); }
   }
   if (!path.includes('/chronicle/admissions/') && !path.endsWith('/chronicle/admission-advisory-cases')) return null;
@@ -150,8 +150,8 @@ function manualStore() {
 }
 // Deliberately narrow manual recovery; its lazy protocol accepts only actual
 // transport-stamped current referral reads and an explicit separate gesture.
-export async function referralResponseManualReview(action, input) {
-  return (await import('./referralWriteScopes')).referralManualProtocol(action, input, manualStore());
+export async function referralResponseManualReview(action, input, protocol = 'response') {
+  return (await import('./referralWriteScopes')).referralManualProtocol(action, input, manualStore(), protocol);
 }
 export async function admissionMoveManualReview(action, input) {
   return (await import('./moveWriteScopes')).moveManualProtocol(action, input, manualStore());

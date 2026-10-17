@@ -13,6 +13,8 @@ use uuid::Uuid;
 use crate::codec;
 use crate::PgPool;
 
+pub mod lifecycle;
+
 #[derive(Clone, Debug)]
 pub struct CareCursor {
     pub occurred_at: DateTime<Utc>,
@@ -1752,6 +1754,45 @@ pub async fn get_visit(
     row.map(visit_from_row).transpose()
 }
 
+async fn visit_by_id_tx(
+    tx: &mut sqlx::Transaction<'_, Postgres>,
+    facility_id: Uuid,
+    visit_id: Uuid,
+) -> anyhow::Result<Option<VisitListItem>> {
+    let row = sqlx::query_as::<_, VisitRow>(
+        r#"
+        SELECT visits.id,
+               visits.patient_id,
+               patients.patient_code,
+               patients.first_name || ' ' || patients.last_name AS patient_display_name,
+               visits.appointment_id,
+               encounter_scope.id AS encounter_id,
+               visits.clinic_id,
+               visits.status,
+               visits.checked_in_at
+        FROM visits
+        JOIN patients ON patients.id = visits.patient_id
+        LEFT JOIN LATERAL (
+            SELECT encounters.id
+            FROM encounters
+            WHERE encounters.facility_id = visits.facility_id
+              AND encounters.visit_id = visits.id
+            ORDER BY encounters.started_at DESC, encounters.id DESC
+            LIMIT 1
+        ) AS encounter_scope ON TRUE
+        WHERE visits.facility_id = $1
+          AND patients.facility_id = $1
+          AND visits.id = $2
+        "#,
+    )
+    .bind(facility_id)
+    .bind(visit_id)
+    .fetch_optional(&mut **tx)
+    .await?;
+
+    row.map(visit_from_row).transpose()
+}
+
 pub async fn check_in_visit(pool: &PgPool, visit: NewVisit) -> anyhow::Result<VisitListItem> {
     let clinic_id = resolve_visit_clinic_id(pool, visit.facility_id, visit.clinic_id).await?;
     let mut transaction = pool.begin().await?;
@@ -1841,6 +1882,18 @@ pub async fn update_visit_status(
     visit_id: Uuid,
     status: VisitStatus,
 ) -> anyhow::Result<Option<VisitListItem>> {
+    let mut tx = pool.begin().await?;
+    let result = update_visit_status_tx(&mut tx, facility_id, visit_id, status).await?;
+    tx.commit().await?;
+    Ok(result)
+}
+
+async fn update_visit_status_tx(
+    tx: &mut sqlx::Transaction<'_, Postgres>,
+    facility_id: Uuid,
+    visit_id: Uuid,
+    status: VisitStatus,
+) -> anyhow::Result<Option<VisitListItem>> {
     let status_code = codec::encode(status)?;
     let timestamp_column = match status {
         VisitStatus::Called => "called_at",
@@ -1900,7 +1953,7 @@ pub async fn update_visit_status(
         .bind(status_code)
         .bind(facility_id)
         .bind(visit_id)
-        .fetch_optional(pool)
+        .fetch_optional(&mut **tx)
         .await?;
 
     row.map(visit_from_row).transpose()
@@ -2591,133 +2644,24 @@ pub async fn create_encounter(
     pool: &PgPool,
     encounter: NewEncounter,
 ) -> anyhow::Result<EncounterListItem> {
-    let mut transaction = pool.begin().await?;
-    let row = sqlx::query_as::<_, EncounterRow>(
-        r#"
-        WITH inserted AS (
-            INSERT INTO encounters (
-                id,
-                facility_id,
-                patient_id,
-                visit_id,
-                encounter_type,
-                status,
-                created_by_user_id
-            )
-            VALUES ($1, $2, $3, $4, $5, $6, $7)
-            RETURNING id,
-                      patient_id,
-                      visit_id,
-                      encounter_type,
-                      status,
-                      started_at,
-                      ended_at
-        )
-        SELECT inserted.id,
-               inserted.patient_id,
-               patients.patient_code,
-               patients.first_name || ' ' || patients.last_name AS patient_display_name,
-               inserted.visit_id,
-               inserted.encounter_type,
-               inserted.status,
-               inserted.started_at,
-               inserted.ended_at
-        FROM inserted
-        JOIN patients ON patients.id = inserted.patient_id
-        "#,
-    )
-    .bind(encounter.id)
-    .bind(encounter.facility_id)
-    .bind(encounter.patient_id)
-    .bind(encounter.visit_id)
-    .bind(codec::encode(encounter.encounter_type)?)
-    .bind(codec::encode(EncounterStatus::InProgress)?)
-    .bind(encounter.created_by_user_id)
-    .fetch_one(&mut *transaction)
-    .await?;
-
-    if let Some(visit_id) = encounter.visit_id {
-        sqlx::query(
-            r#"
-            UPDATE visits
-            SET status = $1,
-                consultation_started_at = COALESCE(consultation_started_at, now()),
-                updated_at = now()
-            WHERE facility_id = $2
-              AND id = $3
-              AND patient_id = $4
-            "#,
-        )
-        .bind(codec::encode(VisitStatus::InConsultation)?)
-        .bind(encounter.facility_id)
-        .bind(visit_id)
-        .bind(encounter.patient_id)
-        .execute(&mut *transaction)
-        .await?;
-    }
-
-    transaction.commit().await?;
-    encounter_from_row(row)
+    lifecycle::create_encounter(pool, None, encounter).await
 }
 
 pub async fn update_encounter(
     pool: &PgPool,
     encounter: EncounterUpdate,
 ) -> anyhow::Result<Option<EncounterListItem>> {
-    let row = sqlx::query_as::<_, EncounterRow>(
-        r#"
-        WITH updated AS (
-            UPDATE encounters
-            SET visit_id = COALESCE($3, visit_id),
-                encounter_type = COALESCE($4, encounter_type),
-                updated_at = now()
-            WHERE facility_id = $1
-              AND id = $2
-              AND status = 'in_progress'
-              AND (
-                  $3::uuid IS NULL
-                  OR EXISTS (
-                      SELECT 1
-                      FROM visits
-                      WHERE visits.facility_id = $1
-                        AND visits.id = $3
-                        AND visits.patient_id = encounters.patient_id
-                  )
-              )
-            RETURNING id,
-                      patient_id,
-                      visit_id,
-                      encounter_type,
-                      status,
-                      started_at,
-                      ended_at
-        )
-        SELECT updated.id,
-               updated.patient_id,
-               patients.patient_code,
-               patients.first_name || ' ' || patients.last_name AS patient_display_name,
-               updated.visit_id,
-               updated.encounter_type,
-               updated.status,
-               updated.started_at,
-               updated.ended_at
-        FROM updated
-        JOIN patients ON patients.id = updated.patient_id
-        WHERE patients.facility_id = $1
-        "#,
-    )
-    .bind(encounter.facility_id)
-    .bind(encounter.id)
-    .bind(encounter.visit_id)
-    .bind(match encounter.encounter_type {
-        Some(encounter_type) => Some(codec::encode(encounter_type)?),
-        None => None,
-    })
-    .fetch_optional(pool)
-    .await?;
-
-    let _ = encounter.actor_user_id;
-    row.map(encounter_from_row).transpose()
+    match lifecycle::update_encounter(pool, None, encounter).await {
+        // Preserve the existing trusted repository return contract. HTTP uses
+        // the authorized command and its definite typed terminal conflict.
+        Err(error)
+            if error.downcast_ref::<lifecycle::CareLifecycleError>()
+                == Some(&lifecycle::CareLifecycleError::TerminalConflict) =>
+        {
+            Ok(None)
+        }
+        result => result,
+    }
 }
 
 pub async fn update_encounter_status(
@@ -2726,44 +2670,7 @@ pub async fn update_encounter_status(
     encounter_id: Uuid,
     status: EncounterStatus,
 ) -> anyhow::Result<Option<EncounterListItem>> {
-    let row = sqlx::query_as::<_, EncounterRow>(
-        r#"
-        WITH updated AS (
-            UPDATE encounters
-            SET status = $1,
-                ended_at = COALESCE(ended_at, now()),
-                updated_at = now()
-            WHERE facility_id = $2
-              AND id = $3
-            RETURNING id,
-                      patient_id,
-                      visit_id,
-                      encounter_type,
-                      status,
-                      started_at,
-                      ended_at
-        )
-        SELECT updated.id,
-               updated.patient_id,
-               patients.patient_code,
-               patients.first_name || ' ' || patients.last_name AS patient_display_name,
-               updated.visit_id,
-               updated.encounter_type,
-               updated.status,
-               updated.started_at,
-               updated.ended_at
-        FROM updated
-        JOIN patients ON patients.id = updated.patient_id
-        WHERE patients.facility_id = $2
-        "#,
-    )
-    .bind(codec::encode(status)?)
-    .bind(facility_id)
-    .bind(encounter_id)
-    .fetch_optional(pool)
-    .await?;
-
-    row.map(encounter_from_row).transpose()
+    lifecycle::terminal_encounter(pool, None, facility_id, encounter_id, status).await
 }
 
 pub async fn list_care_team_assignments(

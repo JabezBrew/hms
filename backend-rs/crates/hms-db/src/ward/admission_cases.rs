@@ -270,6 +270,53 @@ pub async fn create_admission_case(
     pool: &PgPool,
     admission: NewAdmissionCase,
 ) -> anyhow::Result<AdmissionCaseListItem> {
+    create_admission_case_inner(pool, admission, None).await
+}
+
+pub async fn create_admission_case_authorized(
+    pool: &PgPool,
+    admission: NewAdmissionCase,
+    actor: crate::care::lifecycle::CareActor,
+) -> anyhow::Result<AdmissionCaseListItem> {
+    crate::care::lifecycle::purpose(
+        &actor,
+        hms_domain::deployment::PermissionCode::AdmissionManage,
+        hms_domain::deployment::FeatureKey::Admissions,
+    )?;
+    if actor.identity.facility_id != admission.facility_id
+        || actor.identity.user_id != admission.actor_user_id
+    {
+        return Err(crate::care::lifecycle::CareLifecycleError::Unavailable.into());
+    }
+    create_admission_case_inner(pool, admission, Some(actor)).await
+}
+
+async fn create_admission_case_inner(
+    pool: &PgPool,
+    admission: NewAdmissionCase,
+    mut actor: Option<crate::care::lifecycle::CareActor>,
+) -> anyhow::Result<AdmissionCaseListItem> {
+    let mut transaction = pool.begin().await?;
+    if let Some(actor) = actor.as_mut() {
+        crate::care::lifecycle::authority_tx(&mut transaction, actor).await?;
+    }
+    crate::care::lifecycle::local_patient_tx(
+        &mut transaction,
+        admission.facility_id,
+        admission.patient_id,
+    )
+    .await?;
+    let (encounter_id, visit_id) = crate::care::lifecycle::lock_admission_context_tx(
+        &mut transaction,
+        admission.facility_id,
+        admission.patient_id,
+        admission.encounter_id,
+        admission.visit_id,
+    )
+    .await?;
+    if let Some(actor) = actor.as_ref() {
+        crate::care::lifecycle::deadline_tx(&mut transaction, actor).await?;
+    }
     let inserted = observe_db_query(
         "ward.admission_cases.create",
         sqlx::query_scalar::<_, Uuid>(
@@ -307,16 +354,33 @@ pub async fn create_admission_case(
         .bind(admission.facility_id)
         .bind(admission.patient_id)
         .bind(admission.ward_id)
-        .bind(admission.encounter_id)
-        .bind(admission.visit_id)
+        .bind(encounter_id)
+        .bind(visit_id)
         .bind(codec::encode(AdmissionStatus::ReadyForActivation)?)
         .bind(admission.actor_user_id)
-        .fetch_optional(pool),
+        .fetch_optional(&mut *transaction),
     )
     .await?
-    .ok_or_else(|| anyhow::anyhow!("patient or ward not found for admission case"))?;
+    .ok_or(crate::care::lifecycle::CareLifecycleError::ContextChanged)?;
 
-    admission_case_by_id(pool, admission.facility_id, inserted).await
+    let mut result_query = admission_case_query();
+    result_query.push(" WHERE admission_cases.facility_id = ");
+    result_query.push_bind(admission.facility_id);
+    result_query.push(" AND admission_cases.id = ");
+    result_query.push_bind(inserted);
+    let result = observe_db_query(
+        "ward.admission_cases.create_result",
+        result_query
+            .build_query_as::<AdmissionCaseRow>()
+            .fetch_one(&mut *transaction),
+    )
+    .await?;
+    let result = admission_case_from_row(result)?;
+    if let Some(actor) = actor.as_ref() {
+        crate::care::lifecycle::deadline_tx(&mut transaction, actor).await?;
+    }
+    transaction.commit().await?;
+    Ok(result)
 }
 
 pub async fn reserve_admission_bed(
@@ -1602,16 +1666,6 @@ async fn ward_board_item_by_admission(
     get_ward_board_admission(pool, facility_id, admission_id)
         .await?
         .ok_or_else(|| anyhow::anyhow!("ward board admission was not found after write"))
-}
-
-async fn admission_case_by_id(
-    pool: &PgPool,
-    facility_id: Uuid,
-    admission_case_id: Uuid,
-) -> anyhow::Result<AdmissionCaseListItem> {
-    optional_admission_case_by_id(pool, facility_id, admission_case_id)
-        .await?
-        .ok_or_else(|| anyhow::anyhow!("admission case was not found after write"))
 }
 
 async fn optional_admission_case_by_id(

@@ -19,6 +19,7 @@ pub mod patients;
 pub mod pharmacy;
 pub mod pool;
 pub mod provision;
+pub mod referral_consultations;
 pub mod referrals;
 pub mod scheduling;
 pub mod schema_compatibility;

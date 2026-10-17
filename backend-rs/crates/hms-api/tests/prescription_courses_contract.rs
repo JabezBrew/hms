@@ -395,6 +395,10 @@ async fn assert_expiring_prescribing_grant_cannot_finish(kind: WaitingWrite) {
     grant_test_permission(&app, limited, PermissionCode::PatientDemographicsView).await;
     grant_test_patient_visibility(&app, limited, PatientDataVisibility::Demographics).await;
     grant_test_patient_visibility(&app, limited, PatientDataVisibility::FullClinical).await;
+    // Complete first credential/password setup before the short clinical grant.
+    // The fresh login after the grant still binds its current permission version.
+    enroll_test_passkey(&app, limited).await;
+    let _ = login(app.clone(), "limited@hms.local").await;
     let expires: chrono::DateTime<Utc> =
         sqlx::query_scalar("SELECT clock_timestamp()+interval '4 seconds'")
             .fetch_one(&pool)

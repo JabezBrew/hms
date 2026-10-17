@@ -30785,6 +30785,145 @@
         ],
         "type": "object"
       },
+      "ObjectResponse_ReferralConsultationContext": {
+        "properties": {
+          "data": {
+            "properties": {
+              "can_issue_start_command": {
+                "type": "boolean"
+              },
+              "can_override_restricted_record": {
+                "type": "boolean"
+              },
+              "can_resume": {
+                "type": "boolean"
+              },
+              "can_start": {
+                "type": "boolean"
+              },
+              "context_token": {
+                "type": "string"
+              },
+              "current_linked_encounter": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/ReferralConsultationEncounter"
+                  }
+                ]
+              },
+              "link": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/ReferralConsultationStart"
+                  }
+                ]
+              },
+              "link_version": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "patient": {
+                "$ref": "#/components/schemas/ReferralConsultationPatient"
+              },
+              "patient_id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "referral": {
+                "$ref": "#/components/schemas/ReferralConsultationReferral"
+              },
+              "referral_id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "selection": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/ReferralConsultationSelection"
+                  }
+                ]
+              },
+              "unavailable_reason": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "patient",
+              "patient_id",
+              "referral_id",
+              "referral",
+              "link_version",
+              "context_token",
+              "can_start",
+              "can_resume",
+              "can_issue_start_command",
+              "can_override_restricted_record"
+            ],
+            "type": "object"
+          },
+          "meta": {}
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "type": "object"
+      },
+      "ObjectResponse_ReferralConsultationStartReceipt": {
+        "properties": {
+          "data": {
+            "properties": {
+              "client_request_id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "input_digest": {
+                "type": "string"
+              },
+              "link": {
+                "$ref": "#/components/schemas/ReferralConsultationStart"
+              },
+              "recorded_at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "replayed": {
+                "type": "boolean"
+              },
+              "reviewed_input": {
+                "$ref": "#/components/schemas/ReferralConsultationReviewedInput"
+              }
+            },
+            "required": [
+              "client_request_id",
+              "replayed",
+              "recorded_at",
+              "input_digest",
+              "reviewed_input",
+              "link"
+            ],
+            "type": "object"
+          },
+          "meta": {}
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "type": "object"
+      },
       "ObjectResponse_ReferralListItem": {
         "properties": {
           "data": {
@@ -34983,6 +35122,13 @@
           },
           "status": {
             "type": "string"
+          },
+          "visit_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "required": [
@@ -39092,6 +39238,787 @@
         },
         "required": [
           "codes"
+        ],
+        "type": "object"
+      },
+      "ReferralConsultationAdmission": {
+        "properties": {
+          "admitted_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "encounter_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "placement_revision": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "status": {
+            "$ref": "#/components/schemas/AdmissionStatus"
+          },
+          "visit_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "ward_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "ward_name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "encounter_id",
+          "status",
+          "admitted_at",
+          "placement_revision",
+          "ward_id",
+          "ward_name"
+        ],
+        "type": "object"
+      },
+      "ReferralConsultationAppointment": {
+        "properties": {
+          "clinic_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "ends_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "practitioner_user_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "starts_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/AppointmentStatus"
+          }
+        },
+        "required": [
+          "id",
+          "status",
+          "starts_at",
+          "ends_at"
+        ],
+        "type": "object"
+      },
+      "ReferralConsultationContext": {
+        "properties": {
+          "can_issue_start_command": {
+            "type": "boolean"
+          },
+          "can_override_restricted_record": {
+            "type": "boolean"
+          },
+          "can_resume": {
+            "type": "boolean"
+          },
+          "can_start": {
+            "type": "boolean"
+          },
+          "context_token": {
+            "type": "string"
+          },
+          "current_linked_encounter": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ReferralConsultationEncounter"
+              }
+            ]
+          },
+          "link": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ReferralConsultationStart"
+              }
+            ]
+          },
+          "link_version": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "patient": {
+            "$ref": "#/components/schemas/ReferralConsultationPatient"
+          },
+          "patient_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "referral": {
+            "$ref": "#/components/schemas/ReferralConsultationReferral"
+          },
+          "referral_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "selection": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ReferralConsultationSelection"
+              }
+            ]
+          },
+          "unavailable_reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "patient",
+          "patient_id",
+          "referral_id",
+          "referral",
+          "link_version",
+          "context_token",
+          "can_start",
+          "can_resume",
+          "can_issue_start_command",
+          "can_override_restricted_record"
+        ],
+        "type": "object"
+      },
+      "ReferralConsultationContextQuery": {
+        "additionalProperties": false,
+        "properties": {
+          "admission_case_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "encounter_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "mode": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "visit_choice": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "visit_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "ReferralConsultationEncounter": {
+        "properties": {
+          "encounter_type": {
+            "$ref": "#/components/schemas/EncounterType"
+          },
+          "ended_at": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "patient_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "started_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/EncounterStatus"
+          },
+          "visit_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "patient_id",
+          "encounter_type",
+          "status",
+          "started_at"
+        ],
+        "type": "object"
+      },
+      "ReferralConsultationOverride": {
+        "additionalProperties": false,
+        "properties": {
+          "reason_code": {
+            "type": "string"
+          },
+          "reason_note": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "reason_code"
+        ],
+        "type": "object"
+      },
+      "ReferralConsultationOverrideEvidence": {
+        "additionalProperties": false,
+        "properties": {
+          "reason_code": {
+            "type": "string"
+          },
+          "reason_note_present": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "reason_code",
+          "reason_note_present"
+        ],
+        "type": "object"
+      },
+      "ReferralConsultationPatient": {
+        "properties": {
+          "display_name": {
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "patient_code": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "display_name",
+          "patient_code"
+        ],
+        "type": "object"
+      },
+      "ReferralConsultationReferral": {
+        "properties": {
+          "priority": {
+            "$ref": "#/components/schemas/ReferralPriority"
+          },
+          "scheduled_appointment_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "$ref": "#/components/schemas/ReferralStatus"
+          },
+          "to_service": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "to_service",
+          "priority"
+        ],
+        "type": "object"
+      },
+      "ReferralConsultationReviewedInput": {
+        "additionalProperties": false,
+        "properties": {
+          "client_request_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "expected_context_token": {
+            "type": "string"
+          },
+          "expected_link_version": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "restricted_record_override": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ReferralConsultationOverrideEvidence"
+              }
+            ]
+          },
+          "source": {
+            "$ref": "#/components/schemas/ReferralConsultationSource"
+          }
+        },
+        "required": [
+          "client_request_id",
+          "expected_link_version",
+          "expected_context_token",
+          "source"
+        ],
+        "type": "object"
+      },
+      "ReferralConsultationSelection": {
+        "properties": {
+          "admission": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ReferralConsultationAdmission"
+              }
+            ]
+          },
+          "appointment": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ReferralConsultationAppointment"
+              }
+            ]
+          },
+          "encounter": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ReferralConsultationEncounter"
+              }
+            ]
+          },
+          "restricted_override_required": {
+            "type": "boolean"
+          },
+          "source": {
+            "$ref": "#/components/schemas/ReferralConsultationSource"
+          },
+          "visit": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ReferralConsultationVisit"
+              }
+            ]
+          }
+        },
+        "required": [
+          "source",
+          "restricted_override_required"
+        ],
+        "type": "object"
+      },
+      "ReferralConsultationSource": {
+        "oneOf": [
+          {
+            "properties": {
+              "mode": {
+                "enum": [
+                  "new_outpatient"
+                ],
+                "type": "string"
+              },
+              "visit": {
+                "$ref": "#/components/schemas/ReferralConsultationVisitChoice"
+              }
+            },
+            "required": [
+              "visit",
+              "mode"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "admission_case_id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "encounter_id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "mode": {
+                "enum": [
+                  "existing_admission_encounter"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "admission_case_id",
+              "encounter_id",
+              "mode"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "ReferralConsultationStart": {
+        "properties": {
+          "admission_admitted_at": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "admission_case_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "admission_placement_revision_at_start": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "appointment_at_start": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ReferralConsultationAppointment"
+              }
+            ]
+          },
+          "encounter_created": {
+            "type": "boolean"
+          },
+          "encounter_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "encounter_started_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "encounter_status_at_start": {
+            "$ref": "#/components/schemas/EncounterStatus"
+          },
+          "encounter_type": {
+            "$ref": "#/components/schemas/EncounterType"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "link_version": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "patient_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "recorded_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "recorded_by_display_name": {
+            "type": "string"
+          },
+          "recorded_by_practitioner_profile_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "recorded_by_user_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "referral_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "resulting_referral_status": {
+            "$ref": "#/components/schemas/ReferralStatus"
+          },
+          "scheduled_appointment_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "source_mode": {
+            "type": "string"
+          },
+          "source_referral_status": {
+            "$ref": "#/components/schemas/ReferralStatus"
+          },
+          "visit_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "visit_transition": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ReferralConsultationVisitTransition"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "patient_id",
+          "referral_id",
+          "link_version",
+          "source_mode",
+          "encounter_id",
+          "encounter_created",
+          "encounter_type",
+          "encounter_status_at_start",
+          "encounter_started_at",
+          "source_referral_status",
+          "resulting_referral_status",
+          "recorded_by_user_id",
+          "recorded_by_practitioner_profile_id",
+          "recorded_by_display_name",
+          "recorded_at"
+        ],
+        "type": "object"
+      },
+      "ReferralConsultationStartReceipt": {
+        "properties": {
+          "client_request_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "input_digest": {
+            "type": "string"
+          },
+          "link": {
+            "$ref": "#/components/schemas/ReferralConsultationStart"
+          },
+          "recorded_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "replayed": {
+            "type": "boolean"
+          },
+          "reviewed_input": {
+            "$ref": "#/components/schemas/ReferralConsultationReviewedInput"
+          }
+        },
+        "required": [
+          "client_request_id",
+          "replayed",
+          "recorded_at",
+          "input_digest",
+          "reviewed_input",
+          "link"
+        ],
+        "type": "object"
+      },
+      "ReferralConsultationStartRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "client_request_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "expected_context_token": {
+            "type": "string"
+          },
+          "expected_link_version": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "restricted_record_override": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ReferralConsultationOverride"
+              }
+            ]
+          },
+          "source": {
+            "$ref": "#/components/schemas/ReferralConsultationSource"
+          }
+        },
+        "required": [
+          "client_request_id",
+          "expected_link_version",
+          "expected_context_token",
+          "source"
+        ],
+        "type": "object"
+      },
+      "ReferralConsultationVisit": {
+        "properties": {
+          "appointment_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "checked_in_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "clinic_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "consultation_started_at": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "patient_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/VisitStatus"
+          }
+        },
+        "required": [
+          "id",
+          "patient_id",
+          "status",
+          "checked_in_at"
+        ],
+        "type": "object"
+      },
+      "ReferralConsultationVisitChoice": {
+        "oneOf": [
+          {
+            "properties": {
+              "choice": {
+                "enum": [
+                  "no_visit"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "choice"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "choice": {
+                "enum": [
+                  "existing_visit"
+                ],
+                "type": "string"
+              },
+              "visit_id": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "visit_id",
+              "choice"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "ReferralConsultationVisitTransition": {
+        "properties": {
+          "after_status": {
+            "$ref": "#/components/schemas/VisitStatus"
+          },
+          "before_status": {
+            "$ref": "#/components/schemas/VisitStatus"
+          },
+          "visit_id": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "visit_id",
+          "before_status",
+          "after_status"
         ],
         "type": "object"
       },
@@ -49287,6 +50214,16 @@
               }
             },
             "description": "Patient or ward not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Reviewed care context changed or requires its owning workflow"
           }
         },
         "security": [
@@ -58994,6 +59931,16 @@
               }
             },
             "description": "Permission denied"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Reviewed care context changed or requires its owning workflow"
           }
         },
         "security": [
@@ -59278,6 +60225,16 @@
               }
             },
             "description": "Encounter not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Reviewed care context changed or requires its owning workflow"
           }
         },
         "security": [
@@ -59487,6 +60444,16 @@
               }
             },
             "description": "Encounter not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Reviewed care context changed or requires its owning workflow"
           }
         },
         "security": [
@@ -78914,6 +79881,368 @@
         ]
       }
     },
+    "/api/v2/patients/{patient_id}/referrals/{referral_id}/consultation": {
+      "get": {
+        "operationId": "getReferralConsultationContext",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "patient_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "referral_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "mode",
+            "required": true,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "path",
+            "name": "visit_choice",
+            "required": true,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "path",
+            "name": "visit_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "path",
+            "name": "admission_case_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "path",
+            "name": "encounter_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_ReferralConsultationContext"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "referrals"
+        ]
+      }
+    },
+    "/api/v2/patients/{patient_id}/referrals/{referral_id}/consultation/requests/{request_id}": {
+      "get": {
+        "operationId": "getReferralConsultationRequestReceipt",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "patient_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "referral_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_ReferralConsultationStartReceipt"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "referrals"
+        ]
+      }
+    },
+    "/api/v2/patients/{patient_id}/referrals/{referral_id}/consultation/start": {
+      "post": {
+        "operationId": "startReferralConsultation",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "patient_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "referral_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReferralConsultationStartRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_ReferralConsultationStartReceipt"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "referrals"
+        ]
+      }
+    },
     "/api/v2/patients/{patient_id}/referrals/{referral_id}/response": {
       "get": {
         "operationId": "getReferralResponseContext",
@@ -84239,6 +85568,16 @@
               }
             },
             "description": "Visit not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Reviewed care context changed or requires its owning workflow"
           }
         },
         "security": [
