@@ -89,13 +89,13 @@ async fn referrals_sla_and_waitlist_are_facility_scoped() {
     .expect("referral complete query succeeds")
     .expect("referral exists");
     assert_eq!(completed.status, ReferralStatus::Completed);
-    assert_eq!(
-        completed.specialist_notes.as_deref(),
-        Some("Specialist review completed")
+    assert!(
+        completed.specialist_notes.is_none(),
+        "legacy operational DTO omits clinical response text"
     );
-    assert_eq!(
-        completed.recommendations.as_deref(),
-        Some("Continue current treatment")
+    assert!(
+        completed.recommendations.is_none(),
+        "legacy operational DTO omits clinical recommendations"
     );
 
     let decline_referral = hms_db::referrals::create_referral(

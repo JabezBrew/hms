@@ -80,6 +80,9 @@ function adaptV2Referral(referral) {
     id: referral.id,
     patient: referral.patient_id,
     patient_id: referral.patient_id,
+    // Routing DTOs never own the protected specialist response body.
+    specialist_notes: null,
+    recommendations: null,
     patient_name: referral.patient_display_name,
     patient_mrn: referral.patient_code,
     patient_details: {
@@ -360,53 +363,26 @@ export const referralsApi = {
 
   completeReferral: async (id, specialistNotes, recommendations = '', options = {}) => {
     try {
-      if (isRustV2ApiMode()) {
-        const response = await v2Api.postReferralComplete(
-          { id },
-          {
-            specialist_notes: specialistNotes,
-            recommendations: recommendations || null,
-          },
-          options,
-        );
-        return adaptV2Referral(response?.data);
-      }
-      return await apiClient.post(`/referrals/${id}/complete/`, {
-        specialist_notes: specialistNotes,
-        recommendations: recommendations,
-      });
-    } catch (error) {
-      rethrowAbortError(error);
-      if (isRustV2ApiMode()) {
-        throw new Error(handleV2ApiError(error, 'Failed to complete referral'));
-      }
-      throw new Error(handleApiError(error, 'Failed to complete referral'));
-    }
+      if (options.signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+      if (isRustV2ApiMode()) throw unsupportedInRustV2('Open the exact referral response in Patient Chronicle to review and save a draft, complete the referral, or amend a completed response.');
+      return await apiClient.post(`/referrals/${id}/complete/`, { specialist_notes: specialistNotes, recommendations }, options);
+    } catch (error) { rethrowAbortError(error); if (isRustV2ApiMode()) throw error; throw new Error(handleApiError(error, 'Failed to complete referral')); }
   },
 
-  startConsultation: async (id) => {
+  startConsultation: async (id, options = {}) => {
     try {
-      if (isRustV2ApiMode()) {
-        return referralsApi.getReferral(id);
-      }
-      return await apiClient.post(`/referrals/${id}/start-consultation/`, {});
-    } catch (error) {
-      throw new Error(handleApiError(error, 'Failed to start consultation'));
-    }
+      if (options.signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+      if (isRustV2ApiMode()) throw unsupportedInRustV2('Consultation starts are unavailable through this shortcut. Open the patient in Chronicle; use the referral response workspace for reviewed response documentation.');
+      return await apiClient.post(`/referrals/${id}/start-consultation/`, {}, options);
+    } catch (error) { rethrowAbortError(error); if (isRustV2ApiMode()) throw error; throw new Error(handleApiError(error, 'Failed to start consultation')); }
   },
 
   updateReferralResponse: async (id, specialistNotes, recommendations = '', options = {}) => {
     try {
-      if (isRustV2ApiMode()) {
-        return referralsApi.completeReferral(id, specialistNotes, recommendations, options);
-      }
-      return await apiClient.patch(`/referrals/${id}/update_response/`, {
-        specialist_notes: specialistNotes,
-        recommendations: recommendations,
-      });
-    } catch (error) {
-      throw new Error(handleApiError(error, 'Failed to update referral response'));
-    }
+      if (options.signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+      if (isRustV2ApiMode()) throw unsupportedInRustV2('Open the exact referral response in Patient Chronicle. Draft saves, completion and reasoned amendments are separate reviewed actions.');
+      return await apiClient.patch(`/referrals/${id}/update_response/`, { specialist_notes: specialistNotes, recommendations }, options);
+    } catch (error) { rethrowAbortError(error); if (isRustV2ApiMode()) throw error; throw new Error(handleApiError(error, 'Failed to update referral response')); }
   },
 
   getReferralInbox: async (options = {}) => {
@@ -478,7 +454,7 @@ export const referralsApi = {
     try {
       if (isRustV2ApiMode()) {
         const response = await v2Api.getReferralSlaState({ id }, options);
-        return { sla_state: response?.data || null };
+        return { sla_state: response?.data ? { ...response.data, specialist_notes: null, recommendations: null, ...(response.data.referral ? { referral: adaptV2Referral(response.data.referral) } : {}) } : null };
       }
       return await apiClient.get(`/referrals/${id}/sla-state/`, options);
     } catch (error) {

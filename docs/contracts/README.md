@@ -350,3 +350,20 @@ There is no expression evaluation, arbitrary override, implicit latest revision
 or saved note/command receipt. Applying a reviewed preview and saving a UUID note
 remain separate. A current access denial clears both preview and applied draft;
 reads never acknowledge an uncertain clinical write.
+
+## Governed referral responses
+
+Referral routing DTOs expose status without specialist notes or recommendations.
+Clinical response context, bounded history, exact revision and actor-bound receipt
+reads use a separate retained Full/ordinary relationship purpose. Draft,
+completion and reasoned amendment are immutable UUID/CAS commands; completion time
+and original receipts remain stable after later amendments. The legacy completion
+operation returns a typed409 and has no successful write fallback. Appointment
+booking and referral scheduling commit atomically with current scheduling proof.
+
+Saved-state review after losing an original RAM request is explicit manual review,
+not confirmation of that request. Only actual fresh protected transport reads and
+a separate fresh acknowledgment may clear its opaque barrier. Current denial,
+authority or context transitions invalidate older proof, including active retries.
+Migration024 requires coordinated runtime/schema/ops deployment; earlier runtime
+rollback is refused. See the checkpoint17 verification and runtime-schema scope.

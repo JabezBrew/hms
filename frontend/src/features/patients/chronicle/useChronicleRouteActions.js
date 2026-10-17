@@ -7,6 +7,7 @@ function handleChronicleRouteAction({
   canUseStandaloneClinicalWorkflows,
   clearQueryParams,
   consultationParam,
+  referralIdParam,
   defaultAction,
   openChronicleWorkspace,
   openWardRoundMode,
@@ -27,6 +28,9 @@ function handleChronicleRouteAction({
       : null;
     openChronicleWorkspace('note', noteDraft ? { noteDraft } : null);
     if (actionParam || noteTitleParam || noteTypeParam) clearQueryParams();
+  } else if (action === 'referral_response') {
+    openChronicleWorkspace('referralResponse', { referralId: referralIdParam || null });
+    if (actionParam || referralIdParam) clearQueryParams();
   } else if (action === 'admission_follow_up') {
     openChronicleWorkspace('admissionAdvisory', { advisoryCaseId: admissionParam || null });
     if (actionParam || admissionParam) clearQueryParams();

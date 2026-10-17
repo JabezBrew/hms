@@ -17462,6 +17462,95 @@
         ],
         "type": "object"
       },
+      "ListResponse_ReferralResponseHistoryItem": {
+        "properties": {
+          "data": {
+            "items": {
+              "properties": {
+                "completed_at": {
+                  "format": "date-time",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "imported_legacy": {
+                  "type": "boolean"
+                },
+                "operation": {
+                  "$ref": "#/components/schemas/ReferralResponseVersionKind"
+                },
+                "patient_id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "priority": {
+                  "$ref": "#/components/schemas/ReferralPriority"
+                },
+                "recorded_at": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "recorded_by_display_name": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "recorded_by_user_id": {
+                  "format": "uuid",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "referral_id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "status": {
+                  "$ref": "#/components/schemas/ReferralStatus"
+                },
+                "to_service": {
+                  "type": "string"
+                },
+                "version": {
+                  "format": "int64",
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "id",
+                "patient_id",
+                "referral_id",
+                "version",
+                "operation",
+                "status",
+                "to_service",
+                "priority",
+                "recorded_at",
+                "imported_legacy"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "meta": {},
+          "page": {
+            "$ref": "#/components/schemas/PageInfo"
+          }
+        },
+        "required": [
+          "data",
+          "page",
+          "meta"
+        ],
+        "type": "object"
+      },
       "ListResponse_RemittanceImportListItem": {
         "properties": {
           "data": {
@@ -29866,6 +29955,174 @@
         ],
         "type": "object"
       },
+      "ObjectResponse_ReferralResponseContext": {
+        "properties": {
+          "data": {
+            "properties": {
+              "can_amend": {
+                "type": "boolean"
+              },
+              "can_complete": {
+                "type": "boolean"
+              },
+              "can_save_draft": {
+                "type": "boolean"
+              },
+              "completed_at": {
+                "format": "date-time",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "context_token": {
+                "type": "string"
+              },
+              "created_at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "patient_id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "priority": {
+                "$ref": "#/components/schemas/ReferralPriority"
+              },
+              "referral_id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "response": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/ReferralResponseRevision"
+                  }
+                ]
+              },
+              "scheduled_appointment_id": {
+                "format": "uuid",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "status": {
+                "$ref": "#/components/schemas/ReferralStatus"
+              },
+              "to_service": {
+                "type": "string"
+              },
+              "version": {
+                "format": "int64",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "patient_id",
+              "referral_id",
+              "to_service",
+              "priority",
+              "created_at",
+              "status",
+              "version",
+              "context_token",
+              "can_save_draft",
+              "can_complete",
+              "can_amend"
+            ],
+            "type": "object"
+          },
+          "meta": {}
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "type": "object"
+      },
+      "ObjectResponse_ReferralResponseReceipt": {
+        "properties": {
+          "data": {
+            "properties": {
+              "client_request_id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "operation": {
+                "$ref": "#/components/schemas/ReferralResponseVersionKind"
+              },
+              "recorded_at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "replayed": {
+                "type": "boolean"
+              },
+              "response": {
+                "$ref": "#/components/schemas/ReferralResponseRevision"
+              }
+            },
+            "required": [
+              "client_request_id",
+              "operation",
+              "replayed",
+              "recorded_at",
+              "response"
+            ],
+            "type": "object"
+          },
+          "meta": {}
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "type": "object"
+      },
+      "ObjectResponse_ReferralResponseRevision": {
+        "properties": {
+          "data": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ReferralResponseHistoryItem"
+              },
+              {
+                "properties": {
+                  "amendment_reason": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "recommendations": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "specialist_notes": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "type": "object"
+              }
+            ]
+          },
+          "meta": {}
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "type": "object"
+      },
       "ObjectResponse_ReferralSlaDashboard": {
         "properties": {
           "data": {
@@ -37983,6 +38240,293 @@
           "routine",
           "urgent",
           "emergency"
+        ],
+        "type": "string"
+      },
+      "ReferralResponseCommandKind": {
+        "enum": [
+          "save_draft",
+          "complete",
+          "amend"
+        ],
+        "type": "string"
+      },
+      "ReferralResponseCommandRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "amendment_reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "client_request_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "expected_context_token": {
+            "type": "string"
+          },
+          "expected_version": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "operation": {
+            "$ref": "#/components/schemas/ReferralResponseCommandKind"
+          },
+          "recommendations": {
+            "type": "string"
+          },
+          "specialist_notes": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "client_request_id",
+          "expected_version",
+          "expected_context_token",
+          "operation",
+          "specialist_notes",
+          "recommendations"
+        ],
+        "type": "object"
+      },
+      "ReferralResponseContext": {
+        "properties": {
+          "can_amend": {
+            "type": "boolean"
+          },
+          "can_complete": {
+            "type": "boolean"
+          },
+          "can_save_draft": {
+            "type": "boolean"
+          },
+          "completed_at": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "context_token": {
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "patient_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "priority": {
+            "$ref": "#/components/schemas/ReferralPriority"
+          },
+          "referral_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "response": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ReferralResponseRevision"
+              }
+            ]
+          },
+          "scheduled_appointment_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "$ref": "#/components/schemas/ReferralStatus"
+          },
+          "to_service": {
+            "type": "string"
+          },
+          "version": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "patient_id",
+          "referral_id",
+          "to_service",
+          "priority",
+          "created_at",
+          "status",
+          "version",
+          "context_token",
+          "can_save_draft",
+          "can_complete",
+          "can_amend"
+        ],
+        "type": "object"
+      },
+      "ReferralResponseHistoryItem": {
+        "properties": {
+          "completed_at": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "imported_legacy": {
+            "type": "boolean"
+          },
+          "operation": {
+            "$ref": "#/components/schemas/ReferralResponseVersionKind"
+          },
+          "patient_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "priority": {
+            "$ref": "#/components/schemas/ReferralPriority"
+          },
+          "recorded_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "recorded_by_display_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "recorded_by_user_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "referral_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ReferralStatus"
+          },
+          "to_service": {
+            "type": "string"
+          },
+          "version": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "patient_id",
+          "referral_id",
+          "version",
+          "operation",
+          "status",
+          "to_service",
+          "priority",
+          "recorded_at",
+          "imported_legacy"
+        ],
+        "type": "object"
+      },
+      "ReferralResponseHistoryQuery": {
+        "additionalProperties": false,
+        "properties": {
+          "cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "limit": {
+            "format": "int32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "ReferralResponseReceipt": {
+        "properties": {
+          "client_request_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "operation": {
+            "$ref": "#/components/schemas/ReferralResponseVersionKind"
+          },
+          "recorded_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "replayed": {
+            "type": "boolean"
+          },
+          "response": {
+            "$ref": "#/components/schemas/ReferralResponseRevision"
+          }
+        },
+        "required": [
+          "client_request_id",
+          "operation",
+          "replayed",
+          "recorded_at",
+          "response"
+        ],
+        "type": "object"
+      },
+      "ReferralResponseRevision": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ReferralResponseHistoryItem"
+          },
+          {
+            "properties": {
+              "amendment_reason": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "recommendations": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "specialist_notes": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "type": "object"
+          }
+        ]
+      },
+      "ReferralResponseVersionKind": {
+        "enum": [
+          "legacy_observed",
+          "draft_saved",
+          "completed",
+          "amended"
         ],
         "type": "string"
       },
@@ -76627,6 +77171,447 @@
         ]
       }
     },
+    "/api/v2/patients/{patient_id}/referrals/{referral_id}/response": {
+      "get": {
+        "operationId": "getReferralResponseContext",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "patient_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "referral_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_ReferralResponseContext"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "referrals"
+        ]
+      }
+    },
+    "/api/v2/patients/{patient_id}/referrals/{referral_id}/response/commands": {
+      "post": {
+        "operationId": "postReferralResponseCommand",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "patient_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "referral_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReferralResponseCommandRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_ReferralResponseReceipt"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "referrals"
+        ]
+      }
+    },
+    "/api/v2/patients/{patient_id}/referrals/{referral_id}/response/history": {
+      "get": {
+        "operationId": "getReferralResponseHistory",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "patient_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "referral_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "minimum": 0,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListResponse_ReferralResponseHistoryItem"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "referrals"
+        ]
+      }
+    },
+    "/api/v2/patients/{patient_id}/referrals/{referral_id}/response/requests/{request_id}": {
+      "get": {
+        "operationId": "getReferralResponseRequestReceipt",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "patient_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "referral_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_ReferralResponseReceipt"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "referrals"
+        ]
+      }
+    },
+    "/api/v2/patients/{patient_id}/referrals/{referral_id}/response/versions/{version_id}": {
+      "get": {
+        "operationId": "getReferralResponseVersion",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "patient_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "referral_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "version_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_ReferralResponseRevision"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "referrals"
+        ]
+      }
+    },
     "/api/v2/pharmacy/controlled-substances/discrepancies": {
       "get": {
         "operationId": "getControlledSubstanceDiscrepancies",
@@ -78474,16 +79459,6 @@
           "required": true
         },
         "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ObjectResponse_ReferralListItem"
-                }
-              }
-            },
-            "description": "Referral completed"
-          },
           "400": {
             "content": {
               "application/json": {
@@ -78523,6 +79498,16 @@
               }
             },
             "description": "Referral not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Reviewed response command required"
           }
         },
         "security": [

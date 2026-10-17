@@ -232,6 +232,7 @@ async function rawV2Request(requestConfig, retryWithRefresh = true) {
     return data;
   }
 
+  if (response.status === 403 && !tracked && !signal?.aborted) { try { await recordWriteRecoveryRead({ resolvedPath }, null, { denied: true, readEvidence, isCurrentScope: () => currentNetworkAuthorityScope() === originAuthority && getV2ClientScopeKey() === originTransport }); } catch { /* A read denial must not depend on recovery bookkeeping. */ } }
   if (response.status >= 500 || String(data?.error?.code || '').endsWith('_unconfirmed')) markWriteAttemptUncertain(attempt);
   else rejectWriteAttempt(attempt);
 

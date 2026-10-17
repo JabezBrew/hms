@@ -165,3 +165,86 @@ pub struct ReferralSlaRiskSummary {
 pub struct ReferralSlaDashboard {
     pub risk_summary: ReferralSlaRiskSummary,
 }
+
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, Eq, PartialEq, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ReferralResponseCommandKind {
+    SaveDraft,
+    Complete,
+    Amend,
+}
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, Eq, PartialEq, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ReferralResponseVersionKind {
+    LegacyObserved,
+    DraftSaved,
+    Completed,
+    Amended,
+}
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ReferralResponseCommandRequest {
+    pub client_request_id: Uuid,
+    pub expected_version: i64,
+    pub expected_context_token: String,
+    pub operation: ReferralResponseCommandKind,
+    pub specialist_notes: String,
+    pub recommendations: String,
+    pub amendment_reason: Option<String>,
+}
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, ToSchema)]
+pub struct ReferralResponseHistoryItem {
+    pub id: Uuid,
+    pub patient_id: Uuid,
+    pub referral_id: Uuid,
+    pub version: i64,
+    pub operation: ReferralResponseVersionKind,
+    pub status: ReferralStatus,
+    pub to_service: String,
+    pub priority: ReferralPriority,
+    pub completed_at: Option<DateTime<Utc>>,
+    pub recorded_by_user_id: Option<Uuid>,
+    pub recorded_by_display_name: Option<String>,
+    pub recorded_at: DateTime<Utc>,
+    pub imported_legacy: bool,
+}
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, ToSchema)]
+pub struct ReferralResponseRevision {
+    #[serde(flatten)]
+    pub history: ReferralResponseHistoryItem,
+    // New governed writes are strings. Legacy observation may retain unknown/null content.
+    pub specialist_notes: Option<String>,
+    pub recommendations: Option<String>,
+    pub amendment_reason: Option<String>,
+}
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct ReferralResponseContext {
+    pub patient_id: Uuid,
+    pub referral_id: Uuid,
+    pub to_service: String,
+    pub priority: ReferralPriority,
+    pub created_at: DateTime<Utc>,
+    pub status: ReferralStatus,
+    pub version: i64,
+    pub context_token: String,
+    pub scheduled_appointment_id: Option<Uuid>,
+    pub completed_at: Option<DateTime<Utc>>,
+    pub response: Option<ReferralResponseRevision>,
+    pub can_save_draft: bool,
+    pub can_complete: bool,
+    pub can_amend: bool,
+}
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct ReferralResponseReceipt {
+    pub client_request_id: Uuid,
+    pub operation: ReferralResponseVersionKind,
+    pub replayed: bool,
+    pub recorded_at: DateTime<Utc>,
+    pub response: ReferralResponseRevision,
+}
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ReferralResponseHistoryQuery {
+    pub cursor: Option<String>,
+    pub limit: Option<u8>,
+}

@@ -45,7 +45,7 @@ async fn actual_binary_reports_only_committed_epoch_without_provisioning_or_writ
     hms_db::migrate::run(&pool).await.unwrap();
     let after = probe(database.database_url());
     assert!(after.status.success());
-    assert_eq!(after.stdout, b"202610170023\n");
+    assert_eq!(after.stdout, b"202610170024\n");
     assert!(after.stderr.is_empty());
     let identities: (i64, i64, i64) = sqlx::query_as("SELECT (SELECT count(*) FROM facilities),(SELECT count(*) FROM users),(SELECT count(*) FROM audit_events)")
         .fetch_one(&pool).await.unwrap();
@@ -57,7 +57,7 @@ async fn actual_binary_refuses_failed_or_incoherent_migration_evidence() {
     let database = hms_db::test_support::TestDatabase::create().unwrap();
     let pool = hms_db::connect(database.database_url()).await.unwrap();
     hms_db::migrate::run(&pool).await.unwrap();
-    sqlx::query("UPDATE _sqlx_migrations SET success=false WHERE version=202610170023")
+    sqlx::query("UPDATE _sqlx_migrations SET success=false WHERE version=202610170024")
         .execute(&pool)
         .await
         .unwrap();
@@ -116,4 +116,42 @@ async fn actual_binary_cannot_report_an_old_epoch_while_sqlx_migration_is_runnin
     let after = probe(database.database_url());
     assert!(after.status.success());
     assert_eq!(after.stdout, b"0\n");
+}
+
+#[tokio::test]
+async fn actual_binary_distinguishes_historical_schema_from_false_referral_migration_claim() {
+    use std::borrow::Cow;
+    let database = hms_db::test_support::TestDatabase::create().unwrap();
+    let pool = hms_db::connect(database.database_url()).await.unwrap();
+    let historical = sqlx::migrate::Migrator {
+        migrations: Cow::Owned(
+            hms_db::migrate::MIGRATOR
+                .iter()
+                .filter(|migration| migration.version < 202610170024)
+                .cloned()
+                .collect(),
+        ),
+        ..sqlx::migrate::Migrator::DEFAULT
+    };
+    historical.run(&pool).await.unwrap();
+    let before = probe(database.database_url());
+    assert!(before.status.success());
+    assert_eq!(before.stdout, b"202610170023\n");
+    assert!(before.stderr.is_empty());
+    let checksum = hms_db::migrate::MIGRATOR
+        .iter()
+        .find(|migration| migration.version == 202610170024)
+        .expect("required referral migration is packaged")
+        .checksum
+        .as_ref();
+    sqlx::query("INSERT INTO _sqlx_migrations(version,description,success,checksum,execution_time) VALUES(202610170024,'Synthetic unconfirmed layout',true,$1,0)").bind(checksum).execute(&pool).await.unwrap();
+    let false_claim = probe(database.database_url());
+    assert!(!false_claim.status.success());
+    assert!(false_claim.stdout.is_empty());
+    assert_eq!(
+        String::from_utf8(false_claim.stderr).unwrap().trim(),
+        "Error: Database schema compatibility could not be confirmed."
+    );
+    let identities:(i64,i64,i64)=sqlx::query_as("SELECT (SELECT count(*) FROM facilities),(SELECT count(*) FROM users),(SELECT count(*) FROM audit_events)").fetch_one(&pool).await.unwrap();
+    assert_eq!(identities, (0, 0, 0));
 }

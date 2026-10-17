@@ -347,7 +347,7 @@ async fn waiting_proof(read: bool, expire: bool, nursing: bool) {
     let user = Uuid::from_u128(hms_db::provision::LIMITED_USER_ID);
     let pool = app.db_pool().await;
     let facility = app.state().facility_id();
-    let end = if expire {
+    let timed_assignment = if expire {
         let permission = if nursing {
             PermissionCode::NursingTaskManage
         } else if read {
@@ -367,11 +367,11 @@ async fn waiting_proof(read: bool, expire: bool, nursing: bool) {
             .await
             .unwrap();
         let ends: chrono::DateTime<Utc> =
-            sqlx::query_scalar("SELECT clock_timestamp()+interval '4 seconds'")
+            sqlx::query_scalar("SELECT clock_timestamp()+interval '5 minutes'")
                 .fetch_one(&pool)
                 .await
                 .unwrap();
-        hms_db::admin::create_permission_assignment(
+        let assignment = hms_db::admin::create_permission_assignment(
             &pool,
             hms_db::admin::NewPermissionAssignment {
                 facility_id: facility,
@@ -380,7 +380,7 @@ async fn waiting_proof(read: bool, expire: bool, nursing: bool) {
                 scope_type: "facility".into(),
                 scope_id: None,
                 granted_by_user_id: Uuid::from_u128(hms_db::provision::OWNER_USER_ID),
-                starts_at: ends - Duration::minutes(1),
+                starts_at: ends - Duration::minutes(6),
                 ends_at: Some(ends),
                 reason_code: "temporary_clinical_cover".into(),
             },
@@ -388,12 +388,31 @@ async fn waiting_proof(read: bool, expire: bool, nursing: bool) {
         )
         .await
         .unwrap();
-        Some(ends)
+        Some(assignment.id)
     } else {
         None
     };
     let (token, _, _) = login(app.clone(), "limited@hms.local").await;
     let claims = access_claims(&token);
+    // Finish genuine factor/password setup before arming the short workflow
+    // deadline. Four seconds must test the source-row wait, not setup duration.
+    // This isolated fixture does not change permission/session versions after
+    // authentication; discard setup's cached facts before the protected call.
+    let end = if let Some(assignment_id) = timed_assignment {
+        let ends: chrono::DateTime<Utc> = sqlx::query_scalar(
+            "UPDATE permission_assignments SET ends_at=clock_timestamp()+interval '4 seconds' WHERE facility_id=$1 AND id=$2 AND grantee_user_id=$3 RETURNING ends_at",
+        )
+        .bind(facility)
+        .bind(assignment_id)
+        .bind(user)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        app.state().invalidate_auth_cache_for_user(facility, user);
+        Some(ends)
+    } else {
+        None
+    };
     let mut held = pool.begin().await.unwrap();
     let pid: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
         .fetch_one(&mut *held)

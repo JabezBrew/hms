@@ -2495,6 +2495,55 @@ export const operations = {
     "queryParamNames": [],
     "hasBody": false
   },
+  "getReferralResponseContext": {
+    "operationId": "getReferralResponseContext",
+    "method": "GET",
+    "path": "/api/v2/patients/{patient_id}/referrals/{referral_id}/response",
+    "pathParamNames": [
+      "patient_id",
+      "referral_id"
+    ],
+    "queryParamNames": [],
+    "hasBody": false
+  },
+  "getReferralResponseHistory": {
+    "operationId": "getReferralResponseHistory",
+    "method": "GET",
+    "path": "/api/v2/patients/{patient_id}/referrals/{referral_id}/response/history",
+    "pathParamNames": [
+      "patient_id",
+      "referral_id"
+    ],
+    "queryParamNames": [
+      "cursor",
+      "limit"
+    ],
+    "hasBody": false
+  },
+  "getReferralResponseRequestReceipt": {
+    "operationId": "getReferralResponseRequestReceipt",
+    "method": "GET",
+    "path": "/api/v2/patients/{patient_id}/referrals/{referral_id}/response/requests/{request_id}",
+    "pathParamNames": [
+      "patient_id",
+      "referral_id",
+      "request_id"
+    ],
+    "queryParamNames": [],
+    "hasBody": false
+  },
+  "getReferralResponseVersion": {
+    "operationId": "getReferralResponseVersion",
+    "method": "GET",
+    "path": "/api/v2/patients/{patient_id}/referrals/{referral_id}/response/versions/{version_id}",
+    "pathParamNames": [
+      "patient_id",
+      "referral_id",
+      "version_id"
+    ],
+    "queryParamNames": [],
+    "hasBody": false
+  },
   "getReferrals": {
     "operationId": "getReferrals",
     "method": "GET",
@@ -4747,6 +4796,17 @@ export const operations = {
     "queryParamNames": [],
     "hasBody": true
   },
+  "postReferralResponseCommand": {
+    "operationId": "postReferralResponseCommand",
+    "method": "POST",
+    "path": "/api/v2/patients/{patient_id}/referrals/{referral_id}/response/commands",
+    "pathParamNames": [
+      "patient_id",
+      "referral_id"
+    ],
+    "queryParamNames": [],
+    "hasBody": true
+  },
   "postReferrals": {
     "operationId": "postReferrals",
     "method": "POST",
@@ -5368,6 +5428,10 @@ export function createGeneratedClient(request) {
     getPurchaseOrders: createOperation(request, operations.getPurchaseOrders),
     getRealtimeSubscriptions: createOperation(request, operations.getRealtimeSubscriptions),
     getReferralById: createOperation(request, operations.getReferralById),
+    getReferralResponseContext: createOperation(request, operations.getReferralResponseContext),
+    getReferralResponseHistory: createOperation(request, operations.getReferralResponseHistory),
+    getReferralResponseRequestReceipt: createOperation(request, operations.getReferralResponseRequestReceipt),
+    getReferralResponseVersion: createOperation(request, operations.getReferralResponseVersion),
     getReferrals: createOperation(request, operations.getReferrals),
     getReferralSlaDashboard: createOperation(request, operations.getReferralSlaDashboard),
     getReferralSlaState: createOperation(request, operations.getReferralSlaState),
@@ -5601,6 +5665,7 @@ export function createGeneratedClient(request) {
     postReferralAccept: createOperation(request, operations.postReferralAccept),
     postReferralComplete: createOperation(request, operations.postReferralComplete),
     postReferralDecline: createOperation(request, operations.postReferralDecline),
+    postReferralResponseCommand: createOperation(request, operations.postReferralResponseCommand),
     postReferrals: createOperation(request, operations.postReferrals),
     postReferralSchedule: createOperation(request, operations.postReferralSchedule),
     postSchedulingAppointmentArrive: createOperation(request, operations.postSchedulingAppointmentArrive),

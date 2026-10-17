@@ -1,3 +1,4 @@
+pub mod response_records;
 use chrono::{DateTime, Utc};
 use hms_domain::referrals::{
     ClinicWaitlistEntryListItem, ClinicWaitlistStatus, ReferralListItem, ReferralPriority,
@@ -153,6 +154,8 @@ pub async fn create_referral(
     referral_by_id(pool, referral.facility_id, referral.id).await
 }
 
+/// Trusted fixture/import compatibility. Product HTTP uses proof-bearing
+/// response_records transitions; imported response changes retain observation evidence.
 pub async fn accept_referral(
     pool: &PgPool,
     facility_id: Uuid,
@@ -185,6 +188,8 @@ pub async fn accept_referral(
     optional_referral_by_id(pool, facility_id, referral_id).await
 }
 
+/// Trusted fixture/import compatibility. Product HTTP uses proof-bearing
+/// response_records transitions; imported response changes retain observation evidence.
 pub async fn decline_referral(
     pool: &PgPool,
     facility_id: Uuid,
@@ -214,6 +219,8 @@ pub async fn decline_referral(
     optional_referral_by_id(pool, facility_id, referral_id).await
 }
 
+/// Trusted fixture/import compatibility. Product HTTP uses proof-bearing
+/// response_records transitions; imported response changes retain observation evidence.
 pub async fn complete_referral(
     pool: &PgPool,
     facility_id: Uuid,
@@ -246,6 +253,8 @@ pub async fn complete_referral(
     optional_referral_by_id(pool, facility_id, referral_id).await
 }
 
+/// Trusted fixture/import compatibility. Product HTTP uses proof-bearing
+/// response_records transitions; imported response changes retain observation evidence.
 pub async fn schedule_referral_appointment(
     pool: &PgPool,
     facility_id: Uuid,
@@ -602,8 +611,8 @@ fn referral_query() -> QueryBuilder<'static, Postgres> {
                referrals.reason,
                referrals.acceptance_notes,
                referrals.decline_reason,
-               referrals.specialist_notes,
-               referrals.recommendations,
+               NULL::text AS specialist_notes,
+               NULL::text AS recommendations,
                referrals.scheduled_appointment_id,
                referrals.sla_due_at,
                referrals.created_at,

@@ -13,7 +13,11 @@ gates, API and worker are drained and verified stopped before migration. Python
 3 is required for atomic fsynced deployment-state files. Explicit artifact and
 actual DB schema compatibility gates apply even to `--skip-migrations` recovery.
 Migration 202610170023 cannot use checkpoint 12 binaries as an automatic runtime
-rollback. See the [schema compatibility contract](../../docs/v2/2026-10-17-runtime-schema-compatibility-scope.md).
+rollback. Migration202610170024 additionally requires the governed-referral
+runtime: an old023 artifact cannot be restored after024. API and worker refuse
+startup unless the actual schema probe confirms024 and its required guards;
+skip-migration recovery cannot bypass this. Use a reviewed compatible forward
+artifact or separately reviewed database restoration. See the [schema compatibility contract](../../docs/v2/2026-10-17-runtime-schema-compatibility-scope.md).
 All supported host deploy entrypoints share the private kernel lease at
 `/opt/.hms-deploy-state/deploy.lock`, held across migration and recovery. Nested
 calls inherit the actual descriptor; an environment flag cannot bypass it.

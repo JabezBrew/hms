@@ -3,6 +3,12 @@ use super::*;
 #[tokio::test]
 async fn referrals_sla_and_clinic_waitlist_are_patient_access_scoped() {
     let app = app().await;
+    grant_test_patient_visibility(
+        &app,
+        Uuid::from_u128(hms_db::provision::OWNER_USER_ID),
+        PatientDataVisibility::FullClinical,
+    )
+    .await;
     let (access_token, _, _) = login(app.clone(), "owner@hms.local").await;
     let auth_header = format!("Bearer {access_token}");
 
@@ -314,32 +320,27 @@ async fn referrals_sla_and_clinic_waitlist_are_patient_access_scoped() {
     assert_eq!(sla_state_body["data"]["referral_id"], referral_id);
     assert_eq!(sla_state_body["data"]["status"], "accepted");
 
-    let complete_response = app
+    let context_response = app
         .clone()
         .oneshot(
             Request::builder()
-                .method(Method::POST)
-                .uri(format!("/api/v2/referrals/{referral_id}/complete"))
-                .header(AUTHORIZATION, auth_header.clone())
-                .header("content-type", "application/json")
-                .body(Body::from(
-                    json!({
-                        "specialist_notes": "Specialist review completed",
-                        "recommendations": "Continue current treatment"
-                    })
-                    .to_string(),
+                .method(Method::GET)
+                .uri(format!(
+                    "/api/v2/patients/{patient_id}/referrals/{referral_id}/response"
                 ))
-                .expect("request builds"),
+                .header(AUTHORIZATION, auth_header.clone())
+                .body(Body::empty())
+                .expect("response context request builds"),
         )
         .await
-        .expect("referral complete succeeds");
+        .expect("response context loads");
+    assert_eq!(context_response.status(), StatusCode::OK);
+    let context = json_body(context_response).await;
+    let complete_response=app.clone().oneshot(Request::builder().method(Method::POST).uri(format!("/api/v2/patients/{patient_id}/referrals/{referral_id}/response/commands")).header(AUTHORIZATION,auth_header.clone()).header("content-type","application/json").body(Body::from(json!({"client_request_id":Uuid::new_v4(),"expected_version":context["data"]["version"],"expected_context_token":context["data"]["context_token"],"operation":"complete","specialist_notes":"Specialist review completed","recommendations":"Continue care and follow up","amendment_reason":null}).to_string())).expect("reviewed complete request builds")).await.expect("reviewed referral completes");
     assert_eq!(complete_response.status(), StatusCode::OK);
     let complete_body = json_body(complete_response).await;
-    assert_eq!(complete_body["data"]["status"], "completed");
-    assert_eq!(
-        complete_body["data"]["specialist_notes"],
-        "Specialist review completed"
-    );
+    assert!(complete_body["data"]["response"]["status"] == "completed");
+    assert!(complete_body["data"]["response"]["specialist_notes"] == "Specialist review completed");
 
     let decline_response = app
         .clone()

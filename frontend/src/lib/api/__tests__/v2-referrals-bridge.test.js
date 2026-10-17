@@ -151,7 +151,7 @@ describe('Rust V2 referrals bridge', () => {
     ]);
   });
 
-  it('creates, accepts, declines, and completes referrals through Rust /api/v2', async () => {
+  it('creates, accepts and declines referrals while retiring the unsafe completion shortcut', async () => {
     globalThis.fetch
       .mockResolvedValueOnce(
         new Response(
@@ -226,7 +226,7 @@ describe('Rust V2 referrals bridge', () => {
     });
     await referralsApi.acceptReferral('referral-1', 'Accepted');
     await referralsApi.declineReferral('referral-2', 'Wrong service');
-    await referralsApi.completeReferral('referral-1', 'Reviewed', 'Follow up');
+    await expect(referralsApi.completeReferral('referral-1', 'Reviewed', 'Follow up')).rejects.toThrow(/Chronicle/);
 
     expect(globalThis.fetch).toHaveBeenNthCalledWith(
       1,
@@ -257,17 +257,7 @@ describe('Rust V2 referrals bridge', () => {
         body: JSON.stringify({ decline_reason: 'Wrong service' }),
       }),
     );
-    expect(globalThis.fetch).toHaveBeenNthCalledWith(
-      4,
-      'http://localhost:8080/api/v2/referrals/referral-1/complete',
-      expect.objectContaining({
-        method: 'POST',
-        body: JSON.stringify({
-          specialist_notes: 'Reviewed',
-          recommendations: 'Follow up',
-        }),
-      }),
-    );
+    expect(globalThis.fetch).toHaveBeenCalledTimes(3);
   });
 
   it('schedules referrals through Rust appointment contract', async () => {
@@ -344,7 +334,6 @@ describe('Rust V2 referrals bridge', () => {
       }))
       .mockResolvedValueOnce(jsonResponse({ data: { id: 'referral-1', status: 'accepted' }, meta: {} }))
       .mockResolvedValueOnce(jsonResponse({ data: { id: 'referral-2', status: 'declined' }, meta: {} }))
-      .mockResolvedValueOnce(jsonResponse({ data: { id: 'referral-1', status: 'completed' }, meta: {} }))
       .mockResolvedValueOnce(jsonResponse({ data: { id: 'wait-1', status: 'waiting' }, meta: {} }))
       .mockResolvedValueOnce(jsonResponse({ data: { id: 'wait-1', status: 'offered' }, meta: {} }));
 
@@ -356,7 +345,7 @@ describe('Rust V2 referrals bridge', () => {
     }, { signal });
     await referralsApi.acceptReferral('referral-1', 'Accepted', { signal });
     await referralsApi.declineReferral('referral-2', 'Wrong service', { signal });
-    await referralsApi.completeReferral('referral-1', 'Reviewed', 'Follow up', { signal });
+    await expect(referralsApi.completeReferral('referral-1', 'Reviewed', 'Follow up', { signal })).rejects.toThrow(/Chronicle/);
     await referralsApi.createClinicWaitlistEntry({
       patient: 'patient-1',
       service: 'Medicine',
@@ -368,7 +357,6 @@ describe('Rust V2 referrals bridge', () => {
       ['http://localhost:8080/api/v2/referrals', 'POST', signal],
       ['http://localhost:8080/api/v2/referrals/referral-1/accept', 'POST', signal],
       ['http://localhost:8080/api/v2/referrals/referral-2/decline', 'POST', signal],
-      ['http://localhost:8080/api/v2/referrals/referral-1/complete', 'POST', signal],
       ['http://localhost:8080/api/v2/referrals/clinic-waitlist', 'POST', signal],
       ['http://localhost:8080/api/v2/referrals/clinic-waitlist/offer-next', 'POST', signal],
     ]);

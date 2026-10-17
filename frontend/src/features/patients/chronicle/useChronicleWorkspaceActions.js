@@ -286,6 +286,7 @@ export function useChronicleWorkspaceActions({
     initialTrendTab: trendReviewTab,
     patientIdentityId,
     referralId: referralIdParam,
+    requestedReferralId: workspaceOptions?.referralId || referralIdParam || null,
     copilotPatientName,
     copyForwardData,
     editNoteData,

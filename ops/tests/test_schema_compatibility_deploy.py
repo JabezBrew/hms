@@ -12,7 +12,8 @@ from deployment_fixtures import copy_lease_helper
 
 
 REPO = Path(__file__).resolve().parents[2]
-EPOCH = '202610170023'
+OLD_EPOCH = '202610170023'
+EPOCH = '202610170024'
 
 
 def executable(path: Path, content: str) -> None:
@@ -31,7 +32,8 @@ def release(root: Path, *, declared: bool = True) -> None:
     (root / 'ops/compose-v2/.env').write_text('CLIENT_DOMAIN=synthetic.example.invalid\nHMS_ENV=staging\n')
     migrations = root / 'backend-rs/migrations'
     migrations.mkdir(parents=True)
-    (migrations / f'{EPOCH}_treatment_course_windows.sql').write_text('-- fixture only\n')
+    (migrations / f'{OLD_EPOCH}_treatment_course_windows.sql').write_text('-- fixture only\n')
+    (migrations / f'{EPOCH}_referral_response_records.sql').write_text('-- fixture only\n')
     if declared:
         (root / 'ops/compose-v2/runtime-schema-epoch').write_text(EPOCH + '\n')
     (root / 'identity.txt').write_text('candidate')
@@ -191,7 +193,7 @@ def test_skip_migrations_does_not_bypass_committed_schema_compatibility(tmp_path
     assert 'up -d --no-deps hms-api' not in calls(tmp_path)
 
 
-@pytest.mark.parametrize('epoch', ['0', 'unknown', EPOCH + '\nextra', '202610180024'])
+@pytest.mark.parametrize('epoch', ['0', OLD_EPOCH, 'unknown', EPOCH + '\nextra', '202610180024'])
 def test_post_migration_schema_must_be_confirmed_before_starting_new_runtime(tmp_path, epoch):
     root = tmp_path / 'release'
     release(root)
@@ -202,11 +204,12 @@ def test_post_migration_schema_must_be_confirmed_before_starting_new_runtime(tmp
     assert 'up -d --no-deps hms-api' not in calls(tmp_path)
 
 
-def test_skip_migrations_cannot_start_new_runtime_before_required_schema(tmp_path):
+@pytest.mark.parametrize('database_epoch', ['0', OLD_EPOCH])
+def test_skip_migrations_cannot_start_new_runtime_before_required_schema(tmp_path, database_epoch):
     root = tmp_path / 'release'
     release(root)
     env = environment(tmp_path)
-    env['HMS_ROLLBACK_SKIP_MIGRATIONS_ALLOWED'] = 'true'
+    env.update(HMS_ROLLBACK_SKIP_MIGRATIONS_ALLOWED='true', PROBE_OUTPUT=database_epoch)
     assert deploy(root, env, '--skip-migrations').returncode != 0
     assert 'stop --timeout' not in calls(tmp_path)
     assert 'up -d --no-deps hms-api' not in calls(tmp_path)
@@ -262,9 +265,9 @@ def test_archive_prequiesce_failure_restores_source_only_without_touching_runnin
     assert 'Pre-quiesce failure' in result.stderr
 
 
-@pytest.mark.parametrize('failure', ['incompatible', 'probe_error', 'probe_malformed', 'missing_intent', 'malformed_intent', 'malformed_old_declaration'])
+@pytest.mark.parametrize('failure', ['incompatible', 'older_runtime_023', 'probe_error', 'probe_malformed', 'missing_intent', 'malformed_intent', 'malformed_old_declaration'])
 def test_archive_postquiesce_uncertainty_never_restores_or_restarts_old_runtime(tmp_path, failure):
-    live, archive, installer, env = install_fixture(tmp_path, old_epoch='unknown' if failure == 'malformed_old_declaration' else None)
+    live, archive, installer, env = install_fixture(tmp_path, old_epoch='unknown' if failure == 'malformed_old_declaration' else OLD_EPOCH if failure == 'older_runtime_023' else None)
     env.update(FAIL_STAGE='migrate', ADVANCE_SCHEMA='1')
     if failure == 'probe_error': env['ROLLBACK_PROBE_FAIL'] = '1'
     if failure == 'probe_malformed': env['ROLLBACK_PROBE_OUTPUT'] = EPOCH + '\nextra'
@@ -279,10 +282,12 @@ def test_archive_postquiesce_uncertainty_never_restores_or_restarts_old_runtime(
     assert 'No database restore was attempted' in result.stderr
 
 
-@pytest.mark.parametrize('old_epoch,advance', [(EPOCH, True), (None, False)])
+@pytest.mark.parametrize('old_epoch,advance', [(EPOCH, True), (OLD_EPOCH, False), (None, False)])
 def test_archive_uses_authoritative_db_epoch_before_known_compatible_runtime_recovery(tmp_path, old_epoch, advance):
     live, archive, installer, env = install_fixture(tmp_path, old_epoch=old_epoch)
     env['FAIL_STAGE'] = 'migrate'
+    if old_epoch == OLD_EPOCH:
+        env['PROBE_OUTPUT'] = OLD_EPOCH
     if advance: env['ADVANCE_SCHEMA'] = '1'
     result = install(live, archive, installer, env)
     assert result.returncode != 0

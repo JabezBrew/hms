@@ -161,7 +161,7 @@ pub async fn decline_referral(
     params(("id" = Uuid, Path, description = "Referral id")),
     request_body = CompleteReferralRequest,
     responses(
-        (status = 200, description = "Referral completed", body = ObjectResponse<ReferralListItem>),
+        (status = 409, description = "Reviewed response command required", body = ApiErrorResponse),
         (status = 400, description = "Invalid completion request", body = ApiErrorResponse),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Permission denied", body = ApiErrorResponse),
@@ -401,6 +401,121 @@ pub async fn cancel_clinic_waitlist_entry(
         state
             .referrals_service()
             .cancel_clinic_waitlist_entry(&user, id, payload)
+            .await?,
+    ))
+}
+
+#[utoipa::path(get,path="/api/v2/patients/{patient_id}/referrals/{referral_id}/response",operation_id="getReferralResponseContext",tag="referrals",security(("bearerAuth"=[])),params(("patient_id"=Uuid,Path),("referral_id"=Uuid,Path)),responses((status=200,body=ObjectResponse<hms_domain::referrals::ReferralResponseContext>),(status=403,body=ApiErrorResponse),(status=404,body=ApiErrorResponse),(status=409,body=ApiErrorResponse)))]
+pub async fn response_context(
+    State(state): State<AppState>,
+    network: crate::extractors::NetworkContext,
+    Path((patient, id)): Path<(Uuid, Uuid)>,
+) -> Result<Json<ObjectResponse<hms_domain::referrals::ReferralResponseContext>>, ApiError> {
+    Ok(Json(
+        state
+            .referrals_service()
+            .response_context(
+                &network.context,
+                patient,
+                id,
+                network.authorization_deadline,
+            )
+            .await?,
+    ))
+}
+#[utoipa::path(post,path="/api/v2/patients/{patient_id}/referrals/{referral_id}/response/commands",operation_id="postReferralResponseCommand",tag="referrals",security(("bearerAuth"=[])),params(("patient_id"=Uuid,Path),("referral_id"=Uuid,Path)),request_body=hms_domain::referrals::ReferralResponseCommandRequest,responses((status=200,body=ObjectResponse<hms_domain::referrals::ReferralResponseReceipt>),(status=400,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=404,body=ApiErrorResponse),(status=409,body=ApiErrorResponse)))]
+pub async fn response_command(
+    State(state): State<AppState>,
+    network: crate::extractors::NetworkContext,
+    Path((patient, id)): Path<(Uuid, Uuid)>,
+    input: Result<
+        Json<hms_domain::referrals::ReferralResponseCommandRequest>,
+        axum::extract::rejection::JsonRejection,
+    >,
+) -> Result<Json<ObjectResponse<hms_domain::referrals::ReferralResponseReceipt>>, ApiError> {
+    let Json(input) = input.map_err(|_| {
+        ApiError::bad_request(
+            "invalid_referral_response",
+            "Provide only supported response command fields using the required format.",
+        )
+    })?;
+    Ok(Json(
+        state
+            .referrals_service()
+            .response_command(
+                &network.context,
+                patient,
+                id,
+                input,
+                network.authorization_deadline,
+            )
+            .await?,
+    ))
+}
+#[utoipa::path(get,path="/api/v2/patients/{patient_id}/referrals/{referral_id}/response/history",operation_id="getReferralResponseHistory",tag="referrals",security(("bearerAuth"=[])),params(("patient_id"=Uuid,Path),("referral_id"=Uuid,Path),("cursor"=Option<String>,Query),("limit"=Option<u8>,Query)),responses((status=200,body=ListResponse<hms_domain::referrals::ReferralResponseHistoryItem>),(status=400,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=404,body=ApiErrorResponse),(status=409,body=ApiErrorResponse)))]
+pub async fn response_history(
+    State(state): State<AppState>,
+    network: crate::extractors::NetworkContext,
+    Path((patient, id)): Path<(Uuid, Uuid)>,
+    query: Result<
+        Query<hms_domain::referrals::ReferralResponseHistoryQuery>,
+        axum::extract::rejection::QueryRejection,
+    >,
+) -> Result<Json<ListResponse<hms_domain::referrals::ReferralResponseHistoryItem>>, ApiError> {
+    let Query(query) = query.map_err(|_| {
+        ApiError::bad_request(
+            "invalid_referral_response_cursor",
+            "Use supported response history query fields.",
+        )
+    })?;
+    Ok(Json(
+        state
+            .referrals_service()
+            .response_history(
+                &network.context,
+                patient,
+                id,
+                query,
+                network.authorization_deadline,
+            )
+            .await?,
+    ))
+}
+#[utoipa::path(get,path="/api/v2/patients/{patient_id}/referrals/{referral_id}/response/versions/{version_id}",operation_id="getReferralResponseVersion",tag="referrals",security(("bearerAuth"=[])),params(("patient_id"=Uuid,Path),("referral_id"=Uuid,Path),("version_id"=Uuid,Path)),responses((status=200,body=ObjectResponse<hms_domain::referrals::ReferralResponseRevision>),(status=403,body=ApiErrorResponse),(status=404,body=ApiErrorResponse),(status=409,body=ApiErrorResponse)))]
+pub async fn response_version(
+    State(state): State<AppState>,
+    network: crate::extractors::NetworkContext,
+    Path((patient, id, version)): Path<(Uuid, Uuid, Uuid)>,
+) -> Result<Json<ObjectResponse<hms_domain::referrals::ReferralResponseRevision>>, ApiError> {
+    Ok(Json(
+        state
+            .referrals_service()
+            .response_version(
+                &network.context,
+                patient,
+                id,
+                version,
+                network.authorization_deadline,
+            )
+            .await?,
+    ))
+}
+#[utoipa::path(get,path="/api/v2/patients/{patient_id}/referrals/{referral_id}/response/requests/{request_id}",operation_id="getReferralResponseRequestReceipt",tag="referrals",security(("bearerAuth"=[])),params(("patient_id"=Uuid,Path),("referral_id"=Uuid,Path),("request_id"=Uuid,Path)),responses((status=200,body=ObjectResponse<hms_domain::referrals::ReferralResponseReceipt>),(status=403,body=ApiErrorResponse),(status=404,body=ApiErrorResponse),(status=409,body=ApiErrorResponse)))]
+pub async fn response_receipt(
+    State(state): State<AppState>,
+    network: crate::extractors::NetworkContext,
+    Path((patient, id, key)): Path<(Uuid, Uuid, Uuid)>,
+) -> Result<Json<ObjectResponse<hms_domain::referrals::ReferralResponseReceipt>>, ApiError> {
+    Ok(Json(
+        state
+            .referrals_service()
+            .response_receipt(
+                &network.context,
+                patient,
+                id,
+                key,
+                network.authorization_deadline,
+            )
             .await?,
     ))
 }

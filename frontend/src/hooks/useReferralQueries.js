@@ -97,6 +97,7 @@ export function useCompleteReferral() {
   const queryClient = useQueryClient();
 
   return useMutation({
+    retry: false,
     mutationFn: ({ id, specialistNotes, recommendations }) =>
       referralsApi.completeReferral(id, specialistNotes, recommendations),
     onSuccess: (data, variables) => {

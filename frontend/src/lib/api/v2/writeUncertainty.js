@@ -57,6 +57,10 @@ function identifiers(value, result = new Set(), key = '') {
 const references = async (...values) => Promise.all([...values.reduce((found, value) => identifiers(value, found), new Set())].map((value) => digest(`reference:${value.toLowerCase()}`)));
 async function admissionScope(request) {
   const path = String(request.resolvedPath).split('?')[0];
+  if (path.includes('/referrals/')) {
+    try { return (await import('./referralWriteScopes')).classifyReferralResponseWriteScope(path); }
+    catch { throw error('write_review_check_unavailable'); }
+  }
   if (!path.includes('/chronicle/admissions/') && !path.endsWith('/chronicle/admission-advisory-cases')) return null;
   try { const module = await import('./admissionWriteScopes'); return module.classifyAdmissionWriteScope(path, request.pathParams); }
   catch { throw error('write_review_check_unavailable', 'The workflow safety check could not load. No change was submitted. Reload and try again.'); }
@@ -116,28 +120,22 @@ export function markWriteResponseUncertain(response) { markWriteAttemptUncertain
 export function acknowledgeWriteResponse(response) { const handle = response?.[receiptKey]; if (handle) remove(handle); }
 export function captureWriteRecoveryRead() { try { return load().entries.filter((entry) => !active.has(entry.id)).map(({ id, uncertainty_id }) => ({ id, uncertainty_id })); } catch { return []; } }
 export async function recordWriteRecoveryRead(request, response, context) {
-  if (context.isCurrentScope?.() === false) return;
-  if (!context.principal?.id || !response || typeof response !== 'object' || !('data' in response)) return;
-  if (!context.readEvidence?.length || !load().entries.length) return;
-  // Lean eligibility/header reads cannot establish saved-record review. No
-  // deferred bookkeeping is needed when there is no unresolved command.
-  const evidencePath = String(request.resolvedPath).split('?')[0];
-  if (evidencePath === '/api/v2/nursing/fluid-observations/context' || (/^\/api\/v2\/patients\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/clinical\/note-template-previews$/i.test(evidencePath))) return;
-  const admission = await admissionScope(request);
-  if (admission?.excludeRead || context.isCurrentScope?.() === false) return;
-  const [scope, familyHash, related] = await Promise.all([scopeFor(context.principal), digest(`family:${admission?.family || family(request.resolvedPath)}`), references(request.pathParams, request.query, request.body, response.data)]); let changed = false;
-  const readProofs = new Map(context.readEvidence.map((proof) => [proof.id, proof.uncertainty_id])); const relatedIds = new Set(related);
-  if (admission?.extraReference) relatedIds.add(await digest(`reference:${admission.extraReference.toLowerCase()}`));
-  if (context.isCurrentScope?.() === false) return;
-  const pathParts = String(request.resolvedPath).split('?')[0].split('/').filter(Boolean); if (pathParts[0] !== 'api') pathParts.unshift('api', 'v2');
-  const collectionResponse = Array.isArray(response.data) && (pathParts.length === 4 || (pathParts.length === 5 && pathParts[4] === 'search'));
-  for (const entry of load().entries) {
-    if (entry.scope === scope && entry.family === familyHash && readProofs.get(entry.id) === entry.uncertainty_id && !active.has(entry.id)
-      && (entry.primary_reference ? relatedIds.has(entry.primary_reference) : (collectionResponse || !entry.references.length || entry.references.some((hash) => relatedIds.has(hash))))) { entry.reviewed_at = Date.now(); changed = true; }
-  }
-  if (changed) persist();
+  if (context.isCurrentScope?.() === false || (!context.denied && !context.readEvidence?.length) || !load().entries.length) return;
+  return (await import('./writeRecoveryRead')).recordRecoveryRead(request, response, context, {
+    admissionScope, load, scopeFor, digest, references, family, active, persist,
+    current: () => ({ scope: currentScope, context: currentContext }),
+  });
 }
 export async function acknowledgeWriteReview(id, principal) {
   return queue(async () => { const scope = await scopeFor(principal); const entry = load().entries.find((item) => item.id === id && item.scope === scope); if (scope !== currentScope || !entry?.reviewed_at || active.has(id)) throw error(); store.entries = store.entries.filter((item) => item !== entry); persist(); });
+}
+// Deliberately narrow manual recovery; its lazy protocol accepts only actual
+// transport-stamped current referral reads and an explicit separate gesture.
+export async function referralResponseManualReview(action, input) {
+  return (await import('./referralWriteScopes')).referralManualProtocol(action, input, {
+    current: () => ({ scope: currentScope, context: currentContext }), digest, load, queue,
+    active: id => active.has(id),
+    remove: (id, uncertaintyId) => { store.entries = load().entries.filter(entry => entry.id !== id || entry.uncertainty_id !== uncertaintyId); persist(); },
+  });
 }
 export function resetWriteUncertaintyForTests({ preserveStorage = false } = {}) { store = undefined; fault = false; currentScope = null; currentContext = null; activation += 1; active.clear(); serial = Promise.resolve(); if (!preserveStorage) sessionStorage.removeItem(WRITE_UNCERTAINTY_KEY); publish(); }

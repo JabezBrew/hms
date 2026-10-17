@@ -44,6 +44,7 @@ async fn main() -> anyhow::Result<()> {
         .context("HMS_WORKER_METRICS_LISTEN_ADDR must be a socket address")?;
 
     let pool = hms_db::pool::connect_with_max_connections(&database_url, max_connections).await?;
+    hms_db::schema_compatibility::require_runtime_schema(&pool).await?;
     let worker_id = worker_id();
     refresh_worker_metrics(&pool).await?;
     spawn_metrics_server(metrics_addr, pool.clone());

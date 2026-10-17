@@ -22,6 +22,7 @@ describe('chronicle workspace registry', () => {
       'prescription',
       'labs',
       'referral',
+      'referralResponse',
       'crossFacility',
       'receiveRecord',
       'medicationHistory',

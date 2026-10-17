@@ -79,6 +79,46 @@ pub struct NewBookedAppointment {
     pub created_by_user_id: Uuid,
 }
 
+/// A known booking refusal before an appointment is inserted. Database and
+/// commit failures deliberately remain untyped so callers cannot mistake an
+/// unknown write outcome for a definite business denial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BookingRejection {
+    InvalidTimeRange,
+    InactiveSession,
+    OutsideSessionTime,
+    PractitionerMismatch,
+    InactivePractitioner,
+    AppointmentTypeRequired,
+    AppointmentTypeNotAllowed,
+    BlockedTime,
+    CapacityFull,
+    OverbookingReasonRequired,
+    OverbookingLimitFull,
+}
+
+impl std::fmt::Display for BookingRejection {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::InvalidTimeRange => "appointment end time must be after start time",
+            Self::InactiveSession => "clinic session is not active in facility",
+            Self::OutsideSessionTime => "appointment must be inside clinic session time",
+            Self::PractitionerMismatch => {
+                "appointment practitioner does not match session practitioner"
+            }
+            Self::InactivePractitioner => "session practitioner is not active in facility",
+            Self::AppointmentTypeRequired => "appointment type is required for this session",
+            Self::AppointmentTypeNotAllowed => "appointment type is not allowed in this session",
+            Self::BlockedTime => "appointment overlaps blocked time",
+            Self::CapacityFull => "clinic session capacity is full",
+            Self::OverbookingReasonRequired => "overbooking reason is required",
+            Self::OverbookingLimitFull => "clinic session overbook limit is full",
+        })
+    }
+}
+
+impl std::error::Error for BookingRejection {}
+
 #[derive(Clone, Debug)]
 pub struct AppointmentUpdate {
     pub id: Uuid,
@@ -1067,12 +1107,12 @@ pub async fn create_booked_appointment(
 }
 
 pub(crate) async fn create_booked_appointment_in_transaction(
-    pool: &PgPool,
+    _pool: &PgPool,
     transaction: &mut sqlx::Transaction<'_, Postgres>,
     appointment: NewBookedAppointment,
 ) -> anyhow::Result<AppointmentListItem> {
     if appointment.ends_at <= appointment.starts_at {
-        anyhow::bail!("appointment end time must be after start time");
+        return Err(BookingRejection::InvalidTimeRange.into());
     }
     let session = if let Some(session_id) = appointment.clinic_session_id {
         Some(
@@ -1087,7 +1127,7 @@ pub(crate) async fn create_booked_appointment_in_transaction(
     } else if let Some(session) = &session {
         session.clinic_id
     } else {
-        default_clinic_id(pool, appointment.facility_id).await?
+        sqlx::query_scalar("SELECT id FROM clinics WHERE facility_id=$1 AND is_active ORDER BY created_at,id LIMIT 1 FOR SHARE").bind(appointment.facility_id).fetch_optional(&mut **transaction).await?
     };
     let practitioner_user_id = appointment.practitioner_user_id.or_else(|| {
         session
@@ -2821,7 +2861,7 @@ pub(crate) async fn load_clinic_session_for_update(
     .bind(clinic_session_id)
     .fetch_optional(&mut **transaction)
     .await?
-    .ok_or_else(|| anyhow::anyhow!("clinic session is not active in facility"))?;
+    .ok_or(BookingRejection::InactiveSession)?;
 
     clinic_session_from_row(row)
 }
@@ -2841,12 +2881,12 @@ async fn validate_session_booking_excluding(
     excluding_appointment_id: Option<Uuid>,
 ) -> anyhow::Result<()> {
     if appointment.starts_at < session.starts_at || appointment.ends_at > session.ends_at {
-        anyhow::bail!("appointment must be inside clinic session time");
+        return Err(BookingRejection::OutsideSessionTime.into());
     }
     if let Some(session_practitioner_id) = session.practitioner_user_id {
         if let Some(appointment_practitioner_id) = appointment.practitioner_user_id {
             if appointment_practitioner_id != session_practitioner_id {
-                anyhow::bail!("appointment practitioner does not match session practitioner");
+                return Err(BookingRejection::PractitionerMismatch.into());
             }
         }
     }
@@ -2862,7 +2902,7 @@ async fn validate_session_booking_excluding(
         .fetch_optional(&mut **transaction)
         .await?;
         if active.is_none() {
-            anyhow::bail!("session practitioner is not active in facility");
+            return Err(BookingRejection::InactivePractitioner.into());
         }
     }
     let constrained_count: i64 = sqlx::query_scalar(
@@ -2879,7 +2919,7 @@ async fn validate_session_booking_excluding(
     .await?;
     if constrained_count > 0 {
         let Some(appointment_type_id) = appointment.appointment_type_id else {
-            anyhow::bail!("appointment type is required for this session");
+            return Err(BookingRejection::AppointmentTypeRequired.into());
         };
         let allowed: Option<Uuid> = sqlx::query_scalar(
             r#"
@@ -2896,7 +2936,7 @@ async fn validate_session_booking_excluding(
         .fetch_optional(&mut **transaction)
         .await?;
         if allowed.is_none() {
-            anyhow::bail!("appointment type is not allowed in this session");
+            return Err(BookingRejection::AppointmentTypeNotAllowed.into());
         }
     }
 
@@ -2929,7 +2969,7 @@ async fn validate_session_booking_excluding(
     .fetch_optional(&mut **transaction)
     .await?;
     if blocked_exists.is_some() {
-        anyhow::bail!("appointment overlaps blocked time");
+        return Err(BookingRejection::BlockedTime.into());
     }
 
     let active_overlap_count: i64 = match session.mode {
@@ -2978,7 +3018,7 @@ async fn validate_session_booking_excluding(
     }
 
     if !session.allow_overbooking {
-        anyhow::bail!("clinic session capacity is full");
+        return Err(BookingRejection::CapacityFull.into());
     }
     let reason = appointment
         .overbook_reason
@@ -2986,17 +3026,17 @@ async fn validate_session_booking_excluding(
         .map(str::trim)
         .filter(|value| !value.is_empty());
     if reason.is_none() {
-        anyhow::bail!("overbooking reason is required");
+        return Err(BookingRejection::OverbookingReasonRequired.into());
     }
     let allowed_total = i64::from(session.capacity) + i64::from(session.overbook_limit);
     if active_overlap_count >= allowed_total {
-        anyhow::bail!("clinic session overbook limit is full");
+        return Err(BookingRejection::OverbookingLimitFull.into());
     }
 
     Ok(())
 }
 
-async fn insert_appointment_history(
+pub(crate) async fn insert_appointment_history(
     transaction: &mut sqlx::Transaction<'_, Postgres>,
     facility_id: Uuid,
     appointment_id: Uuid,

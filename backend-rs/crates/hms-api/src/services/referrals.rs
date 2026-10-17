@@ -1,3 +1,4 @@
+mod response_records;
 use chrono::{DateTime, Utc};
 use hms_access::require_patient_demographics_access;
 use hms_db::referrals::{NewClinicWaitlistEntry, NewReferral, ReferralCursor};
@@ -9,7 +10,7 @@ use hms_domain::referrals::{
     ClinicWaitlistStatus, CompleteReferralRequest, CreateClinicWaitlistEntryRequest,
     CreateReferralRequest, DeclineReferralRequest, OfferNextClinicWaitlistEntryRequest,
     PromoteClinicWaitlistEntryRequest, ReferralListItem, ReferralListQuery, ReferralPriority,
-    ReferralSlaDashboard, ReferralSlaState, ReferralStatus, ScheduleReferralAppointmentRequest,
+    ReferralSlaDashboard, ReferralSlaState, ScheduleReferralAppointmentRequest,
 };
 use hms_domain::scheduling::BookAppointmentRequest;
 use serde_json::json;
@@ -117,18 +118,17 @@ impl ReferralsService {
     ) -> Result<ObjectResponse<ReferralListItem>, ApiError> {
         require_referral_permission(ctx, self.facility_id())?;
         let _existing = load_referral_for_access(&self.state, ctx, id).await?;
-        let referral = hms_db::referrals::accept_referral(
+        let actor = response_records::routing_actor(ctx, self.facility_id())?;
+        let referral = hms_db::referrals::response_records::route_transition(
             self.pool(),
-            self.facility_id(),
+            actor,
             id,
-            ctx.user_id,
-            optional_text(payload.acceptance_notes),
+            hms_db::referrals::response_records::RoutingTransition::Accept(optional_text(
+                payload.acceptance_notes,
+            )),
         )
         .await
-        .map_err(|_| {
-            ApiError::conflict("referral_accept_failed", "Referral could not be accepted.")
-        })?
-        .ok_or_else(|| ApiError::not_found("referral_not_found", "Referral was not found."))?;
+        .map_err(|e| response_records::response_error(e, true))?;
 
         Ok(object(referral))
     }
@@ -142,17 +142,15 @@ impl ReferralsService {
         require_referral_permission(ctx, self.facility_id())?;
         let _existing = load_referral_for_access(&self.state, ctx, id).await?;
         let decline_reason = required_text(payload.decline_reason, "decline_reason")?;
-        let referral = hms_db::referrals::decline_referral(
+        let actor = response_records::routing_actor(ctx, self.facility_id())?;
+        let referral = hms_db::referrals::response_records::route_transition(
             self.pool(),
-            self.facility_id(),
+            actor,
             id,
-            decline_reason,
+            hms_db::referrals::response_records::RoutingTransition::Decline(decline_reason),
         )
         .await
-        .map_err(|_| {
-            ApiError::conflict("referral_decline_failed", "Referral could not be declined.")
-        })?
-        .ok_or_else(|| ApiError::not_found("referral_not_found", "Referral was not found."))?;
+        .map_err(|e| response_records::response_error(e, true))?;
 
         Ok(object(referral))
     }
@@ -161,28 +159,11 @@ impl ReferralsService {
         &self,
         ctx: &hms_access::RequestContext,
         id: Uuid,
-        payload: CompleteReferralRequest,
+        _payload: CompleteReferralRequest,
     ) -> Result<ObjectResponse<ReferralListItem>, ApiError> {
         require_referral_permission(ctx, self.facility_id())?;
         let _existing = load_referral_for_access(&self.state, ctx, id).await?;
-        let specialist_notes = required_text(payload.specialist_notes, "specialist_notes")?;
-        let referral = hms_db::referrals::complete_referral(
-            self.pool(),
-            self.facility_id(),
-            id,
-            specialist_notes,
-            optional_text(payload.recommendations),
-        )
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "referral_complete_failed",
-                "Referral could not be completed.",
-            )
-        })?
-        .ok_or_else(|| ApiError::not_found("referral_not_found", "Referral was not found."))?;
-
-        Ok(object(referral))
+        Err(ApiError::conflict("referral_response_review_required","Open this referral in Patient Chronicle and explicitly review its saved response before completing it."))
     }
 
     pub async fn schedule_referral_appointment(
@@ -194,56 +175,12 @@ impl ReferralsService {
         require_referral_permission(ctx, self.facility_id())?;
         require_appointment_manage(ctx, self.facility_id())?;
         validate_appointment_window(payload.starts_at, payload.ends_at)?;
-        let existing = load_referral_for_access(&self.state, ctx, id).await?;
-        if !matches!(
-            existing.status,
-            ReferralStatus::Sent | ReferralStatus::Accepted
-        ) {
-            return Err(ApiError::conflict(
-                "referral_schedule_failed",
-                "Only sent or accepted referrals can be scheduled.",
-            ));
-        }
-        let appointment_id = self
-            .book_scheduling_appointment(
-                ctx,
-                existing.patient_id,
-                SchedulingAppointmentPayload {
-                    starts_at: payload.starts_at,
-                    ends_at: payload.ends_at,
-                    session_id: payload.session_id,
-                    service_id: payload.service_id,
-                    clinic_id: payload.clinic_id,
-                    practitioner_user_id: payload.practitioner_user_id,
-                    overbook_reason: payload.overbook_reason,
-                    manual_booking_reason: payload.manual_booking_reason,
-                },
-            )
-            .await?;
-
-        let referral = hms_db::referrals::schedule_referral_appointment(
-            self.pool(),
-            self.facility_id(),
-            id,
-            appointment_id,
-            ctx.user_id,
-            Some(ctx.request_id.clone()),
-        )
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "referral_schedule_failed",
-                "Referral could not be scheduled.",
-            )
-        })?
-        .ok_or_else(|| {
-            ApiError::conflict(
-                "referral_schedule_failed",
-                "Only sent or accepted referrals can be scheduled.",
-            )
-        })?;
-
-        Ok(object(referral))
+        let actor = response_records::routing_actor(ctx, self.facility_id())?;
+        Ok(object(
+            hms_db::referrals::response_records::schedule(self.pool(), actor, id, payload)
+                .await
+                .map_err(|e| response_records::response_error(e, true))?,
+        ))
     }
 
     pub async fn get_referral_sla_state(

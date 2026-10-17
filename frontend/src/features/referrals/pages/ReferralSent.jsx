@@ -12,6 +12,8 @@ import XCircle from 'lucide-react/dist/esm/icons/circle-x.js';
 import Stethoscope from 'lucide-react/dist/esm/icons/stethoscope.js';
 import { useMemo, useState } from 'react';
 import { cn } from '@/lib/utils';
+import { useNavigate } from 'react-router-dom';
+import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -63,7 +65,7 @@ const normalizeReferral = (referral) => {
 
   const acceptanceNotes =
     referral.acceptance_notes ||
-    extractAcceptanceNotes(referral.specialist_notes);
+    (!isRustV2ApiMode() ? extractAcceptanceNotes(referral.specialist_notes) : '');
 
   return {
     ...referral,
@@ -411,7 +413,7 @@ function SentReferralStatusPanels({ referral }) {
 
       {referral.status === 'completed' && (
         <div className="space-y-2">
-          {referral.specialist_notes && (
+          {!isRustV2ApiMode() && referral.specialist_notes && (
             <div className="bg-[oklch(0.70_0.15_230_/_0.1)] border border-[oklch(0.70_0.15_230_/_0.3)] rounded-lg p-3">
               <p className="text-xs font-heading font-medium text-[oklch(0.70_0.15_230)] mb-1">
                 Specialist Notes:
@@ -421,7 +423,7 @@ function SentReferralStatusPanels({ referral }) {
               </p>
             </div>
           )}
-          {referral.recommendations && (
+          {!isRustV2ApiMode() && referral.recommendations && (
             <div className="bg-[oklch(0.70_0.15_230_/_0.1)] border border-[oklch(0.70_0.15_230_/_0.3)] rounded-lg p-3">
               <p className="text-xs font-heading font-medium text-[oklch(0.70_0.15_230)] mb-1">
                 Recommendations:
@@ -599,13 +601,13 @@ function ReferralSpecialistResponsePanel({ referral }) {
             <p className="text-sm text-foreground">{referral.decline_reason}</p>
           </div>
         )}
-        {referral.specialist_notes && (referral.status === 'completed' || !referral.acceptanceNotes) && (
+        {!isRustV2ApiMode() && referral.specialist_notes && (referral.status === 'completed' || !referral.acceptanceNotes) && (
           <div className="bg-[oklch(0.70_0.15_230_/_0.1)] border border-[oklch(0.70_0.15_230_/_0.3)] rounded-lg p-4">
             <p className="text-sm font-heading font-medium text-[oklch(0.70_0.15_230)] mb-2">Specialist Notes:</p>
             <p className="text-sm text-foreground whitespace-pre-wrap">{referral.specialist_notes}</p>
           </div>
         )}
-        {referral.recommendations && (
+        {!isRustV2ApiMode() && referral.recommendations && (
           <div className="bg-[oklch(0.70_0.15_230_/_0.1)] border border-[oklch(0.70_0.15_230_/_0.3)] rounded-lg p-4">
             <p className="text-sm font-heading font-medium text-[oklch(0.70_0.15_230)] mb-2">Recommendations:</p>
             <p className="text-sm text-foreground whitespace-pre-wrap">{referral.recommendations}</p>
@@ -643,6 +645,7 @@ function ReferralDetailDialog({
   selectedReferral,
   selectedSlaState,
   onOpenChange,
+  onReviewResponse,
 }) {
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
@@ -652,7 +655,7 @@ function ReferralDetailDialog({
             Referral #{selectedReferral?.referral_number}
           </DialogTitle>
           <DialogDescription>
-            Complete referral details and specialist responses
+            {isRustV2ApiMode() ? 'Referral routing and status. Protected responses are reviewed in Patient Chronicle.' : 'Complete referral details and specialist responses'}
           </DialogDescription>
         </DialogHeader>
 
@@ -663,6 +666,7 @@ function ReferralDetailDialog({
             <ReferralPatientInfoPanel referral={selectedReferral} />
             <ReferralDetailPanel referral={selectedReferral} />
             <ReferralSpecialistResponsePanel referral={selectedReferral} />
+            {isRustV2ApiMode() && <Button variant="outline" onClick={() => onReviewResponse(selectedReferral)}>Review response in Chronicle</Button>}
             <ReferralTimelinePanel referral={selectedReferral} />
           </div>
         )}
@@ -672,6 +676,11 @@ function ReferralDetailDialog({
 }
 
 const ReferralSent = () => {
+  const navigate = useNavigate();
+  const reviewResponse = (referral) => {
+    const id = typeof referral.patient === 'string' ? referral.patient : referral.patient?.id;
+    if (id && referral.id) navigate(`/patients/${id}?action=referral_response&referral_id=${referral.id}`);
+  };
   const { search: searchQuery, updateSearch, hasActiveFilters } = useListFilters();
   const [selectedReferral, setSelectedReferral] = useState(null);
   const [detailDialogOpen, setDetailDialogOpen] = useState(false);
@@ -755,6 +764,7 @@ const ReferralSent = () => {
           selectedReferral={selectedReferral}
           selectedSlaState={selectedSlaState}
           onOpenChange={setDetailDialogOpen}
+          onReviewResponse={reviewResponse}
         />
       </div>
     </PageShell>

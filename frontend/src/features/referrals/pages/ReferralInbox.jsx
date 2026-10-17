@@ -14,6 +14,7 @@ import MessageSquare from 'lucide-react/dist/esm/icons/message-square.js';
 import { useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/utils';
+import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -81,7 +82,7 @@ const normalizeReferral = (referral) => {
 
   const acceptanceNotes =
     referral.acceptance_notes ||
-    extractAcceptanceNotes(referral.specialist_notes);
+    (!isRustV2ApiMode() ? extractAcceptanceNotes(referral.specialist_notes) : '');
 
   return {
     ...referral,
@@ -348,7 +349,7 @@ function ReferralOutcomePanels({ referral }) {
         </div>
       )}
 
-      {referral.specialist_notes && (referral.status === 'completed' || !referral.acceptanceNotes) && (
+      {!isRustV2ApiMode() && referral.specialist_notes && (referral.status === 'completed' || !referral.acceptanceNotes) && (
         <div className="bg-[oklch(0.70_0.15_230_/_0.1)] border border-[oklch(0.70_0.15_230_/_0.3)] rounded-lg p-3">
           <p className="text-xs font-heading font-medium text-[oklch(0.70_0.15_230)] mb-1">
             Specialist Notes:
@@ -359,7 +360,7 @@ function ReferralOutcomePanels({ referral }) {
         </div>
       )}
 
-      {referral.recommendations && (
+      {!isRustV2ApiMode() && referral.recommendations && (
         <div className="bg-[oklch(0.70_0.15_230_/_0.1)] border border-[oklch(0.70_0.15_230_/_0.3)] rounded-lg p-3">
           <p className="text-xs font-heading font-medium text-[oklch(0.70_0.15_230)] mb-1">
             Recommendations:
@@ -402,7 +403,7 @@ function ReferralCardActions({ referral, onStartConsultation, onActionClick }) {
             className="bg-primary hover:bg-primary/90 text-primary-foreground font-mono text-xs"
           >
             <PlayCircle className="size-4 mr-2" />
-            Start Consultation
+            {isRustV2ApiMode() ? 'Open patient' : 'Start Consultation'}
           </Button>
           <Button
             variant="outline"
@@ -410,10 +411,11 @@ function ReferralCardActions({ referral, onStartConsultation, onActionClick }) {
             className="font-mono text-xs"
           >
             <MessageSquare className="size-4 mr-2" />
-            Quick Response
+            {isRustV2ApiMode() ? 'Review response in Chronicle' : 'Quick Response'}
           </Button>
         </>
       )}
+      {isRustV2ApiMode() && referral.status === 'completed' && <Button variant="outline" onClick={() => onActionClick(referral, 'complete')}>Review response in Chronicle</Button>}
       {referral.status === 'scheduled' && (
         <>
           <Button
@@ -429,7 +431,7 @@ function ReferralCardActions({ referral, onStartConsultation, onActionClick }) {
             className="font-mono text-xs"
           >
             <CheckCircle className="size-4 mr-2" />
-            Complete Referral
+            {isRustV2ApiMode() ? 'Review response in Chronicle' : 'Complete Referral'}
           </Button>
         </>
       )}
@@ -650,10 +652,16 @@ const ReferralInbox = () => {
       toast.error('Unable to navigate', { description: 'Patient ID not found' });
       return;
     }
-    navigate(`/patients/${patientId}?action=add_note&referral_id=${referral.id}`);
+    navigate(isRustV2ApiMode() ? `/patients/${patientId}` : `/patients/${patientId}?action=add_note&referral_id=${referral.id}`);
   };
 
   const handleActionClick = (referral, action) => {
+    if (isRustV2ApiMode() && action === 'complete') {
+      const patientId = typeof referral.patient === 'string' ? referral.patient : referral.patient?.id;
+      if (!patientId || !referral.id) { toast.error('The exact patient and referral are required.'); return; }
+      navigate(`/patients/${patientId}?action=referral_response&referral_id=${referral.id}`);
+      return;
+    }
     setSelectedReferral(referral);
     setCurrentAction(action);
     setActionNotes('');
@@ -713,7 +721,6 @@ const ReferralInbox = () => {
       setSelectedReferral(null);
       setCurrentAction(null);
     } catch (error) {
-      console.error('Error performing action:', error);
       toast.error('Action failed', {
         description: error.message || 'Please try again',
       });

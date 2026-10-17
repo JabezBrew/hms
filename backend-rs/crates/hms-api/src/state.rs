@@ -828,6 +828,10 @@ impl AppState {
                 .context("failed to run database migrations")?;
         }
 
+        hms_db::schema_compatibility::require_runtime_schema(&pool)
+            .await
+            .context("required runtime schema is unavailable")?;
+
         if config.provision_baseline {
             hms_db::provision::provision_baseline(
                 &pool,

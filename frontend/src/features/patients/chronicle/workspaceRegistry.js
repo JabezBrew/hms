@@ -13,6 +13,7 @@ export const chronicleWorkspaceIds = Object.freeze([
   'prescription',
   'labs',
   'referral',
+  'referralResponse',
   'crossFacility',
   'receiveRecord',
   'medicationHistory',
@@ -36,6 +37,7 @@ export const chronicleWorkspaceLoaders = Object.freeze({
   prescription: () => import('@/components/chronicle/AddPrescriptionSlideOver'),
   labs: () => import('@/components/laboratory/LabOrderForm'),
   referral: () => import('@/components/referrals/ReferralForm'),
+  referralResponse: () => import('@/features/referrals/response/components/ReferralResponsePanel'),
   crossFacility: () => import('@/components/consent/CrossFacilitySharePanel'),
   receiveRecord: () => import('@/components/interop/ReceiveRecordPanel'),
   medicationHistory: () => import('@/components/chronicle/MedicationHistorySlideOver'),
@@ -147,6 +149,8 @@ export function buildChronicleWorkspaceProps(workspaceId, context) {
         encounterId: activeEncounter?.id || null,
         patientName: copilotPatientName,
       };
+    case 'referralResponse':
+      return { open: true, onClose, patient, requestedReferralId: context.requestedReferralId || null };
     case 'noteTemplatePreview':
       return { open: true, onClose, patient, admissionId: selectedAdmissionId || null, encounter: context.selectedEncounter || null };
     case 'note':

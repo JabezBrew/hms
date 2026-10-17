@@ -20,6 +20,7 @@ const WORKSPACE_LABELS = Object.freeze({
   prescription: 'Prescribe',
   labs: 'Order labs',
   referral: 'Request consult',
+  referralResponse: 'Referral response',
   crossFacility: 'Share record',
   receiveRecord: 'Receive record',
   medicationHistory: 'Medication history',

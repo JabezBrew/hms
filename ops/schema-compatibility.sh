@@ -1,6 +1,7 @@
 #!/usr/bin/env sh
 # Sourced by deploy/installer. No credentials or database identity are emitted.
 HMS_TREATMENT_SCHEMA_EPOCH=202610170023
+HMS_REFERRAL_RESPONSE_SCHEMA_EPOCH=202610170024
 
 hms_valid_schema_epoch() {
   case "$1" in
@@ -21,7 +22,7 @@ hms_runtime_schema_epoch() {
     return 1
   fi
   case "$compatible_epoch" in
-    0|202610170023) ;;
+    0|202610170023|202610170024) ;;
     *) printf 'Runtime schema compatibility declaration is unknown.\n' >&2; return 1 ;;
   esac
   printf '%s\n' "$compatible_epoch"
@@ -30,7 +31,7 @@ hms_runtime_schema_epoch() {
 hms_validate_database_epoch() {
   # A new breaking migration must extend the explicit registry and this reader.
   case "$1" in
-    0|202610170023) return 0 ;;
+    0|202610170023|202610170024) return 0 ;;
     *) printf 'Database schema compatibility could not be confirmed.\n' >&2; return 1 ;;
   esac
 }
@@ -44,10 +45,19 @@ hms_validate_schema_fence() {
 }
 
 hms_candidate_breaking_epoch() {
-  if [ -f "$1/backend-rs/migrations/202610170023_treatment_course_windows.sql" ]; then
+  declared_epoch="$(hms_runtime_schema_epoch "$1")" || return 1
+  if [ -f "$1/backend-rs/migrations/202610170024_referral_response_records.sql" ]; then
+    if [ ! -f "$1/backend-rs/migrations/202610170023_treatment_course_windows.sql" ]; then
+      printf 'Candidate release is missing its required breaking migration.\n' >&2
+      return 1
+    fi
+    printf '%s\n' "$HMS_REFERRAL_RESPONSE_SCHEMA_EPOCH"
+  elif [ "$declared_epoch" = "$HMS_REFERRAL_RESPONSE_SCHEMA_EPOCH" ]; then
+    printf 'Candidate release is missing its required breaking migration.\n' >&2
+    return 1
+  elif [ -f "$1/backend-rs/migrations/202610170023_treatment_course_windows.sql" ]; then
     printf '%s\n' "$HMS_TREATMENT_SCHEMA_EPOCH"
   else
-    declared_epoch="$(hms_runtime_schema_epoch "$1")" || return 1
     if [ "$declared_epoch" = "$HMS_TREATMENT_SCHEMA_EPOCH" ]; then
       printf 'Candidate release is missing its required breaking migration.\n' >&2
       return 1

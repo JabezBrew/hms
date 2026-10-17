@@ -17,10 +17,21 @@ runtime's maximum reviewed breaking-schema epoch. An older artifact without the
 declaration supports epoch zero. A migration filename is never evidence that an
 artifact's code is compatible. The shell guard checks the explicit declaration
 against both the actual database and the candidate's known breaking migration.
-The current runtime also requires 023: a declaration of 023 with its required
+The current runtime requires024: a declaration of024 with its required
 migration omitted is an invalid artifact, not an epoch-zero candidate. A fresh
 post-migration probe must report the required epoch before any API or worker is
 started. `--skip-migrations` cannot bypass either the minimum or maximum check.
+
+## Breaking referral-response boundary
+
+Migration202610170024 adds governed response revisions, immutable command
+receipts, scoped completeness/root consistency and legacy-import observation.
+Earlier023 code exposes response content and permits writes outside this purpose.
+It must remain stopped after024 commits. The probe validates embedded023/024
+checksums, success and required columns/enabled guards, rather than trusting a
+table name or a declaration alone. API and worker run an eight-second bounded
+gate once before provisioning/listen or worker metrics readiness; this is separate
+from cheap health probes. Actual old023 startup refuses, while024 starts normally.
 
 ## Single-host deployment lease
 
@@ -82,7 +93,7 @@ No unrelated containers are stopped, pruned or removed.
 
 Before any rollback tree move or runtime restart, the installer probes with the
 candidate image's `hms-migrator schema-compatibility` command. It emits exactly
-one decimal epoch, currently `0` or `202610170023`. It creates no schema,
+one decimal epoch, currently `0`, `202610170023` or `202610170024`. It creates no schema,
 identities, policy or audit data. The DB helper uses a read-only transaction,
 bounded statement/lock/idle waits and SQLx's actual migration advisory lock. Its
 dedicated connection closes on every path, including cancellation, so a session
@@ -121,6 +132,13 @@ deployment evidence. Separate actual migrator-binary tests use isolated Docker
 Postgres databases to verify read-only epoch output, no provisioning, failed
 metadata, metadata/migration-lock deadlines and diagnostic privacy. Full release
 acceptance and real host readiness remain separate gates.
+
+Checkpoint17 adds actual native database3/migrator5/API1/worker1 passing contracts,
+including old023 refusal before provisioning/readiness, current024 startup,
+checksum/layout failure, bounded waits and static diagnostics. Its complete local
+ops execution passes151 cases with four existing opt-in skips. These current
+results supersede the older counts below; they do not establish a live deploy or
+host rollback drill.
 
 The final owned gates passed 32 copied-shell schema cases, 18 actual local
 lease/process and guarded-recovery cases, and all 146 enabled ops regressions.
