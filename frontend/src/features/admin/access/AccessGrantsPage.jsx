@@ -30,7 +30,7 @@ function GrantsTable({ rows, onSelect, busy }) {
 }
 export default function AccessGrantsPage() {
   usePageMeta({ title: 'Access grants', breadcrumbs: [{ label: 'Admin', path: '/admin/organization' }, { label: 'Access grants', path: '/admin/access-grants' }] });
-  const { user, login } = useAuth();
+  const { user, login, reauthenticate } = useAuth();
   const [pagination, setPagination] = useState({ kind: '', cursors: [null], page: 0 });
   const [selected, setSelected] = useState(null);
   const enabled = isRustV2ApiMode() && userHasCapability(user, ACCESS_CAPABILITY);
@@ -44,6 +44,6 @@ export default function AccessGrantsPage() {
       {query.isLoading ? <PageState variant="loading" title="Loading access grants" fullHeight={false} /> : query.isError ? <PageState variant="error" title="Access grants could not be loaded" description="Refresh before making changes. Previously loaded grants are hidden until the request succeeds." action={() => query.refetch()} fullHeight={false} /> : rows.length ? <GrantsTable rows={rows} onSelect={setSelected} busy={query.isFetching} /> : <PageState variant="empty" title="No access grants on this page" fullHeight={false} />}
       <nav aria-label="Access grant pages" className="flex flex-wrap items-center justify-between gap-3"><p className="text-sm text-muted-foreground">Page {pagination.page + 1} · Up to 25 grants</p><div className="flex gap-2"><Button type="button" variant="outline" disabled={query.isFetching || pagination.page === 0} onClick={() => setPagination((current) => ({ ...current, page: current.page - 1 }))}>Previous</Button><Button type="button" variant="outline" disabled={query.isFetching || query.isError || !query.data?.page?.has_next} onClick={next}>Next</Button></div></nav>
     </div>
-    {selected && <RevokeAccessGrantDialog key={`${selected.kind}:${selected.id}:${user.id}:${user.facilityCode}:${user.accessContext?.active_profile}`} grant={selected} user={user} reauthenticate={login} onClose={() => setSelected(null)} onRefresh={() => query.refetch()} />}
+    {selected && <RevokeAccessGrantDialog key={`${selected.kind}:${selected.id}:${user.id}:${user.facilityCode}:${user.accessContext?.active_profile}`} grant={selected} user={user} reauthenticate={reauthenticate || login} onClose={() => setSelected(null)} onRefresh={() => query.refetch()} />}
   </PageShell>;
 }

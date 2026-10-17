@@ -69,6 +69,7 @@ async fn main() -> anyhow::Result<()> {
                 {
                     warn!(error_class = safe_error_class(&error), "dashboard projection job processing failed");
                 }
+                if let Err(error)=hms_db::auth::assurance::cleanup_ephemeral_auth(&pool,100).await {warn!(error_class=safe_error_class(&error),"expired authentication state cleanup failed");}
                 if let Err(error) = refresh_worker_metrics(&pool).await {
                     warn!(error_class = safe_error_class(&error), "worker metrics refresh failed");
                 }

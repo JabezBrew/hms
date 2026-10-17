@@ -362,7 +362,7 @@ async fn inventory_dashboard_summary_uses_facility_scoped_aggregates() {
     .await
     .expect("owner exists");
     let item_id = sqlx::query_scalar::<_, Uuid>(
-        "SELECT id FROM inventory_items WHERE facility_id = $1 AND is_active = TRUE ORDER BY code LIMIT 1",
+        "SELECT id FROM inventory_items WHERE facility_id = $1 AND is_active = TRUE AND NOT controlled AND item_type<>'controlled_substance' ORDER BY code LIMIT 1",
     )
     .bind(facility_id)
     .fetch_one(&pool)
@@ -490,6 +490,14 @@ async fn controlled_count_logs_discrepancy_audit_and_adjusts_stock_immediately()
     let pool = db.pool();
     let facility_id = db.facility_id();
     let owner_id = db.owner_user_id();
+    let witness_id: Uuid = sqlx::query_scalar(
+        "SELECT id FROM users WHERE facility_id=$1 AND id<>$2 AND is_active ORDER BY id LIMIT 1",
+    )
+    .bind(facility_id)
+    .bind(owner_id)
+    .fetch_one(pool)
+    .await
+    .expect("distinct active local witness exists");
     let item_id = sqlx::query_scalar::<_, Uuid>(
         "SELECT id FROM inventory_items WHERE facility_id = $1 AND controlled = true ORDER BY code LIMIT 1",
     )
@@ -514,7 +522,7 @@ async fn controlled_count_logs_discrepancy_audit_and_adjusts_stock_immediately()
             location_id,
             movement_type: ControlledMovementType::Receipt,
             quantity_delta: 10,
-            witness_user_id: Some(owner_id),
+            witness_user_id: Some(witness_id),
             actor_user_id: owner_id,
             request_id: Some("controlled-receipt-audit-test".to_owned()),
         },
@@ -530,14 +538,22 @@ async fn controlled_count_logs_discrepancy_audit_and_adjusts_stock_immediately()
         .iter()
         .any(|row| row.location_id == location_id && row.quantity_on_hand == 10));
 
+    // The write must reuse its held connection for context/balance reads. A
+    // second pool acquisition here can starve every in-flight count writer.
+    let single_connection = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(1)
+        .acquire_timeout(std::time::Duration::from_secs(2))
+        .connect_with(pool.connect_options().as_ref().clone())
+        .await
+        .expect("single-connection verification pool connects");
     let count = hms_db::inventory::create_controlled_count(
-        pool,
+        &single_connection,
         NewControlledCount {
             id: Uuid::new_v4(),
             facility_id,
             register_entry_id: receipt.id,
             actual_count: 8,
-            witness_user_id: owner_id,
+            witness_user_id: witness_id,
             actor_user_id: owner_id,
             category: ControlledDiscrepancyCategory::Missing,
             reason: "Sealed count found two ampoules missing".to_owned(),
@@ -879,4 +895,81 @@ async fn provisioned_inventory_db() -> hms_db::test_support::TestDb {
     hms_db::test_support::TestDb::hospital()
         .await
         .expect("test database provisions")
+}
+
+#[tokio::test]
+async fn legacy_supply_rejects_over_one_hundred_lines_without_opening_a_write() {
+    let db = provisioned_inventory_db().await;
+    let pool = db.pool();
+    let (item_id, unit): (Uuid, String) = sqlx::query_as(
+        "SELECT id,unit FROM inventory_items WHERE facility_id=$1 AND is_active AND NOT controlled AND item_type='medication' ORDER BY id LIMIT 1",
+    )
+    .bind(db.facility_id())
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    let location_id: Uuid = sqlx::query_scalar(
+        "SELECT id FROM storage_locations WHERE facility_id=$1 AND is_active ORDER BY id LIMIT 1",
+    )
+    .bind(db.facility_id())
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    hms_db::inventory::create_batch(
+        pool,
+        NewStockBatch {
+            authorization: None,
+            expected_unit: unit,
+            id: Uuid::new_v4(),
+            facility_id: db.facility_id(),
+            item_id,
+            location_id,
+            batch_number: "SYN_LINE_BOUND".to_owned(),
+            expires_on: None,
+            quantity_received: 200,
+            actor_user_id: db.owner_user_id(),
+        },
+    )
+    .await
+    .unwrap();
+    let request = hms_db::inventory::create_requisition(
+        pool,
+        NewStockRequisition {
+            id: Uuid::new_v4(),
+            facility_id: db.facility_id(),
+            requesting_location_id: location_id,
+            actor_user_id: db.owner_user_id(),
+        },
+    )
+    .await
+    .unwrap();
+    let evidence = || async {
+        sqlx::query_scalar::<_, serde_json::Value>(
+            "SELECT jsonb_build_object('stock',(SELECT sum(quantity_on_hand) FROM stock_batches),'movements',(SELECT count(*) FROM stock_movements),'dispenses',(SELECT count(*) FROM supply_request_dispenses),'request',(SELECT status FROM stock_requisitions WHERE id=$1),'audit',(SELECT count(*) FROM audit_events))",
+        )
+        .bind(request.id)
+        .fetch_one(pool)
+        .await
+        .unwrap()
+    };
+    let before = evidence().await;
+    let line = SupplyDispenseLine {
+        item_id,
+        location_id,
+        quantity: 1,
+    };
+    let error = hms_db::inventory::dispense_supply_request(
+        pool,
+        db.facility_id(),
+        request.id,
+        vec![line; 101],
+        db.owner_user_id(),
+    )
+    .await
+    .expect_err("oversized otherwise valid stock issue is refused");
+    assert!(matches!(
+        error.downcast_ref::<hms_db::inventory::GenericStockWriteError>(),
+        Some(hms_db::inventory::GenericStockWriteError::TooManySupplyLines)
+    ));
+    assert_eq!(evidence().await, before);
 }

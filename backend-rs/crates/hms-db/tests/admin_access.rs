@@ -513,12 +513,12 @@ async fn upgrade_classifies_ambiguous_existing_copies_without_removing_direct_ac
     for user in [owner, limited] {
         let origin:String=sqlx::query_scalar("SELECT origin FROM user_permissions WHERE user_id=$1 AND permission_code='admin.authority.manage'").bind(user).fetch_one(&pool).await.unwrap();
         assert_eq!(origin, "legacy_unresolved");
-        assert!(hms_db::auth::user_by_id(&pool, user)
-            .await
-            .unwrap()
-            .unwrap()
-            .permissions
-            .contains(&PermissionCode::AdminAuthorityManage));
+        // This fixture intentionally stops at migration007. Inspect its actual
+        // effective-permission contract, not a future auth DTO needing later
+        // factor/session schema columns.
+        let effective:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM effective_user_permissions WHERE user_id=$1 AND permission_code='admin.authority.manage')")
+            .bind(user).fetch_one(&pool).await.unwrap();
+        assert!(effective);
     }
     let untouched: String = sqlx::query_scalar(
         "SELECT origin FROM user_permissions WHERE user_id=$1 AND permission_code='auth.me.view'",

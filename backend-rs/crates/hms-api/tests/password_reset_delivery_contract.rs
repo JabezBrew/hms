@@ -21,6 +21,20 @@ async fn request_reset(app: &TestApp, email: &str, facility: &str) -> Value {
     json_body(response).await
 }
 
+async fn forced_password_bearer(app: &TestApp) -> String {
+    // Preserve the baseline initial-password premise. The ordinary test login
+    // helper intentionally completes this required password change itself.
+    let response = raw_password_login(app, "limited@hms.local", "ChangeMe123!", None).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = json_body(response).await;
+    assert_eq!(body["data"]["status"].as_str(), Some("authenticated"));
+    assert_eq!(body["data"]["user"]["password_change_required"], true);
+    let token = body["data"]["access_token"]
+        .as_str()
+        .expect("password-only limited account receives its restricted lifecycle session");
+    format!("Bearer {token}")
+}
+
 #[tokio::test]
 async fn reset_links_reach_the_trusted_sink_without_token_persistence_and_have_a_separate_budget() {
     let app = app().await;
@@ -301,10 +315,10 @@ async fn distinct_delivered_links_race_as_one_atomic_password_change() {
 #[tokio::test]
 async fn signed_in_password_change_revokes_previously_delivered_reset_links() {
     let app = app().await;
-    let actor = Actor::login(&app, "limited@hms.local").await;
+    let bearer = forced_password_bearer(&app).await;
     let old_link = request_reset(&app, "limited@hms.local", "HMS").await;
     let response = app.clone().oneshot(Request::builder().method(Method::POST)
-        .uri("/api/v2/auth/password").header(AUTHORIZATION, actor.bearer())
+        .uri("/api/v2/auth/password").header(AUTHORIZATION, bearer)
         .header("content-type", "application/json")
         .body(Body::from(json!({ "current_password": "ChangeMe123!", "new_password": "SyntheticSignedIn123!" }).to_string())).unwrap()).await.unwrap();
     assert_eq!(response.status(), StatusCode::OK);
@@ -322,9 +336,14 @@ async fn signed_in_password_change_revokes_previously_delivered_reset_links() {
 #[tokio::test]
 async fn concurrent_signed_in_changes_cannot_reuse_a_stale_password_verification() {
     let app = app().await;
-    let actor = Actor::login(&app, "limited@hms.local").await;
+    let bearer = forced_password_bearer(&app).await;
     let pool = app.db_pool().await;
     let user_id = Uuid::from_u128(hms_db::provision::LIMITED_USER_ID);
+    let before: i64 = sqlx::query_scalar("SELECT session_version FROM users WHERE id=$1")
+        .bind(user_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
     let mut blocker = pool.begin().await.unwrap();
     sqlx::query("SELECT id FROM users WHERE id = $1 FOR UPDATE")
         .bind(user_id)
@@ -333,7 +352,7 @@ async fn concurrent_signed_in_changes_cannot_reuse_a_stale_password_verification
         .unwrap();
     let change = |password: &'static str| {
         let app = app.clone();
-        let bearer = actor.bearer();
+        let bearer = bearer.clone();
         async move {
             app.oneshot(
                 Request::builder()
@@ -379,5 +398,5 @@ async fn concurrent_signed_in_changes_cannot_reuse_a_stale_password_verification
         .fetch_one(&pool)
         .await
         .unwrap();
-    assert_eq!(version, 2);
+    assert_eq!(version, before + 1);
 }

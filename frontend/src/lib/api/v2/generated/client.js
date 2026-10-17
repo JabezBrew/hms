@@ -382,6 +382,14 @@ export const operations = {
     ],
     "hasBody": false
   },
+  "getAuthAssurance": {
+    "operationId": "getAuthAssurance",
+    "method": "GET",
+    "path": "/api/v2/auth/assurance",
+    "pathParamNames": [],
+    "queryParamNames": [],
+    "hasBody": false
+  },
   "getAuthMe": {
     "operationId": "getAuthMe",
     "method": "GET",
@@ -402,6 +410,14 @@ export const operations = {
     "operationId": "getAuthNetworkAccess",
     "method": "GET",
     "path": "/api/v2/auth/network-access",
+    "pathParamNames": [],
+    "queryParamNames": [],
+    "hasBody": false
+  },
+  "getAuthPasskeys": {
+    "operationId": "getAuthPasskeys",
+    "method": "GET",
+    "path": "/api/v2/auth/mfa/passkeys",
     "pathParamNames": [],
     "queryParamNames": [],
     "hasBody": false
@@ -2931,6 +2947,16 @@ export const operations = {
     "queryParamNames": [],
     "hasBody": true
   },
+  "patchAuthPasskey": {
+    "operationId": "patchAuthPasskey",
+    "method": "PATCH",
+    "path": "/api/v2/auth/mfa/passkeys/{id}",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [],
+    "hasBody": true
+  },
   "patchClinicalAllergy": {
     "operationId": "patchClinicalAllergy",
     "method": "PATCH",
@@ -3269,10 +3295,66 @@ export const operations = {
     "queryParamNames": [],
     "hasBody": true
   },
+  "postAuthAssuranceOptions": {
+    "operationId": "postAuthAssuranceOptions",
+    "method": "POST",
+    "path": "/api/v2/auth/assurance/options",
+    "pathParamNames": [],
+    "queryParamNames": [],
+    "hasBody": true
+  },
+  "postAuthAssuranceVerify": {
+    "operationId": "postAuthAssuranceVerify",
+    "method": "POST",
+    "path": "/api/v2/auth/assurance/verify",
+    "pathParamNames": [],
+    "queryParamNames": [],
+    "hasBody": true
+  },
   "postAuthLogin": {
     "operationId": "postAuthLogin",
     "method": "POST",
     "path": "/api/v2/auth/login",
+    "pathParamNames": [],
+    "queryParamNames": [],
+    "hasBody": true
+  },
+  "postAuthLoginPasskeyOptions": {
+    "operationId": "postAuthLoginPasskeyOptions",
+    "method": "POST",
+    "path": "/api/v2/auth/login/passkey/options",
+    "pathParamNames": [],
+    "queryParamNames": [],
+    "hasBody": true
+  },
+  "postAuthLoginPasskeyVerify": {
+    "operationId": "postAuthLoginPasskeyVerify",
+    "method": "POST",
+    "path": "/api/v2/auth/login/passkey/verify",
+    "pathParamNames": [],
+    "queryParamNames": [],
+    "hasBody": true
+  },
+  "postAuthLoginRecovery": {
+    "operationId": "postAuthLoginRecovery",
+    "method": "POST",
+    "path": "/api/v2/auth/login/recovery",
+    "pathParamNames": [],
+    "queryParamNames": [],
+    "hasBody": true
+  },
+  "postAuthLoginSetupOptions": {
+    "operationId": "postAuthLoginSetupOptions",
+    "method": "POST",
+    "path": "/api/v2/auth/login/setup/options",
+    "pathParamNames": [],
+    "queryParamNames": [],
+    "hasBody": true
+  },
+  "postAuthLoginSetupVerify": {
+    "operationId": "postAuthLoginSetupVerify",
+    "method": "POST",
+    "path": "/api/v2/auth/login/setup/verify",
     "pathParamNames": [],
     "queryParamNames": [],
     "hasBody": true
@@ -3284,6 +3366,16 @@ export const operations = {
     "pathParamNames": [],
     "queryParamNames": [],
     "hasBody": false
+  },
+  "postAuthPasskeyDisable": {
+    "operationId": "postAuthPasskeyDisable",
+    "method": "POST",
+    "path": "/api/v2/auth/mfa/passkeys/{id}/disable",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [],
+    "hasBody": true
   },
   "postAuthPassword": {
     "operationId": "postAuthPassword",
@@ -3339,6 +3431,14 @@ export const operations = {
     "operationId": "postAuthSessionsRevokeAll",
     "method": "POST",
     "path": "/api/v2/auth/sessions/revoke-all",
+    "pathParamNames": [],
+    "queryParamNames": [],
+    "hasBody": true
+  },
+  "postAuthSetupStart": {
+    "operationId": "postAuthSetupStart",
+    "method": "POST",
+    "path": "/api/v2/auth/setup/start",
     "pathParamNames": [],
     "queryParamNames": [],
     "hasBody": true
@@ -4950,9 +5050,11 @@ export function createGeneratedClient(request) {
     getAppointmentById: createOperation(request, operations.getAppointmentById),
     getAppointments: createOperation(request, operations.getAppointments),
     getAppointmentTypes: createOperation(request, operations.getAppointmentTypes),
+    getAuthAssurance: createOperation(request, operations.getAuthAssurance),
     getAuthMe: createOperation(request, operations.getAuthMe),
     getAuthMfaStatus: createOperation(request, operations.getAuthMfaStatus),
     getAuthNetworkAccess: createOperation(request, operations.getAuthNetworkAccess),
+    getAuthPasskeys: createOperation(request, operations.getAuthPasskeys),
     getAuthSessions: createOperation(request, operations.getAuthSessions),
     getBillingDashboardSummary: createOperation(request, operations.getBillingDashboardSummary),
     getBillingInsurancePlans: createOperation(request, operations.getBillingInsurancePlans),
@@ -5161,6 +5263,7 @@ export function createGeneratedClient(request) {
     patchAdminStaff: createOperation(request, operations.patchAdminStaff),
     patchAppointmentById: createOperation(request, operations.patchAppointmentById),
     patchAuthMe: createOperation(request, operations.patchAuthMe),
+    patchAuthPasskey: createOperation(request, operations.patchAuthPasskey),
     patchClinicalAllergy: createOperation(request, operations.patchClinicalAllergy),
     patchClinicalNoteTemplate: createOperation(request, operations.patchClinicalNoteTemplate),
     patchClinicalPrescription: createOperation(request, operations.patchClinicalPrescription),
@@ -5197,8 +5300,16 @@ export function createGeneratedClient(request) {
     postAppointmentCancel: createOperation(request, operations.postAppointmentCancel),
     postAppointments: createOperation(request, operations.postAppointments),
     postAppointmentsSearch: createOperation(request, operations.postAppointmentsSearch),
+    postAuthAssuranceOptions: createOperation(request, operations.postAuthAssuranceOptions),
+    postAuthAssuranceVerify: createOperation(request, operations.postAuthAssuranceVerify),
     postAuthLogin: createOperation(request, operations.postAuthLogin),
+    postAuthLoginPasskeyOptions: createOperation(request, operations.postAuthLoginPasskeyOptions),
+    postAuthLoginPasskeyVerify: createOperation(request, operations.postAuthLoginPasskeyVerify),
+    postAuthLoginRecovery: createOperation(request, operations.postAuthLoginRecovery),
+    postAuthLoginSetupOptions: createOperation(request, operations.postAuthLoginSetupOptions),
+    postAuthLoginSetupVerify: createOperation(request, operations.postAuthLoginSetupVerify),
     postAuthLogout: createOperation(request, operations.postAuthLogout),
+    postAuthPasskeyDisable: createOperation(request, operations.postAuthPasskeyDisable),
     postAuthPassword: createOperation(request, operations.postAuthPassword),
     postAuthPasswordResetComplete: createOperation(request, operations.postAuthPasswordResetComplete),
     postAuthPasswordResetRequest: createOperation(request, operations.postAuthPasswordResetRequest),
@@ -5206,6 +5317,7 @@ export function createGeneratedClient(request) {
     postAuthRefresh: createOperation(request, operations.postAuthRefresh),
     postAuthSessionRevoke: createOperation(request, operations.postAuthSessionRevoke),
     postAuthSessionsRevokeAll: createOperation(request, operations.postAuthSessionsRevokeAll),
+    postAuthSetupStart: createOperation(request, operations.postAuthSetupStart),
     postAuthWebauthnAuthenticateOptions: createOperation(request, operations.postAuthWebauthnAuthenticateOptions),
     postAuthWebauthnAuthenticateVerify: createOperation(request, operations.postAuthWebauthnAuthenticateVerify),
     postAuthWebauthnRegisterOptions: createOperation(request, operations.postAuthWebauthnRegisterOptions),

@@ -681,6 +681,12 @@ fn cache_put<K, T>(
     );
 }
 
+pub(crate) struct SessionMaterial {
+    pub session: NewRefreshSession,
+    pub refresh_token: String,
+    pub csrf_token: String,
+}
+
 #[derive(Clone, Debug)]
 pub struct LoginOutcome {
     pub access_token: String,
@@ -1497,36 +1503,55 @@ impl AppState {
             return Ok(Some(user));
         }
 
-        let session_user = hms_db::auth::user_by_id_for_facility_session_with_deadline(
-            &self.inner.auth_pool,
-            claims.sub,
-            self.facility_id(),
-            claims.session_id,
-        )
-        .await?;
-        let user = session_user
-            .as_ref()
-            .map(|session_user| session_user.user.to_auth_user());
-        if let (Some(user), Some(session_user)) = (&user, &session_user) {
-            if auth_user_matches_claims(user, claims) {
-                if let Some(ttl) = self.auth_cache_ttl_until(session_user.session_expires_at) {
-                    self.inner.auth_cache.put_user(cache_key, user.clone(), ttl);
+        let facts = self
+            .request_context_facts(claims.sub, self.facility_id(), claims.session_id)
+            .await?;
+        let user = facts.as_ref().map(|facts| facts.user.clone());
+        if let Some(facts) = facts {
+            if auth_user_matches_claims(&facts.user, claims) {
+                if let Some(ttl) = self.auth_cache_ttl_until(facts.cache_expires_at) {
+                    self.inner
+                        .auth_cache
+                        .put_user(cache_key.clone(), facts.user.clone(), ttl);
+                    self.inner
+                        .auth_cache
+                        .put_request_context(cache_key, facts, ttl);
                 }
             }
         }
+
         Ok(user)
     }
 
     async fn current_auth_versions_match(&self, claims: &AccessClaims) -> Result<bool> {
-        let Some(versions) = hms_db::auth::user_auth_versions_for_facility(
+        let Some(versions) = hms_db::auth::session_auth_versions_for_facility(
             &self.inner.auth_pool,
             claims.sub,
             claims.facility_id,
+            claims.session_id,
         )
         .await?
         else {
             return Ok(false);
         };
+        let key = AuthCacheKey::from_claims(claims);
+        if self
+            .inner
+            .auth_cache
+            .get_request_context(&key)
+            .is_some_and(|facts| {
+                facts.user.auth_security.factor_version != versions.auth_factor_version
+                    || facts.user.auth_security.assurance_version != versions.assurance_version
+                    || facts.user.password_change_required != versions.password_change_required
+            })
+            || self.inner.auth_cache.get_user(&key).is_some_and(|u| {
+                u.auth_security.factor_version != versions.auth_factor_version
+                    || u.auth_security.assurance_version != versions.assurance_version
+                    || u.password_change_required != versions.password_change_required
+            })
+        {
+            self.invalidate_auth_cache_for_user(claims.facility_id, claims.sub);
+        }
         Ok(versions.session_version == claims.session_version
             && versions.permission_version == claims.permission_version
             && deployment_profile_claim_value(versions.active_profile).as_deref()
@@ -1545,7 +1570,7 @@ impl AppState {
         if !auth_user_matches_claims(&facts.user, claims) {
             return None;
         }
-        let ttl = self.auth_cache_ttl_until(facts.session_expires_at)?;
+        let ttl = self.auth_cache_ttl_until(facts.cache_expires_at)?;
         self.inner
             .auth_cache
             .put_user_if_absent(cache_key.clone(), facts.user.clone(), ttl);
@@ -1609,7 +1634,7 @@ impl AppState {
         );
         if let Some(facts) = &facts {
             if auth_user_matches_claims(&facts.user, claims) {
-                if let Some(ttl) = self.auth_cache_ttl_until(facts.session_expires_at) {
+                if let Some(ttl) = self.auth_cache_ttl_until(facts.cache_expires_at) {
                     self.inner.auth_cache.put_request_context(
                         cache_key.clone(),
                         facts.clone(),
@@ -1660,10 +1685,31 @@ impl AppState {
         &self,
         email: &str,
         password: &str,
+        facility: &str,
+        device: Option<&str>,
+        request: Option<String>,
+    ) -> Result<Option<LoginOutcome>> {
+        let Some((user, password_at)) = self
+            .verify_login_credentials(email, password, facility, device, request.clone())
+            .await?
+        else {
+            return Ok(None);
+        };
+        if user.auth_security.passkey_required || user.auth_security.passkey_enrolled {
+            return Ok(None);
+        }
+        self.issue_session_for_user(&user, None, None, device, None, None, request, password_at)
+            .await
+    }
+
+    pub(crate) async fn verify_login_credentials(
+        &self,
+        email: &str,
+        password: &str,
         facility_code: &str,
         device_label: Option<&str>,
         request_id: Option<String>,
-    ) -> Result<Option<LoginOutcome>> {
+    ) -> Result<Option<(UserAccount, DateTime<Utc>)>> {
         if !self
             .inner
             .config
@@ -1743,7 +1789,7 @@ impl AppState {
             return Ok(None);
         };
 
-        let Some((password_matches, _password_work_permit)) =
+        let Some((password_matches, _password_work_permit, password_at)) =
             self.verify_login_password_bounded(&user, password).await?
         else {
             return Ok(None);
@@ -1769,8 +1815,8 @@ impl AppState {
             return Ok(None);
         }
 
-        self.issue_session_for_user(&user, None, None, device_label, None, None, request_id)
-            .await
+        let _ = device_label;
+        Ok(Some((user, password_at)))
     }
 
     pub async fn refresh(
@@ -1837,14 +1883,25 @@ impl AppState {
             return Ok(None);
         }
 
-        let revoked = hms_db::auth::revoke_refresh_session(
+        let Some(material) = self.prepare_session(
+            &user,
+            Some(old_session.session_family_id),
+            Some(old_session.session_id),
+            old_session.device_label.as_deref(),
+            Some(old_session.session_started_at),
+            Some(old_session.absolute_expires_at),
+        )?
+        else {
+            return Ok(None);
+        };
+        if !hms_db::auth::assurance::rotate_session(
             &self.inner.pool,
+            &material.session,
             &token_hash,
             &csrf_token_hash,
-            "rotated",
         )
-        .await?;
-        if !revoked {
+        .await?
+        {
             return Ok(None);
         }
         self.invalidate_auth_cache_for_session(
@@ -1852,17 +1909,7 @@ impl AppState {
             old_session.user_id,
             old_session.session_id,
         );
-
-        self.issue_session_for_user(
-            &user,
-            Some(old_session.session_family_id),
-            Some(old_session.session_id),
-            old_session.device_label.as_deref(),
-            Some(old_session.session_started_at),
-            Some(old_session.absolute_expires_at),
-            None,
-        )
-        .await
+        self.finish_session(&user, material).await
     }
 
     pub async fn logout(&self, refresh_token: &str, csrf_token: &str) -> Result<()> {
@@ -2062,11 +2109,12 @@ impl AppState {
 
     pub async fn change_password(
         &self,
-        user_id: Uuid,
-        facility_id: Uuid,
+        authorization: hms_db::auth::WebAuthnActor,
         current_password: &str,
         new_password: &str,
     ) -> Result<ChangePasswordOutcome> {
+        let user_id = authorization.user_id;
+        let facility_id = authorization.facility_id;
         if facility_id != self.facility_id() {
             return Ok(ChangePasswordOutcome::UserNotFound);
         }
@@ -2097,12 +2145,13 @@ impl AppState {
 
         let new_password_hash = self.hash_password_bounded(new_password).await?;
         self.invalidate_auth_cache_for_user(facility_id, user_id);
-        let changed = hms_db::auth::change_user_password(
+        let changed = hms_db::auth::change_user_password_authorized(
             &self.inner.pool,
             facility_id,
             user_id,
             &user.password_hash,
             &new_password_hash,
+            authorization,
         )
         .await?;
 
@@ -2249,7 +2298,7 @@ impl AppState {
         }))
     }
 
-    async fn issue_session_for_user(
+    pub(crate) fn prepare_session(
         &self,
         user: &UserAccount,
         session_family_id: Option<Uuid>,
@@ -2257,8 +2306,7 @@ impl AppState {
         device_label: Option<&str>,
         existing_session_started_at: Option<DateTime<Utc>>,
         existing_absolute_expires_at: Option<DateTime<Utc>>,
-        login_request_id: Option<String>,
-    ) -> Result<Option<LoginOutcome>> {
+    ) -> Result<Option<SessionMaterial>> {
         let session_id = Uuid::new_v4();
         let session_family_id = session_family_id.unwrap_or(session_id);
         let refresh_token = generate_secret_token();
@@ -2285,27 +2333,30 @@ impl AppState {
             absolute_expires_at: deadlines.absolute_expires_at,
             device_label: device_label.map(ToOwned::to_owned),
         };
-        if let Some(request_id) = login_request_id {
-            hms_db::auth::insert_refresh_session_with_audit(
-                &self.inner.pool,
-                &session,
-                NewAuthAuditEvent {
-                    facility_id: user.facility_id,
-                    actor_user_id: Some(user.id),
-                    request_id: Some(request_id),
-                    event_type: "auth.login.created".to_owned(),
-                    resource_type: "auth_session".to_owned(),
-                    resource_id: Some(session_id),
-                    metadata: serde_json::json!({
-                        "device_label_present": device_label.is_some()
-                    }),
-                },
-            )
-            .await?;
-        } else {
-            hms_db::auth::insert_refresh_session(&self.inner.pool, &session).await?;
-        }
-
+        Ok(Some(SessionMaterial {
+            session,
+            refresh_token,
+            csrf_token,
+        }))
+    }
+    pub(crate) async fn finish_session(
+        &self,
+        user: &UserAccount,
+        material: SessionMaterial,
+    ) -> Result<Option<LoginOutcome>> {
+        let SessionMaterial {
+            session,
+            refresh_token,
+            csrf_token,
+        } = material;
+        let session_id = session.session_id;
+        let (password_verified_at, _, _, _) = hms_db::auth::assurance::token_facts(
+            &self.inner.pool,
+            user.facility_id,
+            user.id,
+            session_id,
+        )
+        .await?;
         let active_profile = serde_json::to_value(user.active_profile)?
             .as_str()
             .unwrap_or("hospital")
@@ -2318,7 +2369,7 @@ impl AppState {
             active_profile,
             user.permission_version,
             user.session_version,
-            deadlines.session_started_at,
+            password_verified_at,
             self.inner.config.access_token_ttl,
         )
         .context("failed to issue access token")?;
@@ -2330,7 +2381,7 @@ impl AppState {
                 .await?
             {
                 auth_user = facts.user.clone();
-                if let Some(ttl) = self.auth_cache_ttl_until(facts.session_expires_at) {
+                if let Some(ttl) = self.auth_cache_ttl_until(facts.cache_expires_at) {
                     self.inner
                         .auth_cache
                         .put_user(cache_key.clone(), auth_user.clone(), ttl);
@@ -2346,14 +2397,91 @@ impl AppState {
             refresh_token,
             csrf_token,
             session_id,
-            refresh_expires_at: deadlines.refresh_expires_at,
-            session_idle_expires_at: deadlines.idle_expires_at,
-            session_absolute_expires_at: deadlines.absolute_expires_at,
+            refresh_expires_at: session.expires_at,
+            session_idle_expires_at: session.idle_expires_at,
+            session_absolute_expires_at: session.absolute_expires_at,
             access_token_expires_in_seconds: self.inner.config.access_token_ttl.as_secs(),
             user: auth_user,
         }))
     }
+    pub(crate) async fn issue_session_for_user(
+        &self,
+        user: &UserAccount,
+        family: Option<Uuid>,
+        old: Option<Uuid>,
+        device: Option<&str>,
+        started: Option<DateTime<Utc>>,
+        absolute: Option<DateTime<Utc>>,
+        request: Option<String>,
+        password_at: DateTime<Utc>,
+    ) -> Result<Option<LoginOutcome>> {
+        let Some(material) = self.prepare_session(user, family, old, device, started, absolute)?
+        else {
+            return Ok(None);
+        };
+        hms_db::auth::assurance::insert_password_session(
+            &self.inner.pool,
+            user,
+            &material.session,
+            request.as_deref(),
+            password_at,
+        )
+        .await?;
+        self.finish_session(user, material).await
+    }
 
+    pub(crate) fn webauthn_config(&self) -> hms_auth::WebAuthnConfig {
+        self.inner.config.webauthn.clone()
+    }
+    pub(crate) async fn auth_crypto_permit(&self) -> Result<OwnedSemaphorePermit> {
+        self.inner
+            .password_work_limiter
+            .clone()
+            .acquire_owned()
+            .await
+            .context("authentication work limiter closed")
+    }
+    pub(crate) async fn existing_session_outcome(
+        &self,
+        user_id: Uuid,
+        session_id: Uuid,
+    ) -> Result<Option<LoginOutcome>> {
+        let Some(user) = hms_db::auth::user_by_id(&self.inner.pool, user_id).await? else {
+            return Ok(None);
+        };
+        let (password, expires, idle, absolute) = hms_db::auth::assurance::token_facts(
+            &self.inner.pool,
+            user.facility_id,
+            user.id,
+            session_id,
+        )
+        .await?;
+        let session = NewRefreshSession {
+            token_hash: String::new(),
+            session_id,
+            session_family_id: session_id,
+            rotated_from_session_id: None,
+            user_id: user.id,
+            facility_id: user.facility_id,
+            session_version: user.session_version,
+            permission_version_at_issue: user.permission_version,
+            csrf_token_hash: String::new(),
+            expires_at: expires,
+            session_started_at: password,
+            idle_expires_at: idle,
+            absolute_expires_at: absolute,
+            device_label: None,
+        };
+        self.finish_session(
+            &user,
+            SessionMaterial {
+                session,
+                refresh_token: String::new(),
+                csrf_token: String::new(),
+            },
+        )
+        .await
+    }
     pub(crate) async fn hash_password_bounded(&self, password: &str) -> Result<String> {
         let permit = self
             .inner
@@ -2389,11 +2517,11 @@ impl AppState {
         .context("password verify task failed")
     }
 
-    async fn verify_login_password_bounded(
+    pub(crate) async fn verify_login_password_bounded(
         &self,
         user: &UserAccount,
         password: &str,
-    ) -> Result<Option<(bool, OwnedSemaphorePermit)>> {
+    ) -> Result<Option<(bool, OwnedSemaphorePermit, DateTime<Utc>)>> {
         let permit = self
             .inner
             .password_work_limiter
@@ -2413,6 +2541,7 @@ impl AppState {
         else {
             return Ok(None);
         };
+        let admitted_at = reservation.admitted_at();
         let hash = user.password_hash.clone();
         let password = password.to_owned();
         let (matches, permit, reservation) = tokio::task::spawn_blocking(move || {
@@ -2423,7 +2552,7 @@ impl AppState {
         if !hms_db::auth::complete_login_attempt(&self.inner.pool, reservation, !matches).await? {
             return Ok(None);
         }
-        Ok(Some((matches, permit)))
+        Ok(Some((matches, permit, admitted_at)))
     }
 }
 

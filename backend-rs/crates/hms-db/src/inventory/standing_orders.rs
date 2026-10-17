@@ -308,7 +308,7 @@ async fn references(
 ) -> anyhow::Result<Vec<CatalogItem>> {
     let locations=sqlx::query_scalar::<_,Uuid>("SELECT id FROM storage_locations WHERE facility_id=$1 AND id=ANY($2) AND is_active ORDER BY id FOR SHARE")
         .bind(facility).bind(vec![data.requesting_location_id,data.fulfilling_location_id]).fetch_all(&mut **tx).await?;
-    let items=sqlx::query_as::<_,CatalogItem>("SELECT id,code,name,unit FROM inventory_items WHERE facility_id=$1 AND id=ANY($2) AND is_active AND NOT controlled ORDER BY id FOR SHARE")
+    let items=sqlx::query_as::<_,CatalogItem>("SELECT id,code,name,unit FROM inventory_items WHERE facility_id=$1 AND id=ANY($2) AND is_active AND NOT controlled AND item_type<>'controlled_substance' ORDER BY id FOR SHARE")
         .bind(facility).bind(data.items.iter().map(|i|i.item_id).collect::<Vec<_>>()).fetch_all(&mut **tx).await?;
     if locations.len() != 2 || items.len() != data.items.len() {
         return Err(StandingTemplateError::ReferencesUnavailable.into());

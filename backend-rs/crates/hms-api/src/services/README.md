@@ -11,6 +11,7 @@ Scope: API-layer workflow services.
 | --- | --- |
 | `admin.rs` | admin, organization, authority, staff, and audit workflow. |
 | `auth_webauthn.rs` | exact-session enrollment/assertion ceremonies with live proof and atomic credential/audit persistence; no MFA-login claim. |
+| `auth_factor.rs` | restricted password+factor login/setup, exact-session UV step-up and existing-factor management; durable proof and final deadlines are enforced in auth persistence. |
 | `patients.rs`, `ward_rounds.rs` | patient registry, Chronicle, break-glass, and ward-round workflow. |
 | `care.rs`, `clinical.rs`, `consent.rs`, `referrals.rs`, `scheduling.rs` | care, clinical, consent, referral, and scheduling workflow. |
 | `clinical/prescription_courses.rs` | full-clinical prescribing commands, authorization fences and actor-bound result recovery. |

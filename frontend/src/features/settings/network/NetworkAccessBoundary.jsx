@@ -1,4 +1,4 @@
-import { Fragment, lazy, Suspense, useCallback, useMemo, useState } from 'react';
+import { Fragment, lazy, Suspense, useCallback, useMemo, useState, useSyncExternalStore } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/lib/auth';
@@ -12,17 +12,20 @@ import { PageState } from '@/shared/components/page/PageState';
 import { Button } from '@/components/ui/button';
 import { NetworkAccessNotice } from './NetworkAccessNotice';
 import { NetworkSessionConfirmation } from './NetworkSessionConfirmation';
-import { NETWORK_ADMIN_CAPABILITY, networkAccessScope, networkEditorIdentity } from './model';
+import { NETWORK_ADMIN_CAPABILITY, networkAccessScope } from './model';
 import { networkKeys, useNetworkAccessDecision } from './hooks';
 import { restrictExpiredDecision } from './useNetworkDecisionExpired';
 import { useNetworkRequestGuard } from './useNetworkRequestGuard';
 import { WriteRecoveryNotice } from './WriteRecoveryNotice';
+import { workflowAuthorizationIdentity } from '@/shared/lib/authorizationScope';
+import { getWorkflowContinuity, subscribeWorkflowContinuity } from '@/shared/lib/workflowContinuity';
+import { useV2TransportScope } from './hooks';
 
 const NetworkPolicyPage = lazy(() => import('./NetworkPolicyPage'));
 function AuthoritativeBoundary({ user, login, logout, children }) {
   const query = useNetworkAccessDecision(Boolean(user)); const client = useQueryClient(); const { pathname } = useLocation(); const [confirming, setConfirming] = useState(false);
   const decision = useMemo(() => restrictExpiredDecision(query.data, query.expired), [query.data, query.expired]);
-  const confirmed = query.isFetchedAfterMount && !query.isError && Boolean(decision);
+  const confirmed = (query.isFetchedAfterMount || query.stagedConfirmed) && !query.isError && Boolean(decision);
   const requestReauthentication = useCallback(() => setConfirming(true), []);
   const network = useMemo(() => ({ decision, confirmed, requestReauthentication }), [decision, confirmed, requestReauthentication]);
   useNetworkRequestGuard(user, network);
@@ -37,6 +40,8 @@ function AuthoritativeBoundary({ user, login, logout, children }) {
   </div>}{confirming && <NetworkSessionConfirmation user={user} reauthenticate={login} onVerified={verified} onClose={() => setConfirming(false)} />}</ReadOnlyModeProvider>;
 }
 export function NetworkAccessBoundary({ children }) {
-  const { user, login, logout } = useAuth();
-  return isRustV2ApiMode() ? <AuthoritativeBoundary key={networkEditorIdentity(user)} user={user} login={login} logout={logout}>{children}</AuthoritativeBoundary> : <ReadOnlyModeProvider>{children}</ReadOnlyModeProvider>;
+  const { user, login, reauthenticate, logout } = useAuth();
+  const transport = useV2TransportScope();
+  useSyncExternalStore(subscribeWorkflowContinuity, getWorkflowContinuity, () => null);
+  return isRustV2ApiMode() ? <AuthoritativeBoundary key={workflowAuthorizationIdentity(user, transport)} user={user} login={reauthenticate || login} logout={logout}>{children}</AuthoritativeBoundary> : <ReadOnlyModeProvider>{children}</ReadOnlyModeProvider>;
 }

@@ -9,6 +9,7 @@ async fn provisioned_baseline_uses_configured_facility_code_for_login() {
     let app = app_with_config(config, database).await;
 
     let response = app
+        .clone()
         .oneshot(
             Request::builder()
                 .method(Method::POST)
@@ -28,8 +29,35 @@ async fn provisioned_baseline_uses_configured_facility_code_for_login() {
         .expect("login request succeeds");
 
     assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(response.headers().get_all(SET_COOKIE).iter().count(), 0);
     let body = json_body(response).await;
-    assert_eq!(body["data"]["user"]["facility_code"], "MAIN");
+    let pending = &body["data"];
+    assert_eq!(pending["status"].as_str(), Some("setup_required"));
+    assert!(pending["login_grant"]
+        .as_str()
+        .is_some_and(|value| value.len() >= 32));
+    let expires = chrono::DateTime::parse_from_rfc3339(
+        pending["expires_at"]
+            .as_str()
+            .expect("restricted grant has an expiry"),
+    )
+    .unwrap();
+    assert!(expires > Utc::now());
+    assert!(pending.get("access_token").is_none());
+    assert!(pending.get("token_type").is_none());
+    assert!(pending.get("user").is_none());
+
+    // Configured facility routing is established by this restricted result;
+    // unenrolled privileged users receive no ordinary session before a factor.
+    let wrong_facility=app.oneshot(Request::builder().method(Method::POST).uri("/api/v2/auth/login")
+        .header("content-type","application/json").body(Body::from(json!({"email":"owner@hms.local","password":"ChangeMe123!","facility_code":"HMS"}).to_string())).unwrap()).await.unwrap();
+    assert_eq!(wrong_facility.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(
+        wrong_facility.headers().get_all(SET_COOKIE).iter().count(),
+        0
+    );
+    let wrong = json_body(wrong_facility).await;
+    assert!(wrong.get("data").is_none());
 }
 
 #[tokio::test]

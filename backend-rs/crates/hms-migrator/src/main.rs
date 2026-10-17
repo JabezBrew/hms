@@ -7,6 +7,7 @@ use hms_db::provision::{
 };
 use hms_domain::deployment::DeploymentProfile;
 use uuid::Uuid;
+mod auth_factor;
 mod network_policy;
 
 #[tokio::main]
@@ -15,6 +16,9 @@ async fn main() -> anyhow::Result<()> {
     if let Some(command) = command.as_deref() {
         match command {
             "check-db" => return check_database_connectivity().await,
+            "auth-readiness" | "bootstrap-factor" | "retire-factor" => {
+                return auth_factor::run(command, env::args().skip(2)).await
+            }
             "configure-network" => return network_policy::run(env::args().skip(2)).await,
             _ => bail!("unsupported hms-migrator command: {command}"),
         }

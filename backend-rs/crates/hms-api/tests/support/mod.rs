@@ -19,21 +19,62 @@ pub use hms_domain::auth::PatientDataVisibility;
 pub use hms_domain::deployment::{DeploymentProfile, FeatureKey, PermissionCode};
 pub use jsonwebtoken::{encode, EncodingKey, Header};
 pub use serde_json::{json, Value};
+use std::collections::HashMap;
 use std::convert::Infallible;
 use std::future::Future;
 use std::pin::Pin;
 pub use std::sync::Arc;
+use std::sync::{Mutex, OnceLock, Weak};
 use std::task::{Context, Poll};
 pub use tower::util::ServiceExt;
 use tower::Service;
 pub use uuid::Uuid;
 
 const TEST_JWT_SECRET: &str = "test-only-hms-v2-jwt-secret";
+pub(crate) mod webauthn_signing;
+use webauthn_signing::SoftwareAuthenticator;
+
+/// Keys live only while their actual isolated test database is retained. A
+/// second AppState for that database shares real signers, not fabricated keys.
+#[derive(Default)]
+struct TestAuthenticators {
+    signers: Mutex<HashMap<(Uuid, Uuid, String), Arc<SoftwareAuthenticator>>>,
+    users: Mutex<HashMap<(Uuid, Uuid), Arc<tokio::sync::Mutex<()>>>>,
+    passwords: Mutex<HashMap<(Uuid, Uuid), (String, String)>>,
+}
+type AuthenticatorRegistries = HashMap<
+    usize,
+    (
+        Weak<hms_db::test_support::TestDatabase>,
+        Arc<TestAuthenticators>,
+    ),
+>;
+fn test_authenticators(
+    database: &Arc<hms_db::test_support::TestDatabase>,
+) -> Arc<TestAuthenticators> {
+    static REGISTRIES: OnceLock<Mutex<AuthenticatorRegistries>> = OnceLock::new();
+    let mut registries = REGISTRIES
+        .get_or_init(Default::default)
+        .lock()
+        .expect("test authenticator registry lock succeeds");
+    registries.retain(|_, (database, _)| database.strong_count() > 0);
+    registries
+        .entry(Arc::as_ptr(database) as usize)
+        .or_insert_with(|| {
+            (
+                Arc::downgrade(database),
+                Arc::new(TestAuthenticators::default()),
+            )
+        })
+        .1
+        .clone()
+}
 
 #[derive(Clone)]
 pub(crate) struct TestApp {
     router: axum::Router,
     state: AppState,
+    authenticators: Arc<TestAuthenticators>,
     _database: Arc<hms_db::test_support::TestDatabase>,
 }
 
@@ -115,6 +156,43 @@ impl Service<Request<Body>> for TestApp {
 }
 
 impl TestApp {
+    fn authenticator_lock(&self, user: Uuid) -> Arc<tokio::sync::Mutex<()>> {
+        self.authenticators
+            .users
+            .lock()
+            .expect("test identity lock succeeds")
+            .entry((self.state.facility_id(), user))
+            .or_default()
+            .clone()
+    }
+    fn retain_authenticator(&self, user: Uuid, authenticator: Arc<SoftwareAuthenticator>) {
+        self.authenticators
+            .signers
+            .lock()
+            .expect("test signer lock succeeds")
+            .insert(
+                (
+                    self.state.facility_id(),
+                    user,
+                    authenticator.credential_id(),
+                ),
+                authenticator,
+            );
+    }
+
+    fn authenticator(&self, user: Uuid, allowed: &[String]) -> Option<Arc<SoftwareAuthenticator>> {
+        let signers = self
+            .authenticators
+            .signers
+            .lock()
+            .expect("test signer lock succeeds");
+        allowed.iter().find_map(|id| {
+            signers
+                .get(&(self.state.facility_id(), user, id.clone()))
+                .cloned()
+        })
+    }
+
     pub(crate) fn state(&self) -> AppState {
         self.state.clone()
     }
@@ -144,6 +222,7 @@ pub(crate) async fn app_without_network_policy() -> TestApp {
     TestApp {
         router: build_app(state.clone()),
         state,
+        authenticators: test_authenticators(&database),
         _database: database,
     }
 }
@@ -157,6 +236,7 @@ pub(crate) async fn app_with_config(
     TestApp {
         router: build_app(state.clone()),
         state,
+        authenticators: test_authenticators(&database),
         _database: database,
     }
 }
@@ -188,6 +268,7 @@ pub(crate) async fn app_with_config_and_request_context_probe(
                 request_id::layer,
             )),
         state: state.clone(),
+        authenticators: test_authenticators(&database),
         _database: database,
     }
 }
@@ -379,22 +460,61 @@ pub(crate) async fn login(app: TestApp, email: &str) -> (String, String, String)
 }
 
 pub(crate) async fn enroll_test_passkey(app: &TestApp, user_id: Uuid) {
+    let lock = app.authenticator_lock(user_id);
+    let _guard = lock.lock().await;
     let pool = hms_db::connect(app._database.database_url())
         .await
         .expect("test database connects for passkey enrollment");
+    let (email, display_name): (String, String) = sqlx::query_as(
+        "SELECT email,display_name FROM users WHERE facility_id=$1 AND id=$2 AND is_active",
+    )
+    .bind(app.state.facility_id())
+    .bind(user_id)
+    .fetch_one(&pool)
+    .await
+    .expect("explicit test enrollment names an active local user");
+    let existing = hms_db::auth::list_webauthn_credentials(&pool, app.state.facility_id(), user_id)
+        .await
+        .expect("test enrolled credentials read");
+    if !existing.is_empty() {
+        let ids = existing
+            .iter()
+            .map(|row| row.credential_id.clone())
+            .collect::<Vec<_>>();
+        assert!(
+            app.authenticator(user_id, &ids).is_some(),
+            "a fixture must retain the real signer of its existing credential"
+        );
+        return;
+    }
+    // Explicit trusted fixture bootstrap only. Production start/finish verifies
+    // actual COSE registration bytes; this never fabricates session assurance.
+    // Ordinary login below still performs a real HTTP assertion with this key.
+    let authenticator = Arc::new(SoftwareAuthenticator::new());
+    let config = hms_auth::WebAuthnConfig::localhost_for_tests();
+    let start = hms_auth::start_passkey_registration(&config, user_id, &email, &display_name, &[])
+        .expect("production registration options generate");
+    let credential = authenticator.registration(&webauthn_signing::Ceremony::from_options(
+        &start.public_key,
+        &config.rp_origin,
+        0,
+    ));
+    let registered = hms_auth::finish_passkey_registration(&config, credential, start.state)
+        .expect("production verifier accepts the actual runtime registration");
     hms_db::auth::insert_webauthn_credential(
         &pool,
         &hms_db::auth::NewWebAuthnCredential {
             id: Uuid::new_v4(),
             user_id,
-            facility_id: Uuid::from_u128(hms_db::provision::FACILITY_ID),
-            credential_id: format!("test-passkey-{user_id}-{}", Uuid::new_v4()),
-            passkey: json!({ "test_credential": true }),
+            facility_id: app.state.facility_id(),
+            credential_id: registered.credential_id,
+            passkey: registered.passkey,
             label: Some("Contract test passkey".to_owned()),
         },
     )
     .await
-    .expect("test passkey credential inserts");
+    .expect("trusted isolated test bootstrap stores a cryptographically real credential");
+    app.retain_authenticator(user_id, authenticator);
 }
 
 pub(crate) async fn enroll_owner_test_passkey(app: &TestApp) {
@@ -570,6 +690,235 @@ pub(crate) async fn login_with_password_and_device(
     password: &str,
     device_label: Option<&str>,
 ) -> (String, String, String) {
+    let pool = app.db_pool().await;
+    let user: Uuid =
+        sqlx::query_scalar("SELECT id FROM users WHERE facility_id=$1 AND lower(email)=lower($2)")
+            .bind(app.state.facility_id())
+            .bind(email)
+            .fetch_one(&pool)
+            .await
+            .expect("successful test login names an actual local account");
+    let lock = app.authenticator_lock(user);
+    let _guard = lock.lock().await;
+    let actual_password = app
+        .authenticators
+        .passwords
+        .lock()
+        .expect("fixture password lock succeeds")
+        .get(&(app.state.facility_id(), user))
+        .filter(|(original, _)| original == password)
+        .map(|(_, current)| current.clone())
+        .unwrap_or_else(|| password.to_owned());
+    let result = complete_test_login(&app, user, email, &actual_password, device_label).await;
+    let forced: bool = sqlx::query_scalar(
+        "SELECT password_change_required FROM users WHERE facility_id=$1 AND id=$2",
+    )
+    .bind(app.state.facility_id())
+    .bind(user)
+    .fetch_one(&pool)
+    .await
+    .expect("fixture account state reads");
+    if !forced {
+        return result;
+    }
+    let replacement = format!("Fixture2!{}", Uuid::new_v4().simple());
+    let changed = fixture_json_post(
+        &app,
+        Some(&result.0),
+        "/api/v2/auth/password",
+        json!({"current_password":actual_password,"new_password":replacement}),
+    )
+    .await;
+    assert_eq!(
+        changed.status(),
+        StatusCode::OK,
+        "ordinary fixture completes mandatory password change through HTTP"
+    );
+    assert_eq!(json_body(changed).await["data"]["changed"], true);
+    app.authenticators
+        .passwords
+        .lock()
+        .expect("fixture password lock succeeds")
+        .insert(
+            (app.state.facility_id(), user),
+            (password.to_owned(), replacement.clone()),
+        );
+    complete_test_login(&app, user, email, &replacement, device_label).await
+}
+
+async fn complete_test_login(
+    app: &TestApp,
+    user: Uuid,
+    email: &str,
+    password: &str,
+    device_label: Option<&str>,
+) -> (String, String, String) {
+    let pool = app.db_pool().await;
+    let response = raw_password_login(app, email, password, device_label).await;
+    if response.status() != StatusCode::OK {
+        let status = response.status();
+        let error = json_body(response).await;
+        panic!(
+            "fixture password login status {status}, error code {}",
+            error["error"]["code"].as_str().unwrap_or("none")
+        );
+    }
+    let has_session = response.headers().contains_key(SET_COOKIE);
+    if has_session {
+        let cookies = auth_cookies(response.headers());
+        let body = json_body(response).await;
+        return (session_access_token(&body), cookies.0, cookies.1);
+    }
+    let mut body = json_body(response).await;
+    assert!(
+        body["data"]["access_token"].is_null(),
+        "pending factor login must not expose an access token"
+    );
+    let grant = body["data"]["login_grant"]
+        .as_str()
+        .expect("pending login carries its restricted grant")
+        .to_owned();
+    if body["data"]["status"] == "setup_required" {
+        let bootstrap = hms_db::provision::generate_secret_token();
+        hms_db::auth::assurance::issue_bootstrap_grant(
+            &pool,
+            app.state.facility_id(),
+            user,
+            &hms_db::provision::hash_refresh_token(&bootstrap),
+        )
+        .await
+        .expect("explicit named isolated fixture bootstrap is issued");
+        let options = fixture_json_post(
+            &app,
+            None,
+            "/api/v2/auth/login/setup/options",
+            json!({"login_grant":grant,"bootstrap_token":bootstrap}),
+        )
+        .await;
+        assert_eq!(options.status(), StatusCode::OK);
+        assert!(!options.headers().contains_key(SET_COOKIE));
+        let options = json_body(options).await;
+        let authenticator = Arc::new(SoftwareAuthenticator::new());
+        let credential = authenticator.registration(&webauthn_signing::Ceremony::from_options(
+            &options["data"],
+            TEST_WEBAUTHN_ORIGIN,
+            0,
+        ));
+        let response = fixture_json_post(&app, None, "/api/v2/auth/login/setup/verify", json!({"login_grant":grant,"challenge_id":options["data"]["challenge_id"],"credential":credential})).await;
+        assert_eq!(response.status(), StatusCode::OK);
+        assert!(!response.headers().contains_key(SET_COOKIE));
+        body = json_body(response).await;
+        assert!(
+            body["data"]["access_token"].is_null(),
+            "registration does not establish login assurance"
+        );
+        assert!(
+            body["data"]["login_grant"].as_str() == Some(grant.as_str()),
+            "setup preserves the original restricted grant"
+        );
+        app.retain_authenticator(user, authenticator);
+    }
+    assert_eq!(body["data"]["status"], "factor_required");
+    let options = fixture_json_post(
+        &app,
+        None,
+        "/api/v2/auth/login/passkey/options",
+        json!({"login_grant":grant}),
+    )
+    .await;
+    assert_eq!(options.status(), StatusCode::OK);
+    assert!(!options.headers().contains_key(SET_COOKIE));
+    let options = json_body(options).await;
+    let credential = fixture_assertion(&app, user, &options["data"]);
+    let response = fixture_json_post(&app, None, "/api/v2/auth/login/passkey/verify", json!({"login_grant":grant,"challenge_id":options["data"]["challenge_id"],"credential":credential})).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let cookies = auth_cookies(response.headers());
+    let body = json_body(response).await;
+    assert_eq!(body["data"]["status"], "authenticated");
+    (session_access_token(&body), cookies.0, cookies.1)
+}
+
+const TEST_WEBAUTHN_ORIGIN: &str = "http://localhost:8080";
+fn session_access_token(body: &Value) -> String {
+    body["data"]["access_token"]
+        .as_str()
+        .expect("access token exists")
+        .to_owned()
+}
+
+pub(crate) fn fixture_assertion(app: &TestApp, user: Uuid, options: &Value) -> Value {
+    let allowed = options["allowCredentials"]
+        .as_array()
+        .expect("factor options name actual allowed credentials")
+        .iter()
+        .map(|value| {
+            value["id"]
+                .as_str()
+                .expect("credential ID exists")
+                .to_owned()
+        })
+        .collect::<Vec<_>>();
+    app.authenticator(user, &allowed)
+        .expect("this isolated fixture retains the actual allowed private signer")
+        .next_assertion(options, TEST_WEBAUTHN_ORIGIN)
+}
+
+pub(crate) async fn fixture_json_post(
+    app: &TestApp,
+    token: Option<&str>,
+    path: &str,
+    body: Value,
+) -> axum::response::Response {
+    let mut builder = Request::builder()
+        .method(Method::POST)
+        .uri(path)
+        .header("content-type", "application/json");
+    if let Some(token) = token {
+        builder = builder.header(AUTHORIZATION, format!("Bearer {token}"));
+    }
+    app.clone()
+        .oneshot(
+            builder
+                .body(Body::from(body.to_string()))
+                .expect("synthetic ceremony request builds"),
+        )
+        .await
+        .expect("synthetic ceremony HTTP request completes")
+}
+
+pub(crate) async fn step_up_test_session(
+    app: &TestApp,
+    token: &str,
+    current_password: Option<&str>,
+) -> String {
+    let claims = access_claims(token);
+    let lock = app.authenticator_lock(claims.sub);
+    let _guard = lock.lock().await;
+    let options = fixture_json_post(
+        app,
+        Some(token),
+        "/api/v2/auth/assurance/options",
+        json!({"current_password":current_password}),
+    )
+    .await;
+    assert_eq!(options.status(), StatusCode::OK);
+    let options = json_body(options).await;
+    let response = fixture_json_post(app, Some(token), "/api/v2/auth/assurance/verify", json!({"challenge_id":options["data"]["challenge_id"],"credential":fixture_assertion(app, claims.sub, &options["data"])})).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    json_body(response).await["data"]["access_token"]
+        .as_str()
+        .expect("verified same-session assurance returns the actual access token")
+        .to_owned()
+}
+
+/// Explicitly raw password response for unenrolled/setup/negative assertions.
+/// It never enrolls a credential or completes a factor behind the caller's back.
+pub(crate) async fn raw_password_login(
+    app: &TestApp,
+    email: &str,
+    password: &str,
+    device_label: Option<&str>,
+) -> axum::response::Response {
     let mut request = Request::builder()
         .method(Method::POST)
         .uri("/api/v2/auth/login")
@@ -578,7 +927,7 @@ pub(crate) async fn login_with_password_and_device(
         request = request.header("x-device-label", device_label);
     }
 
-    let response = app
+    app.clone()
         .oneshot(
             request
                 .body(Body::from(
@@ -592,17 +941,7 @@ pub(crate) async fn login_with_password_and_device(
                 .expect("request builds"),
         )
         .await
-        .expect("login request succeeds");
-
-    assert_eq!(response.status(), StatusCode::OK);
-    let (cookie_header, csrf_token) = auth_cookies(response.headers());
-    let body = json_body(response).await;
-    let access_token = body["data"]["access_token"]
-        .as_str()
-        .expect("access token exists")
-        .to_owned();
-
-    (access_token, cookie_header, csrf_token)
+        .expect("login request succeeds")
 }
 
 pub(crate) fn token_with_stale_reauth(access_token: &str) -> String {

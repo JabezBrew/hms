@@ -12,6 +12,9 @@ use axum::{
 pub(crate) fn lifecycle_exception(method: &Method, path: &str) -> bool {
     matches!(
         (method.as_str(), path),
+        ("PATCH", "/api/v2/auth/mfa/passkeys/:id")
+    ) || matches!(
+        (method.as_str(), path),
         (
             "GET" | "HEAD",
             "/api/v2/health/alive" | "/api/v2/health/ready"
@@ -21,9 +24,20 @@ pub(crate) fn lifecycle_exception(method: &Method, path: &str) -> bool {
                 | "/api/v2/auth/network-access"
                 | "/api/v2/auth/sessions"
                 | "/api/v2/auth/mfa/status"
+                | "/api/v2/auth/assurance"
+                | "/api/v2/auth/mfa/passkeys"
         ) | (
             "POST",
             "/api/v2/auth/login"
+                | "/api/v2/auth/setup/start"
+                | "/api/v2/auth/login/passkey/options"
+                | "/api/v2/auth/login/passkey/verify"
+                | "/api/v2/auth/login/setup/options"
+                | "/api/v2/auth/login/setup/verify"
+                | "/api/v2/auth/login/recovery"
+                | "/api/v2/auth/assurance/options"
+                | "/api/v2/auth/assurance/verify"
+                | "/api/v2/auth/mfa/passkeys/:id/disable"
                 | "/api/v2/auth/refresh"
                 | "/api/v2/auth/logout"
                 | "/api/v2/auth/password"

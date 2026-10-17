@@ -1818,6 +1818,64 @@ pub async fn finalize_invoice(
     approval_user_id: Uuid,
     reauthorized_at: DateTime<Utc>,
 ) -> anyhow::Result<Option<InvoiceListItem>> {
+    finalize_invoice_inner(
+        pool,
+        facility_id,
+        invoice_id,
+        actor_user_id,
+        approval_user_id,
+        reauthorized_at,
+        None,
+    )
+    .await
+}
+
+pub async fn finalize_invoice_authorized(
+    pool: &PgPool,
+    facility_id: Uuid,
+    invoice_id: Uuid,
+    actor_user_id: Uuid,
+    approval_user_id: Uuid,
+    reauthorized_at: DateTime<Utc>,
+    authorization: crate::auth::WebAuthnActor,
+) -> anyhow::Result<Option<InvoiceListItem>> {
+    finalize_invoice_inner(
+        pool,
+        facility_id,
+        invoice_id,
+        actor_user_id,
+        approval_user_id,
+        reauthorized_at,
+        Some(authorization),
+    )
+    .await
+}
+
+async fn finalize_invoice_inner(
+    pool: &PgPool,
+    facility_id: Uuid,
+    invoice_id: Uuid,
+    actor_user_id: Uuid,
+    approval_user_id: Uuid,
+    reauthorized_at: DateTime<Utc>,
+    authorization: Option<crate::auth::WebAuthnActor>,
+) -> anyhow::Result<Option<InvoiceListItem>> {
+    let mut transaction = pool.begin().await?;
+    let privileged_deadline = if let Some(mut actor) = authorization {
+        Some(
+            crate::auth::assurance::require_family_privileged_tx(
+                &mut transaction,
+                &mut actor,
+                facility_id,
+                actor_user_id,
+                hms_domain::deployment::PermissionCode::BillingManage,
+                hms_domain::deployment::FeatureKey::Billing,
+            )
+            .await?,
+        )
+    } else {
+        None
+    };
     if actor_user_id == approval_user_id {
         anyhow::bail!("billing finalization requires supervisor approval");
     }
@@ -1840,17 +1898,39 @@ pub async fn finalize_invoice(
     .bind(reauthorized_at)
     .bind(facility_id)
     .bind(invoice_id)
-    .execute(pool)
+    .execute(&mut *transaction)
     .await?;
     if result.rows_affected() == 0 {
         return Ok(None);
     }
+    sqlx::query("INSERT INTO audit_events(id,facility_id,actor_user_id,event_type,resource_type,resource_id,metadata) VALUES(gen_random_uuid(),$1,$2,'billing.invoice.finalized','invoice',$3,'{}'::jsonb)")
+        .bind(facility_id).bind(actor_user_id).bind(invoice_id).execute(&mut *transaction).await?;
+    if let Some(end) = privileged_deadline {
+        crate::auth::assurance::check_privileged_deadline_tx(&mut transaction, end).await?;
+    }
+    transaction.commit().await?;
     fetch_invoice_by_id(pool, facility_id, invoice_id).await
 }
 
 pub async fn record_payment_reversal(
     pool: &PgPool,
     reversal: NewPaymentReversal,
+) -> anyhow::Result<PaymentReversalLedgerEntry> {
+    record_payment_reversal_inner(pool, reversal, None).await
+}
+
+pub async fn record_payment_reversal_authorized(
+    pool: &PgPool,
+    reversal: NewPaymentReversal,
+    authorization: crate::auth::WebAuthnActor,
+) -> anyhow::Result<PaymentReversalLedgerEntry> {
+    record_payment_reversal_inner(pool, reversal, Some(authorization)).await
+}
+
+async fn record_payment_reversal_inner(
+    pool: &PgPool,
+    reversal: NewPaymentReversal,
+    authorization: Option<crate::auth::WebAuthnActor>,
 ) -> anyhow::Result<PaymentReversalLedgerEntry> {
     if reversal.approved_by_user_id == reversal.recorded_by_user_id {
         anyhow::bail!("payment reversal requires supervisor approval");
@@ -1864,6 +1944,21 @@ pub async fn record_payment_reversal(
         ReversalKind::Void => "billing.payment_void.recorded",
     };
     let mut transaction = pool.begin().await?;
+    let privileged_deadline = if let Some(mut actor) = authorization {
+        Some(
+            crate::auth::assurance::require_family_privileged_tx(
+                &mut transaction,
+                &mut actor,
+                reversal.facility_id,
+                reversal.recorded_by_user_id,
+                hms_domain::deployment::PermissionCode::BillingManage,
+                hms_domain::deployment::FeatureKey::Billing,
+            )
+            .await?,
+        )
+    } else {
+        None
+    };
     let payment = sqlx::query_as::<_, PaymentReversalContextRow>(
         r#"
         SELECT payments.invoice_id,
@@ -1983,6 +2078,9 @@ pub async fn record_payment_reversal(
     .execute(&mut *transaction)
     .await?;
 
+    if let Some(end) = privileged_deadline {
+        crate::auth::assurance::check_privileged_deadline_tx(&mut transaction, end).await?;
+    }
     transaction.commit().await?;
     fetch_payment_reversal_by_id(pool, reversal.facility_id, reversal.id)
         .await?
@@ -2399,10 +2497,46 @@ pub async fn record_nhis_ar_adjustment(
     pool: &PgPool,
     adjustment: NewNhisArAdjustment,
 ) -> anyhow::Result<NhisArAdjustmentEntry> {
+    record_nhis_ar_adjustment_inner(pool, adjustment, None).await
+}
+
+pub async fn record_nhis_ar_adjustment_authorized(
+    pool: &PgPool,
+    adjustment: NewNhisArAdjustment,
+    authorization: crate::auth::WebAuthnActor,
+) -> anyhow::Result<NhisArAdjustmentEntry> {
+    record_nhis_ar_adjustment_inner(pool, adjustment, Some(authorization)).await
+}
+
+async fn record_nhis_ar_adjustment_inner(
+    pool: &PgPool,
+    adjustment: NewNhisArAdjustment,
+    authorization: Option<crate::auth::WebAuthnActor>,
+) -> anyhow::Result<NhisArAdjustmentEntry> {
     if adjustment.amount_minor <= 0 {
         anyhow::bail!("NHIS AR adjustment amount must be positive");
     }
     let mut transaction = pool.begin().await?;
+    let privileged_deadline = if let Some(mut actor) = authorization {
+        let end = crate::auth::assurance::require_family_privileged_tx(
+            &mut transaction,
+            &mut actor,
+            adjustment.facility_id,
+            adjustment.recorded_by_user_id,
+            hms_domain::deployment::PermissionCode::NhisClaimManage,
+            hms_domain::deployment::FeatureKey::Nhis,
+        )
+        .await?;
+        crate::auth::assurance::require_current_feature_tx(
+            &mut transaction,
+            &actor,
+            hms_domain::deployment::FeatureKey::Billing,
+        )
+        .await?;
+        Some(end)
+    } else {
+        None
+    };
     let claim = sqlx::query_as::<_, NhisClaimArStateRow>(
         r#"
         SELECT id AS claim_id, payer_receivable_minor, patient_liability_minor,
@@ -2477,6 +2611,11 @@ pub async fn record_nhis_ar_adjustment(
     .bind(adjustment.claim_id)
     .execute(&mut *transaction)
     .await?;
+    sqlx::query("INSERT INTO audit_events(id,facility_id,actor_user_id,event_type,resource_type,resource_id,metadata) VALUES(gen_random_uuid(),$1,$2,'nhis.ar_adjustment.recorded','nhis_claim_ar_adjustment',$3,'{}'::jsonb)")
+        .bind(adjustment.facility_id).bind(adjustment.recorded_by_user_id).bind(adjustment.id).execute(&mut *transaction).await?;
+    if let Some(end) = privileged_deadline {
+        crate::auth::assurance::check_privileged_deadline_tx(&mut transaction, end).await?;
+    }
     transaction.commit().await?;
     fetch_nhis_ar_adjustment_by_id(pool, adjustment.facility_id, adjustment.id)
         .await?

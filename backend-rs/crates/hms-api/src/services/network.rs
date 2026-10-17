@@ -80,7 +80,8 @@ pub async fn update(
     input: UpdateNetworkPolicyRequest,
 ) -> Result<ObjectResponse<NetworkPolicyWriteResult>, ApiError> {
     fresh_admin(&ctx.context)?;
-    let result = hms_db::network::update_policy(
+    let proof = super::auth_factor::actor(&ctx);
+    let result = hms_db::network::update_policy_authorized(
         state.db_pool(),
         hms_db::network::NetworkPolicyActor {
             facility_id: ctx.context.facility_id,
@@ -99,12 +100,19 @@ pub async fn update(
         },
         input,
         ctx.network.client.address(),
+        proof,
     )
     .await
     .map_err(write_error)?;
     Ok(object(result))
 }
 fn write_error(error: anyhow::Error) -> ApiError {
+    if error
+        .downcast_ref::<hms_db::auth::assurance::FactorError>()
+        .is_some()
+    {
+        return super::auth_factor::error(error);
+    }
     use hms_db::network::NetworkPolicyError as E;
     if let Some(value) = error.downcast_ref::<E>() {
         return match value {

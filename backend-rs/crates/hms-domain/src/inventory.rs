@@ -435,8 +435,11 @@ pub struct SupplyDispenseLineRequest {
 
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
 pub struct DispenseSupplyRequest {
+    #[schema(max_items = 100)]
     pub lines: Vec<SupplyDispenseLineRequest>,
 }
+
+pub const MAX_LEGACY_SUPPLY_LINES: usize = 100;
 
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
 pub struct StockCheckQueueItem {

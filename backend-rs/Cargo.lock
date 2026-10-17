@@ -863,6 +863,7 @@ dependencies = [
  "argon2",
  "base64 0.22.1",
  "chrono",
+ "hms-auth",
  "hms-domain",
  "hms-events",
  "hms-observability",
@@ -904,8 +905,10 @@ name = "hms-migrator"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "hms-auth",
  "hms-db",
  "hms-domain",
+ "serde_json",
  "sqlx",
  "tokio",
  "uuid",

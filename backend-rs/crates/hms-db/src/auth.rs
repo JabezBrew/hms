@@ -16,6 +16,7 @@ use uuid::Uuid;
 use crate::codec;
 use crate::PgPool;
 
+pub mod assurance;
 mod webauthn;
 pub use webauthn::{
     begin_webauthn_ceremony, insert_webauthn_challenge_bound, webauthn_credentials_authorized,
@@ -57,6 +58,7 @@ struct UserRow {
     visibility_codes: Vec<String>,
     passkey_enrolled: bool,
     recovery_codes_remaining: i64,
+    auth_factor_version: i64,
 }
 
 #[derive(Clone, Debug, FromRow)]
@@ -76,6 +78,7 @@ struct SessionUserRow {
     visibility_codes: Vec<String>,
     passkey_enrolled: bool,
     recovery_codes_remaining: i64,
+    auth_factor_version: i64,
     session_expires_at: DateTime<Utc>,
 }
 
@@ -95,10 +98,15 @@ struct RequestContextFactsRow {
     visibility_codes: Vec<String>,
     passkey_enrolled: bool,
     recovery_codes_remaining: i64,
+    auth_factor_version: i64,
     feature_flags: Value,
     active_authorities: Value,
     feature_entitlements_updated_at: Option<DateTime<Utc>>,
     session_expires_at: DateTime<Utc>,
+    factor_expires_at: Option<DateTime<Utc>>,
+    password_verified_at: DateTime<Utc>,
+    session_assurance: Value,
+    assurance_version: i64,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -106,6 +114,9 @@ pub struct UserAuthVersions {
     pub session_version: i64,
     pub permission_version: i64,
     pub active_profile: DeploymentProfile,
+    pub auth_factor_version: i64,
+    pub assurance_version: i64,
+    pub password_change_required: bool,
     pub feature_entitlements_updated_at: Option<DateTime<Utc>>,
 }
 
@@ -116,6 +127,9 @@ pub struct RequestContextAuthFacts {
     pub active_authorities: Vec<ActiveAuthority>,
     pub feature_entitlements_updated_at: Option<DateTime<Utc>>,
     pub session_expires_at: DateTime<Utc>,
+    /// Cache staleness bound only; factor expiry does not end ordinary access.
+    pub cache_expires_at: DateTime<Utc>,
+    pub password_verified_at: DateTime<Utc>,
 }
 
 #[derive(Clone, Debug, FromRow)]
@@ -312,6 +326,7 @@ pub async fn user_by_id(pool: &PgPool, user_id: Uuid) -> anyhow::Result<Option<U
                facilities.code AS facility_code,
                facilities.deployment_profile AS active_profile,
                users.session_version,
+               users.auth_factor_version,
                users.permission_version,
                users.password_change_required,
                users.password_hash,
@@ -407,6 +422,7 @@ pub async fn user_by_id_for_facility_session_with_deadline(
                facilities.code AS facility_code,
                facilities.deployment_profile AS active_profile,
                users.session_version,
+               users.auth_factor_version,
                users.permission_version,
                users.password_change_required,
                users.password_hash,
@@ -498,6 +514,7 @@ async fn user_by_id_for_facility_with_session(
                facilities.code AS facility_code,
                facilities.deployment_profile AS active_profile,
                users.session_version,
+               users.auth_factor_version,
                users.permission_version,
                users.password_change_required,
                users.password_hash,
@@ -571,41 +588,71 @@ async fn user_by_id_for_facility_with_session(
 
 pub async fn user_auth_versions_for_facility(
     pool: &PgPool,
+    user: Uuid,
+    facility: Uuid,
+) -> anyhow::Result<Option<UserAuthVersions>> {
+    auth_versions_inner(pool, user, facility, None).await
+}
+pub async fn session_auth_versions_for_facility(
+    pool: &PgPool,
+    user: Uuid,
+    facility: Uuid,
+    session: Uuid,
+) -> anyhow::Result<Option<UserAuthVersions>> {
+    auth_versions_inner(pool, user, facility, Some(session)).await
+}
+async fn auth_versions_inner(
+    pool: &PgPool,
     user_id: Uuid,
     facility_id: Uuid,
+    session: Option<Uuid>,
 ) -> anyhow::Result<Option<UserAuthVersions>> {
     let row = hms_observability::observe_db_query(
         "auth.user_auth_versions_for_facility",
-        sqlx::query_as::<_, (i64, i64, String, Option<DateTime<Utc>>)>(
+        sqlx::query_as::<_, (i64, i64, bool, i64, String, Option<DateTime<Utc>>, i64) >(
             r#"
-            SELECT users.session_version,
+            SELECT users.session_version, users.auth_factor_version, users.password_change_required,
                    users.permission_version,
                    facilities.deployment_profile AS active_profile,
                    (
                        SELECT MAX(facility_feature_entitlements.updated_at)
                        FROM facility_feature_entitlements
                        WHERE facility_feature_entitlements.facility_id = users.facility_id
-                   ) AS feature_entitlements_updated_at
+                   ) AS feature_entitlements_updated_at,
+                   COALESCE((SELECT assurance_version FROM refresh_sessions WHERE session_id=$3),0) AS assurance_version
             FROM users
             JOIN facilities ON facilities.id = users.facility_id
             WHERE users.id = $1
               AND users.facility_id = $2
               AND users.is_active = TRUE
               AND facilities.is_active = TRUE
+              AND ($3::uuid IS NULL OR EXISTS(SELECT 1 FROM refresh_sessions s WHERE s.session_id=$3 AND s.user_id=users.id AND s.facility_id=users.facility_id AND s.session_version=users.session_version AND s.permission_version_at_issue=users.permission_version AND s.revoked_at IS NULL AND LEAST(s.expires_at,s.idle_expires_at,s.absolute_expires_at)>clock_timestamp()))
             "#,
         )
         .bind(user_id)
         .bind(facility_id)
+        .bind(session)
         .fetch_optional(pool),
     )
     .await?;
 
     row.map(
-        |(session_version, permission_version, active_profile, feature_entitlements_updated_at)| {
+        |(
+            session_version,
+            auth_factor_version,
+            password_change_required,
+            permission_version,
+            active_profile,
+            feature_entitlements_updated_at,
+            assurance_version,
+        )| {
             Ok(UserAuthVersions {
                 session_version,
                 permission_version,
                 active_profile: codec::decode(&active_profile)?,
+                auth_factor_version,
+                assurance_version,
+                password_change_required,
                 feature_entitlements_updated_at,
             })
         },
@@ -631,6 +678,10 @@ pub async fn request_context_facts(
                    facilities.code AS facility_code,
                    facilities.deployment_profile AS active_profile,
                    users.session_version,
+                   users.auth_factor_version,
+                   refresh_sessions.password_verified_at,
+                   refresh_sessions.assurance_version,
+                   COALESCE(factor.proof,'{"method":null,"verified_at":null,"expires_at":null,"credential_id":null}'::jsonb) AS session_assurance,
                    users.permission_version,
                    users.password_change_required,
                    COALESCE(user_permissions.permission_codes, ARRAY[]::text[]) AS permission_codes,
@@ -670,13 +721,19 @@ pub async fn request_context_facts(
                               authority_appointments.ends_at
                        FROM authority_appointments
                        JOIN positions ON positions.id = authority_appointments.position_id
+                         AND positions.facility_id=authority_appointments.facility_id
+                       JOIN organization_units ON organization_units.id=positions.org_unit_id
+                         AND organization_units.facility_id=positions.facility_id
+                         AND organization_units.is_active
                        LEFT JOIN position_templates ON position_templates.id = positions.template_id
+                         AND position_templates.facility_id=positions.facility_id
                        LEFT JOIN LATERAL unnest(COALESCE(position_templates.permission_codes, '{}'::text[]))
                            AS authority_permissions(permission_code) ON TRUE
                        WHERE authority_appointments.facility_id = $2
                          AND authority_appointments.user_id = $1
                          AND authority_appointments.status = 'active'
                          AND positions.status = 'active'
+                         AND (positions.template_id IS NULL OR position_templates.id IS NOT NULL)
                          AND authority_appointments.starts_at <= now()
                          AND (authority_appointments.ends_at IS NULL OR authority_appointments.ends_at > now())
 
@@ -720,6 +777,7 @@ pub async fn request_context_facts(
 	                     FROM facility_feature_entitlements
 	                     WHERE facility_feature_entitlements.facility_id = users.facility_id
 	                   ) AS feature_entitlements_updated_at,
+	                   factor.proof_expires_at AS factor_expires_at,
 	                   LEAST(
 	                     refresh_sessions.expires_at,
 	                     refresh_sessions.idle_expires_at,
@@ -741,6 +799,14 @@ pub async fn request_context_facts(
 	             AND refresh_sessions.idle_expires_at > now()
 	             AND refresh_sessions.absolute_expires_at > now()
 	            LEFT JOIN LATERAL (
+                SELECT jsonb_build_object('method',a.method,'verified_at',a.verified_at,'expires_at',a.expires_at,'credential_id',a.credential_id) AS proof,a.expires_at AS proof_expires_at
+                FROM auth_session_assurance a LEFT JOIN auth_webauthn_credentials k ON k.id=a.credential_id AND k.facility_id=a.facility_id AND k.user_id=a.user_id
+                WHERE a.session_id=refresh_sessions.session_id AND a.user_id=users.id AND a.facility_id=users.facility_id
+                AND a.session_version=users.session_version AND a.permission_version=users.permission_version AND a.factor_version=users.auth_factor_version
+                AND a.active_profile=facilities.deployment_profile AND a.verified_at<=clock_timestamp() AND a.expires_at>clock_timestamp()
+                AND (a.method='recovery' OR k.id IS NOT NULL AND k.disabled_at IS NULL)
+            ) factor ON TRUE
+            LEFT JOIN LATERAL (
 	                SELECT array_agg(permission_code ORDER BY permission_code) AS permission_codes
 	                FROM effective_user_permissions
 	                WHERE user_id = users.id
@@ -795,6 +861,7 @@ pub async fn user_by_email_and_facility(
                facilities.code AS facility_code,
                facilities.deployment_profile AS active_profile,
                users.session_version,
+               users.auth_factor_version,
                users.permission_version,
                users.password_change_required,
                users.password_hash,
@@ -1019,6 +1086,15 @@ pub struct LoginAttemptReservation {
     resource_type: String,
     resource_key: String,
     window_started_at: DateTime<Utc>,
+    admitted_at: DateTime<Utc>,
+}
+
+impl LoginAttemptReservation {
+    /// Database-clock lower bound captured before password verification. It
+    /// never advances after CPU work or a subsequent workflow lock wait.
+    pub fn admitted_at(&self) -> DateTime<Utc> {
+        self.admitted_at
+    }
 }
 
 /// Atomically reserves the shared failure budget before password work. Scope
@@ -1033,7 +1109,7 @@ pub async fn reserve_login_attempt(
     let resource_key = resource_id
         .map(|id| id.to_string())
         .unwrap_or_else(|| "none".to_owned());
-    let window_started_at = sqlx::query_scalar::<_, DateTime<Utc>>(
+    let admission = sqlx::query_as::<_, (DateTime<Utc>, DateTime<Utc>)>(
         r#"
         INSERT INTO auth_login_attempt_budgets (
             facility_id, resource_type, resource_key, window_started_at,
@@ -1056,7 +1132,7 @@ pub async fn reserve_login_attempt(
             updated_at = now()
         WHERE auth_login_attempt_budgets.window_started_at <= now() - interval '15 minutes'
            OR auth_login_attempt_budgets.failed_attempts + auth_login_attempt_budgets.in_flight_attempts < 10
-        RETURNING window_started_at
+        RETURNING window_started_at, clock_timestamp()
         "#,
     )
     .bind(facility_id)
@@ -1065,11 +1141,12 @@ pub async fn reserve_login_attempt(
     .fetch_optional(pool)
     .await?;
     Ok(
-        window_started_at.map(|window_started_at| LoginAttemptReservation {
+        admission.map(|(window_started_at, admitted_at)| LoginAttemptReservation {
             facility_id,
             resource_type: resource_type.to_owned(),
             resource_key,
             window_started_at,
+            admitted_at,
         }),
     )
 }
@@ -1331,6 +1408,19 @@ pub async fn list_active_user_sessions(
     .await?)
 }
 
+async fn lock_auth_facility(
+    transaction: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    facility: Uuid,
+) -> anyhow::Result<bool> {
+    Ok(
+        sqlx::query_scalar::<_, Uuid>("SELECT id FROM facilities WHERE id=$1 FOR SHARE")
+            .bind(facility)
+            .fetch_optional(&mut **transaction)
+            .await?
+            .is_some(),
+    )
+}
+
 pub async fn revoke_user_session(
     pool: &PgPool,
     facility_id: Uuid,
@@ -1338,6 +1428,10 @@ pub async fn revoke_user_session(
     session_id: Uuid,
     reason: &str,
 ) -> anyhow::Result<bool> {
+    let mut transaction = pool.begin().await?;
+    if !lock_auth_facility(&mut transaction, facility_id).await? {
+        return Ok(false);
+    }
     let result = sqlx::query(
         r#"
         UPDATE refresh_sessions
@@ -1355,9 +1449,9 @@ pub async fn revoke_user_session(
     .bind(user_id)
     .bind(session_id)
     .bind(reason)
-    .execute(pool)
+    .execute(&mut *transaction)
     .await?;
-
+    transaction.commit().await?;
     Ok(result.rows_affected() == 1)
 }
 
@@ -1368,6 +1462,10 @@ pub async fn revoke_other_user_sessions(
     current_session_id: Uuid,
     reason: &str,
 ) -> anyhow::Result<u64> {
+    let mut transaction = pool.begin().await?;
+    if !lock_auth_facility(&mut transaction, facility_id).await? {
+        return Ok(0);
+    }
     let result = sqlx::query(
         r#"
         UPDATE refresh_sessions
@@ -1385,9 +1483,9 @@ pub async fn revoke_other_user_sessions(
     .bind(user_id)
     .bind(current_session_id)
     .bind(reason)
-    .execute(pool)
+    .execute(&mut *transaction)
     .await?;
-
+    transaction.commit().await?;
     Ok(result.rows_affected())
 }
 
@@ -1397,6 +1495,20 @@ pub async fn revoke_refresh_session(
     csrf_token_hash: &str,
     reason: &str,
 ) -> anyhow::Result<bool> {
+    let Some(facility) = sqlx::query_scalar::<_, Uuid>(
+        "SELECT facility_id FROM refresh_sessions WHERE token_hash=$1 AND csrf_token_hash=$2",
+    )
+    .bind(token_hash)
+    .bind(csrf_token_hash)
+    .fetch_optional(pool)
+    .await?
+    else {
+        return Ok(false);
+    };
+    let mut transaction = pool.begin().await?;
+    if !lock_auth_facility(&mut transaction, facility).await? {
+        return Ok(false);
+    }
     let result = sqlx::query(
         r#"
         UPDATE refresh_sessions
@@ -1411,9 +1523,9 @@ pub async fn revoke_refresh_session(
     .bind(token_hash)
     .bind(csrf_token_hash)
     .bind(reason)
-    .execute(pool)
+    .execute(&mut *transaction)
     .await?;
-
+    transaction.commit().await?;
     Ok(result.rows_affected() == 1)
 }
 
@@ -1422,6 +1534,11 @@ pub async fn revoke_refresh_session_family(
     session_family_id: Uuid,
     reason: &str,
 ) -> anyhow::Result<u64> {
+    let Some(facility)=sqlx::query_scalar::<_,Uuid>("SELECT facility_id FROM refresh_sessions WHERE session_family_id=$1 ORDER BY session_id LIMIT 1").bind(session_family_id).fetch_optional(pool).await? else{return Ok(0)};
+    let mut transaction = pool.begin().await?;
+    if !lock_auth_facility(&mut transaction, facility).await? {
+        return Ok(0);
+    }
     let result = sqlx::query(
         r#"
         UPDATE refresh_sessions
@@ -1429,13 +1546,15 @@ pub async fn revoke_refresh_session_family(
             last_seen_at = now(),
             revoked_reason = COALESCE(revoked_reason, $2)
         WHERE session_family_id = $1
+          AND facility_id=$3
         "#,
     )
     .bind(session_family_id)
     .bind(reason)
-    .execute(pool)
+    .bind(facility)
+    .execute(&mut *transaction)
     .await?;
-
+    transaction.commit().await?;
     Ok(result.rows_affected())
 }
 
@@ -1445,6 +1564,12 @@ pub async fn revoke_refresh_session_family_with_audit(
     reason: &str,
     audit_event: NewAuthAuditEvent,
 ) -> anyhow::Result<u64> {
+    let mut transaction = pool.begin().await?;
+    // Audited revocation must acquire its facility before session updates. A
+    // feature/staff publisher may hold that facility and retire the same rows.
+    if !lock_auth_facility(&mut transaction, audit_event.facility_id).await? {
+        return Err(assurance::FactorError::AuthorizationExpired.into());
+    }
     let revoked = sqlx::query_scalar::<_, i64>(
         r#"
         WITH revoked AS (
@@ -1453,6 +1578,7 @@ pub async fn revoke_refresh_session_family_with_audit(
                 last_seen_at = now(),
                 revoked_reason = $2
             WHERE session_family_id = $1
+              AND facility_id = $4
               AND revoked_at IS NULL
             RETURNING 1
         ),
@@ -1483,9 +1609,9 @@ pub async fn revoke_refresh_session_family_with_audit(
     .bind(audit_event.resource_type)
     .bind(audit_event.resource_id)
     .bind(audit_event.metadata)
-    .fetch_one(pool)
+    .fetch_one(&mut *transaction)
     .await?;
-
+    transaction.commit().await?;
     Ok(revoked as u64)
 }
 
@@ -1568,7 +1694,59 @@ pub async fn change_user_password(
     expected_current_hash: &str,
     new_password_hash: &str,
 ) -> anyhow::Result<Option<UserAccount>> {
+    change_user_password_inner(
+        pool,
+        facility_id,
+        user_id,
+        expected_current_hash,
+        new_password_hash,
+        None,
+    )
+    .await
+}
+
+pub async fn change_user_password_authorized(
+    pool: &PgPool,
+    facility_id: Uuid,
+    user_id: Uuid,
+    expected_current_hash: &str,
+    new_password_hash: &str,
+    authorization: WebAuthnActor,
+) -> anyhow::Result<Option<UserAccount>> {
+    change_user_password_inner(
+        pool,
+        facility_id,
+        user_id,
+        expected_current_hash,
+        new_password_hash,
+        Some(authorization),
+    )
+    .await
+}
+
+async fn change_user_password_inner(
+    pool: &PgPool,
+    facility_id: Uuid,
+    user_id: Uuid,
+    expected_current_hash: &str,
+    new_password_hash: &str,
+    mut authorization: Option<WebAuthnActor>,
+) -> anyhow::Result<Option<UserAccount>> {
     let mut transaction = pool.begin().await?;
+    if !lock_auth_facility(&mut transaction, facility_id).await? {
+        if authorization.is_some() {
+            return Err(assurance::FactorError::AuthorizationExpired.into());
+        }
+        return Ok(None);
+    }
+    let deadline = if let Some(actor) = authorization.as_mut() {
+        Some(
+            assurance::require_bound_session_tx(&mut transaction, actor, facility_id, user_id)
+                .await?,
+        )
+    } else {
+        None
+    };
     let current_hash = sqlx::query_scalar::<_, String>(
         r#"
         SELECT password_hash
@@ -1576,7 +1754,7 @@ pub async fn change_user_password(
         WHERE id = $1
           AND facility_id = $2
           AND is_active = TRUE
-        FOR UPDATE
+        FOR NO KEY UPDATE
         "#,
     )
     .bind(user_id)
@@ -1640,6 +1818,9 @@ pub async fn change_user_password(
     .execute(&mut *transaction)
     .await?;
 
+    if let Some(end) = deadline {
+        assurance::check_session_deadline_tx(&mut transaction, end).await?;
+    }
     transaction.commit().await?;
     user_by_id(pool, user_id).await
 }
@@ -1651,13 +1832,25 @@ pub async fn complete_password_reset(
     expected_current_hash: &str,
     new_password_hash: &str,
 ) -> anyhow::Result<bool> {
+    let Some(facility) =
+        sqlx::query_scalar::<_, Uuid>("SELECT facility_id FROM users WHERE id=$1 AND is_active")
+            .bind(user_id)
+            .fetch_optional(pool)
+            .await?
+    else {
+        return Ok(false);
+    };
     let mut transaction = pool.begin().await?;
+    if !lock_auth_facility(&mut transaction, facility).await? {
+        return Ok(false);
+    }
     // Lock the account before individual token rows. Distinct emailed links
     // must race as one password change, without token/user lock inversion.
     let current_hash = sqlx::query_scalar::<_, String>(
-        "SELECT password_hash FROM users WHERE id = $1 AND is_active = TRUE FOR NO KEY UPDATE",
+        "SELECT password_hash FROM users WHERE id = $1 AND facility_id=$2 AND is_active = TRUE FOR NO KEY UPDATE",
     )
     .bind(user_id)
+    .bind(facility)
     .fetch_optional(&mut *transaction)
     .await?;
     let Some(current_hash) = current_hash else {
@@ -1666,23 +1859,32 @@ pub async fn complete_password_reset(
     if current_hash != expected_current_hash {
         return Ok(false);
     }
-    let token_user_id = sqlx::query_scalar::<_, Uuid>(
+    let token = sqlx::query_as::<_, (Uuid, DateTime<Utc>)>(
         r#"
-        SELECT user_id
+        SELECT user_id,expires_at
         FROM password_reset_tokens
         WHERE token_hash = $1
           AND user_id = $2
+          AND facility_id=$3
           AND used_at IS NULL
-          AND expires_at > now()
         FOR UPDATE
         "#,
     )
     .bind(token_hash)
     .bind(user_id)
+    .bind(facility)
     .fetch_optional(&mut *transaction)
     .await?;
 
-    if token_user_id != Some(user_id) {
+    let Some((token_user_id, expires)) = token else {
+        return Ok(false);
+    };
+    if token_user_id != user_id
+        || !sqlx::query_scalar::<_, bool>("SELECT clock_timestamp()<$1")
+            .bind(expires)
+            .fetch_one(&mut *transaction)
+            .await?
+    {
         return Ok(false);
     }
 
@@ -1736,6 +1938,13 @@ pub async fn complete_password_reset(
     .execute(&mut *transaction)
     .await?;
 
+    if !sqlx::query_scalar::<_, bool>("SELECT clock_timestamp()<$1")
+        .bind(expires)
+        .fetch_one(&mut *transaction)
+        .await?
+    {
+        return Ok(false);
+    }
     transaction.commit().await?;
     Ok(true)
 }
@@ -2052,7 +2261,29 @@ pub async fn start_break_glass_grant(
     pool: &PgPool,
     command: StartBreakGlassGrant,
 ) -> anyhow::Result<BreakGlassGrantOutcome> {
+    start_break_glass_grant_inner(pool, command, None).await
+}
+
+pub async fn start_break_glass_grant_authorized(
+    pool: &PgPool,
+    command: StartBreakGlassGrant,
+    authorization: crate::auth::WebAuthnActor,
+) -> anyhow::Result<BreakGlassGrantOutcome> {
+    start_break_glass_grant_inner(pool, command, Some(authorization)).await
+}
+
+async fn start_break_glass_grant_inner(
+    pool: &PgPool,
+    command: StartBreakGlassGrant,
+    authorization: Option<crate::auth::WebAuthnActor>,
+) -> anyhow::Result<BreakGlassGrantOutcome> {
     let mut transaction = pool.begin().await?;
+    // Quota serialization precedes the shared factor proof: concurrent starts
+    // must not both hold SHARE and then attempt to upgrade the same actor.
+    sqlx::query("SELECT id FROM facilities WHERE id=$1 FOR SHARE")
+        .bind(command.facility_id)
+        .fetch_one(&mut *transaction)
+        .await?;
     // Same actor's start/end operations share this lock order. NO KEY UPDATE
     // permits audit/FK KEY SHARE locks while serializing quota decisions.
     let actor = sqlx::query_scalar::<_, Uuid>(
@@ -2065,6 +2296,21 @@ pub async fn start_break_glass_grant(
     if actor.is_none() {
         anyhow::bail!("break-glass actor was not found in this facility");
     }
+    let privileged_deadline = if let Some(mut actor) = authorization {
+        Some(
+            crate::auth::assurance::require_family_privileged_tx(
+                &mut transaction,
+                &mut actor,
+                command.facility_id,
+                command.user_id,
+                hms_domain::deployment::PermissionCode::PatientBreakGlassInvoke,
+                hms_domain::deployment::FeatureKey::Patients,
+            )
+            .await?,
+        )
+    } else {
+        None
+    };
     if !reauth_is_fresh(command.reauth_verified_at, command.now) {
         return deny_break_glass_grant(
             transaction,
@@ -2215,6 +2461,9 @@ pub async fn start_break_glass_grant(
         serde_json::json!({ "category": category }),
     )
     .await?;
+    if let Some(end) = privileged_deadline {
+        crate::auth::assurance::check_privileged_deadline_tx(&mut transaction, end).await?;
+    }
     transaction.commit().await?;
 
     Ok(BreakGlassGrantOutcome::Granted(break_glass_grant_from_row(
@@ -2227,6 +2476,12 @@ pub async fn end_break_glass_grants(
     command: EndBreakGlassGrants,
 ) -> anyhow::Result<u64> {
     let mut transaction = pool.begin().await?;
+    // Match start and facility-entitlement publication order. Ending a grant
+    // remains an attenuation command and does not require a fresh factor.
+    sqlx::query("SELECT id FROM facilities WHERE id=$1 FOR SHARE")
+        .bind(command.facility_id)
+        .fetch_one(&mut *transaction)
+        .await?;
     sqlx::query("SELECT id FROM users WHERE id = $1 AND facility_id = $2 FOR NO KEY UPDATE")
         .bind(command.user_id)
         .bind(command.facility_id)
@@ -2484,11 +2739,15 @@ fn hydrate_user(row: Option<UserRow>) -> anyhow::Result<Option<UserAccount>> {
         session_version: row.session_version,
         permission_version: row.permission_version,
         password_change_required: row.password_change_required,
-        auth_security: AuthSecurityState::from_permissions(
-            &permissions,
-            row.passkey_enrolled,
-            row.recovery_codes_remaining,
-        ),
+        auth_security: {
+            let mut security = AuthSecurityState::from_permissions(
+                &permissions,
+                row.passkey_enrolled,
+                row.recovery_codes_remaining,
+            );
+            security.factor_version = row.auth_factor_version;
+            security
+        },
         password_hash: row.password_hash,
     }))
 }
@@ -2515,6 +2774,7 @@ fn hydrate_session_user(row: Option<SessionUserRow>) -> anyhow::Result<Option<Se
         visibility_codes: row.visibility_codes,
         passkey_enrolled: row.passkey_enrolled,
         recovery_codes_remaining: row.recovery_codes_remaining,
+        auth_factor_version: row.auth_factor_version,
     }))?
     .expect("session row hydrates to a user");
 
@@ -2564,11 +2824,19 @@ fn hydrate_request_context_facts(
             session_version: row.session_version,
             permission_version: row.permission_version,
             password_change_required: row.password_change_required,
-            auth_security: AuthSecurityState::from_permissions(
-                &permissions,
-                row.passkey_enrolled,
-                row.recovery_codes_remaining,
-            ),
+            auth_security: {
+                let mut security = AuthSecurityState::from_permissions(
+                    &permissions,
+                    row.passkey_enrolled,
+                    row.recovery_codes_remaining,
+                );
+                security.factor_version = row.auth_factor_version;
+                security.assurance_version = row.assurance_version;
+                security.session_assurance = serde_json::from_value(row.session_assurance)?;
+                security.privileged_actions_allowed = !security.passkey_required
+                    || security.session_assurance.is_fresh_passkey_at(Utc::now());
+                security
+            },
         },
         feature_flags: crate::admin::effective_feature_flags_from_rows(
             feature_rows,
@@ -2577,6 +2845,10 @@ fn hydrate_request_context_facts(
         active_authorities: crate::admin::active_authorities_from_rows(authority_rows)?,
         feature_entitlements_updated_at: row.feature_entitlements_updated_at,
         session_expires_at: row.session_expires_at,
+        cache_expires_at: row.factor_expires_at.map_or(row.session_expires_at, |end| {
+            end.min(row.session_expires_at)
+        }),
+        password_verified_at: row.password_verified_at,
     }))
 }
 

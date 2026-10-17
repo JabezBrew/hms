@@ -18,7 +18,10 @@ use serde_json::{json, Value};
 use sqlx::{FromRow, QueryBuilder};
 use uuid::Uuid;
 
+use crate::auth::WebAuthnActor;
 use crate::{codec, PgPool};
+
+pub(crate) mod privileged;
 
 const EMPLOYEE_IDENTIFIER_TYPE: &str = "employee";
 const EMPLOYEE_ID_SEQUENCE_WIDTH: usize = 7;
@@ -370,12 +373,13 @@ pub async fn list_organization_units(
                 organization_units.code,
                 organization_units.name,
                 organization_units.unit_type,
-                organization_units.parent_unit_id,
+                parent.id AS parent_unit_id,
                 parent.name AS parent_unit_name,
                 organization_units.is_active,
                 organization_units.created_at
          FROM organization_units
          LEFT JOIN organization_units parent ON parent.id = organization_units.parent_unit_id
+           AND parent.facility_id = organization_units.facility_id
          WHERE organization_units.facility_id = ",
     );
     query.push_bind(facility_id);
@@ -407,6 +411,18 @@ pub async fn create_organization_unit(
     unit: NewOrganizationUnit,
 ) -> anyhow::Result<OrganizationUnitListItem> {
     let id = Uuid::new_v4();
+    let mut tx = pool.begin().await?;
+    if let Some(parent_id) = unit.parent_unit_id {
+        let parent = sqlx::query_scalar::<_, Uuid>(
+            "SELECT id FROM organization_units
+             WHERE id = $1 AND facility_id = $2 AND is_active = TRUE FOR SHARE",
+        )
+        .bind(parent_id)
+        .bind(unit.facility_id)
+        .fetch_optional(&mut *tx)
+        .await?;
+        anyhow::ensure!(parent.is_some(), "organization parent is unavailable");
+    }
     sqlx::query(
         "INSERT INTO organization_units (id, facility_id, parent_unit_id, code, name, unit_type)
          VALUES ($1, $2, $3, $4, $5, $6)",
@@ -417,8 +433,9 @@ pub async fn create_organization_unit(
     .bind(unit.code)
     .bind(unit.name)
     .bind(codec::encode(unit.unit_type)?)
-    .execute(pool)
+    .execute(&mut *tx)
     .await?;
+    tx.commit().await?;
     get_organization_unit(pool, unit.facility_id, id)
         .await?
         .ok_or_else(|| anyhow::anyhow!("organization unit was not found after write"))
@@ -444,12 +461,13 @@ pub async fn list_organization_unit_children(
                 organization_units.code,
                 organization_units.name,
                 organization_units.unit_type,
-                organization_units.parent_unit_id,
+                parent.id AS parent_unit_id,
                 parent.name AS parent_unit_name,
                 organization_units.is_active,
                 organization_units.created_at
          FROM organization_units
          LEFT JOIN organization_units parent ON parent.id = organization_units.parent_unit_id
+           AND parent.facility_id = organization_units.facility_id
          WHERE organization_units.facility_id = ",
     );
     query.push_bind(facility_id);
@@ -511,12 +529,13 @@ pub async fn list_organization_unit_ancestors(
                 ancestors.code,
                 ancestors.name,
                 ancestors.unit_type,
-                ancestors.parent_unit_id,
+                parent.id AS parent_unit_id,
                 parent.name AS parent_unit_name,
                 ancestors.is_active,
                 ancestors.created_at
          FROM ancestors
          LEFT JOIN organization_units parent ON parent.id = ancestors.parent_unit_id
+           AND parent.facility_id = $1
          ORDER BY ancestors.depth DESC
          LIMIT $3",
     )
@@ -573,12 +592,13 @@ pub async fn list_organization_unit_descendants(
                 descendants.code,
                 descendants.name,
                 descendants.unit_type,
-                descendants.parent_unit_id,
+                parent.id AS parent_unit_id,
                 parent.name AS parent_unit_name,
                 descendants.is_active,
                 descendants.created_at
          FROM descendants
          LEFT JOIN organization_units parent ON parent.id = descendants.parent_unit_id
+           AND parent.facility_id = $1
          WHERE TRUE",
     );
     append_cursor(
@@ -622,9 +642,36 @@ pub async fn create_position_template(
     pool: &PgPool,
     template: NewPositionTemplate,
 ) -> anyhow::Result<PositionTemplateListItem> {
+    create_position_template_with_proof(pool, template, None).await
+}
+
+/// Mandatory same-transaction proof for HTTP/service callers.
+pub async fn create_position_template_authorized(
+    pool: &PgPool,
+    template: NewPositionTemplate,
+    actor: WebAuthnActor,
+) -> anyhow::Result<PositionTemplateListItem> {
+    create_position_template_with_proof(pool, template, Some(actor)).await
+}
+
+async fn create_position_template_with_proof(
+    pool: &PgPool,
+    template: NewPositionTemplate,
+    mut proof: Option<WebAuthnActor>,
+) -> anyhow::Result<PositionTemplateListItem> {
     let id = Uuid::new_v4();
     let permission_codes = codec::encode_slice(&template.permission_codes)?;
     let mut tx = pool.begin().await?;
+    let proof_deadline = privileged::begin(
+        &mut tx,
+        proof.as_mut(),
+        template.facility_id,
+        template.actor_user_id,
+        &[],
+        PermissionCode::AdminAuthorityManage,
+        false,
+    )
+    .await?;
     sqlx::query(
         "INSERT INTO position_templates (id, facility_id, code, title, description, permission_codes)
          VALUES ($1, $2, $3, $4, $5, $6)",
@@ -650,6 +697,7 @@ pub async fn create_position_template(
         },
     )
     .await?;
+    privileged::finish(&mut tx, proof_deadline).await?;
     tx.commit().await?;
     get_position_template(pool, template.facility_id, id)
         .await?
@@ -679,8 +727,42 @@ pub async fn create_position(
     pool: &PgPool,
     position: NewPosition,
 ) -> anyhow::Result<PositionListItem> {
+    create_position_with_proof(pool, position, None).await
+}
+
+/// Mandatory same-transaction proof for HTTP/service callers.
+pub async fn create_position_authorized(
+    pool: &PgPool,
+    position: NewPosition,
+    actor: WebAuthnActor,
+) -> anyhow::Result<PositionListItem> {
+    create_position_with_proof(pool, position, Some(actor)).await
+}
+
+async fn create_position_with_proof(
+    pool: &PgPool,
+    position: NewPosition,
+    mut proof: Option<WebAuthnActor>,
+) -> anyhow::Result<PositionListItem> {
     let id = Uuid::new_v4();
     let mut tx = pool.begin().await?;
+    let proof_deadline = privileged::begin(
+        &mut tx,
+        proof.as_mut(),
+        position.facility_id,
+        position.actor_user_id,
+        &[],
+        PermissionCode::AdminAuthorityManage,
+        false,
+    )
+    .await?;
+    validate_position_references_tx(
+        &mut tx,
+        position.facility_id,
+        position.org_unit_id,
+        position.template_id,
+    )
+    .await?;
     sqlx::query(
         "INSERT INTO positions (id, facility_id, org_unit_id, template_id, code, title, status)
          VALUES ($1, $2, $3, $4, $5, $6, $7)",
@@ -710,10 +792,44 @@ pub async fn create_position(
         },
     )
     .await?;
+    privileged::finish(&mut tx, proof_deadline).await?;
     tx.commit().await?;
     get_position(pool, position.facility_id, id)
         .await?
         .ok_or_else(|| anyhow::anyhow!("position was not found after write"))
+}
+
+// Hold reference eligibility through the write instead of trusting a foreign-key
+// identifier or an earlier service lookup.
+async fn validate_position_references_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    facility_id: Uuid,
+    org_unit_id: Uuid,
+    template_id: Option<Uuid>,
+) -> anyhow::Result<()> {
+    let org_unit = sqlx::query_scalar::<_, Uuid>(
+        "SELECT id FROM organization_units
+         WHERE id = $1 AND facility_id = $2 AND is_active = TRUE FOR SHARE",
+    )
+    .bind(org_unit_id)
+    .bind(facility_id)
+    .fetch_optional(&mut **tx)
+    .await?;
+    anyhow::ensure!(
+        org_unit.is_some(),
+        "position organization unit is unavailable"
+    );
+    if let Some(template_id) = template_id {
+        let template = sqlx::query_scalar::<_, Uuid>(
+            "SELECT id FROM position_templates WHERE id = $1 AND facility_id = $2 FOR SHARE",
+        )
+        .bind(template_id)
+        .bind(facility_id)
+        .fetch_optional(&mut **tx)
+        .await?;
+        anyhow::ensure!(template.is_some(), "position template is unavailable");
+    }
+    Ok(())
 }
 
 pub async fn list_authority_appointments(
@@ -749,8 +865,37 @@ pub async fn create_authority_appointment(
     appointment: NewAuthorityAppointment,
     request_id: Option<String>,
 ) -> anyhow::Result<AuthorityAppointmentListItem> {
+    create_authority_appointment_with_proof(pool, appointment, request_id, None).await
+}
+
+/// Mandatory same-transaction proof for HTTP/service callers.
+pub async fn create_authority_appointment_authorized(
+    pool: &PgPool,
+    appointment: NewAuthorityAppointment,
+    request_id: Option<String>,
+    actor: WebAuthnActor,
+) -> anyhow::Result<AuthorityAppointmentListItem> {
+    create_authority_appointment_with_proof(pool, appointment, request_id, Some(actor)).await
+}
+
+async fn create_authority_appointment_with_proof(
+    pool: &PgPool,
+    appointment: NewAuthorityAppointment,
+    request_id: Option<String>,
+    mut proof: Option<WebAuthnActor>,
+) -> anyhow::Result<AuthorityAppointmentListItem> {
     let id = Uuid::new_v4();
     let mut tx = pool.begin().await?;
+    let proof_deadline = privileged::begin(
+        &mut tx,
+        proof.as_mut(),
+        appointment.facility_id,
+        appointment.appointed_by_user_id,
+        &[appointment.user_id],
+        PermissionCode::AdminAuthorityManage,
+        false,
+    )
+    .await?;
     let target = sqlx::query_scalar::<_, Uuid>(
         "SELECT id FROM users WHERE id=$1 AND facility_id=$2 AND is_active=TRUE FOR NO KEY UPDATE",
     )
@@ -762,17 +907,18 @@ pub async fn create_authority_appointment(
         target.is_some(),
         "authority recipient is unavailable in this facility"
     );
-    let position = sqlx::query_scalar::<_, Uuid>(
-        "SELECT id FROM positions WHERE id=$1 AND facility_id=$2 AND status='active' FOR SHARE",
+    let position = sqlx::query_as::<_, (Uuid, Option<Uuid>)>(
+        "SELECT org_unit_id, template_id FROM positions
+         WHERE id=$1 AND facility_id=$2 AND status='active' FOR SHARE",
     )
     .bind(appointment.position_id)
     .bind(appointment.facility_id)
     .fetch_optional(&mut *tx)
     .await?;
-    anyhow::ensure!(
-        position.is_some(),
-        "authority position is unavailable in this facility"
-    );
+    let (org_unit_id, template_id) = position
+        .ok_or_else(|| anyhow::anyhow!("authority position is unavailable in this facility"))?;
+    validate_position_references_tx(&mut tx, appointment.facility_id, org_unit_id, template_id)
+        .await?;
     sqlx::query(
         "INSERT INTO authority_appointments (
             id, facility_id, position_id, user_id, appointed_by_user_id, appointment_type,
@@ -806,6 +952,7 @@ pub async fn create_authority_appointment(
         },
     )
     .await?;
+    privileged::finish(&mut tx, proof_deadline).await?;
     tx.commit().await?;
     get_authority_appointment(pool, appointment.facility_id, id)
         .await?
@@ -859,7 +1006,11 @@ pub async fn active_authorities_for_user(
                authority_appointments.ends_at
         FROM authority_appointments
         JOIN positions ON positions.id = authority_appointments.position_id
+          AND positions.facility_id = authority_appointments.facility_id
+        JOIN organization_units authority_org ON authority_org.id = positions.org_unit_id
+          AND authority_org.facility_id = positions.facility_id AND authority_org.is_active = TRUE
         LEFT JOIN position_templates ON position_templates.id = positions.template_id
+          AND position_templates.facility_id = positions.facility_id
         LEFT JOIN LATERAL unnest(COALESCE(position_templates.permission_codes, '{}'::text[]))
             AS authority_permissions(permission_code) ON TRUE
         WHERE authority_appointments.facility_id = $1
@@ -951,7 +1102,11 @@ pub async fn request_context_admin_facts(
                          authority_appointments.ends_at
                   FROM authority_appointments
                   JOIN positions ON positions.id = authority_appointments.position_id
+                    AND positions.facility_id = authority_appointments.facility_id
+                  JOIN organization_units authority_org ON authority_org.id = positions.org_unit_id
+                    AND authority_org.facility_id = positions.facility_id AND authority_org.is_active = TRUE
                   LEFT JOIN position_templates ON position_templates.id = positions.template_id
+          AND position_templates.facility_id = positions.facility_id
                   LEFT JOIN LATERAL unnest(COALESCE(position_templates.permission_codes, '{}'::text[]))
                       AS authority_permissions(permission_code) ON TRUE
                   WHERE authority_appointments.facility_id = $1
@@ -1018,9 +1173,38 @@ pub async fn create_permission_assignment(
     assignment: NewPermissionAssignment,
     request_id: Option<String>,
 ) -> anyhow::Result<PermissionAssignmentListItem> {
+    create_permission_assignment_with_proof(pool, assignment, request_id, None).await
+}
+
+/// Mandatory same-transaction proof for HTTP/service callers.
+pub async fn create_permission_assignment_authorized(
+    pool: &PgPool,
+    assignment: NewPermissionAssignment,
+    request_id: Option<String>,
+    actor: WebAuthnActor,
+) -> anyhow::Result<PermissionAssignmentListItem> {
+    create_permission_assignment_with_proof(pool, assignment, request_id, Some(actor)).await
+}
+
+async fn create_permission_assignment_with_proof(
+    pool: &PgPool,
+    assignment: NewPermissionAssignment,
+    request_id: Option<String>,
+    mut proof: Option<WebAuthnActor>,
+) -> anyhow::Result<PermissionAssignmentListItem> {
     let id = Uuid::new_v4();
     let permission_code = codec::encode(assignment.permission_code)?;
     let mut tx = pool.begin().await?;
+    let proof_deadline = privileged::begin(
+        &mut tx,
+        proof.as_mut(),
+        assignment.facility_id,
+        assignment.granted_by_user_id,
+        &[assignment.grantee_user_id],
+        PermissionCode::AdminAuthorityManage,
+        false,
+    )
+    .await?;
     let target = sqlx::query_scalar::<_, Uuid>(
         "SELECT id FROM users WHERE id=$1 AND facility_id=$2 AND is_active=TRUE FOR NO KEY UPDATE",
     )
@@ -1085,6 +1269,7 @@ pub async fn create_permission_assignment(
         },
     )
     .await?;
+    privileged::finish(&mut tx, proof_deadline).await?;
     tx.commit().await?;
     get_permission_assignment(pool, assignment.facility_id, id)
         .await?
@@ -1158,8 +1343,61 @@ pub async fn update_feature_entitlement(
     actor_user_id: Uuid,
     request_id: Option<String>,
 ) -> anyhow::Result<Option<FeatureEntitlementListItem>> {
+    update_feature_entitlement_with_proof(
+        pool,
+        facility_id,
+        feature,
+        enabled,
+        actor_user_id,
+        request_id,
+        None,
+    )
+    .await
+}
+
+/// Mandatory same-transaction proof for HTTP/service callers.
+pub async fn update_feature_entitlement_authorized(
+    pool: &PgPool,
+    facility_id: Uuid,
+    feature: FeatureKey,
+    enabled: bool,
+    actor_user_id: Uuid,
+    request_id: Option<String>,
+    actor: WebAuthnActor,
+) -> anyhow::Result<Option<FeatureEntitlementListItem>> {
+    update_feature_entitlement_with_proof(
+        pool,
+        facility_id,
+        feature,
+        enabled,
+        actor_user_id,
+        request_id,
+        Some(actor),
+    )
+    .await
+}
+
+async fn update_feature_entitlement_with_proof(
+    pool: &PgPool,
+    facility_id: Uuid,
+    feature: FeatureKey,
+    enabled: bool,
+    actor_user_id: Uuid,
+    request_id: Option<String>,
+    mut proof: Option<WebAuthnActor>,
+) -> anyhow::Result<Option<FeatureEntitlementListItem>> {
     let feature_key = codec::encode(feature)?;
     let mut tx = pool.begin().await?;
+    let proof_deadline = privileged::begin(
+        &mut tx,
+        proof.as_mut(),
+        facility_id,
+        actor_user_id,
+        &[],
+        PermissionCode::AdminFeatureEntitlementsManage,
+        true,
+    )
+    .await?;
     // Serialize effective-feature publication with protected nursing transactions,
     // including creation/removal of a previously absent override row.
     let profile: Option<String> = sqlx::query_scalar(
@@ -1211,6 +1449,7 @@ pub async fn update_feature_entitlement(
     )
     .await?;
 
+    privileged::finish(&mut tx, proof_deadline).await?;
     tx.commit().await?;
     let defaults = feature_flags_for_profile(profile);
     let overrides = feature_entitlement_overrides(pool, facility_id).await?;
@@ -1226,8 +1465,57 @@ pub async fn delete_feature_entitlement(
     actor_user_id: Uuid,
     request_id: Option<String>,
 ) -> anyhow::Result<Option<FeatureEntitlementListItem>> {
+    delete_feature_entitlement_with_proof(
+        pool,
+        facility_id,
+        feature,
+        actor_user_id,
+        request_id,
+        None,
+    )
+    .await
+}
+
+/// Mandatory same-transaction proof for HTTP/service callers.
+pub async fn delete_feature_entitlement_authorized(
+    pool: &PgPool,
+    facility_id: Uuid,
+    feature: FeatureKey,
+    actor_user_id: Uuid,
+    request_id: Option<String>,
+    actor: WebAuthnActor,
+) -> anyhow::Result<Option<FeatureEntitlementListItem>> {
+    delete_feature_entitlement_with_proof(
+        pool,
+        facility_id,
+        feature,
+        actor_user_id,
+        request_id,
+        Some(actor),
+    )
+    .await
+}
+
+async fn delete_feature_entitlement_with_proof(
+    pool: &PgPool,
+    facility_id: Uuid,
+    feature: FeatureKey,
+    actor_user_id: Uuid,
+    request_id: Option<String>,
+    mut proof: Option<WebAuthnActor>,
+) -> anyhow::Result<Option<FeatureEntitlementListItem>> {
     let feature_key = codec::encode(feature)?;
     let mut tx = pool.begin().await?;
+    let proof_deadline = privileged::begin(
+        &mut tx,
+        proof.as_mut(),
+        facility_id,
+        actor_user_id,
+        &[],
+        PermissionCode::AdminFeatureEntitlementsManage,
+        true,
+    )
+    .await?;
     // Serialize effective-feature publication with protected nursing transactions,
     // including creation/removal of a previously absent override row.
     let profile: Option<String> = sqlx::query_scalar(
@@ -1268,6 +1556,7 @@ pub async fn delete_feature_entitlement(
     )
     .await?;
 
+    privileged::finish(&mut tx, proof_deadline).await?;
     tx.commit().await?;
     let defaults = feature_flags_for_profile(profile);
     let overrides = feature_entitlement_overrides(pool, facility_id).await?;
@@ -1443,9 +1732,38 @@ pub async fn create_staff_account(
     staff: NewStaffAccount,
     request_id: Option<String>,
 ) -> anyhow::Result<StaffListItem> {
+    create_staff_account_with_proof(pool, staff, request_id, None).await
+}
+
+/// Mandatory same-transaction proof for HTTP/service callers.
+pub async fn create_staff_account_authorized(
+    pool: &PgPool,
+    staff: NewStaffAccount,
+    request_id: Option<String>,
+    actor: WebAuthnActor,
+) -> anyhow::Result<StaffListItem> {
+    create_staff_account_with_proof(pool, staff, request_id, Some(actor)).await
+}
+
+async fn create_staff_account_with_proof(
+    pool: &PgPool,
+    staff: NewStaffAccount,
+    request_id: Option<String>,
+    mut proof: Option<WebAuthnActor>,
+) -> anyhow::Result<StaffListItem> {
     let staff_id = Uuid::new_v4();
     let user_id = Uuid::new_v4();
     let mut tx = pool.begin().await?;
+    let proof_deadline = privileged::begin(
+        &mut tx,
+        proof.as_mut(),
+        staff.facility_id,
+        staff.created_by_user_id,
+        &[],
+        PermissionCode::AdminStaffManage,
+        false,
+    )
+    .await?;
     let employee_id = reserve_employee_id_tx(&mut tx, staff.facility_id).await?;
     sqlx::query(
         r#"
@@ -1563,6 +1881,7 @@ pub async fn create_staff_account(
         },
     )
     .await?;
+    privileged::finish(&mut tx, proof_deadline).await?;
     tx.commit().await?;
     get_staff_account(pool, staff.facility_id, staff_id)
         .await?
@@ -1783,11 +2102,64 @@ pub async fn prepare_staff_password_reset_delivery(
     setup_token_hash: String,
     setup_token_expires_at: DateTime<Utc>,
 ) -> anyhow::Result<Option<StaffListItem>> {
+    prepare_staff_password_reset_delivery_with_proof(
+        pool,
+        facility_id,
+        staff_id,
+        setup_token_hash,
+        setup_token_expires_at,
+        None,
+    )
+    .await
+}
+
+/// Mandatory same-transaction proof for HTTP/service callers.
+pub async fn prepare_staff_password_reset_delivery_authorized(
+    pool: &PgPool,
+    facility_id: Uuid,
+    staff_id: Uuid,
+    setup_token_hash: String,
+    setup_token_expires_at: DateTime<Utc>,
+    actor: WebAuthnActor,
+) -> anyhow::Result<Option<StaffListItem>> {
+    prepare_staff_password_reset_delivery_with_proof(
+        pool,
+        facility_id,
+        staff_id,
+        setup_token_hash,
+        setup_token_expires_at,
+        Some(actor),
+    )
+    .await
+}
+
+async fn prepare_staff_password_reset_delivery_with_proof(
+    pool: &PgPool,
+    facility_id: Uuid,
+    staff_id: Uuid,
+    setup_token_hash: String,
+    setup_token_expires_at: DateTime<Utc>,
+    mut proof: Option<WebAuthnActor>,
+) -> anyhow::Result<Option<StaffListItem>> {
     let Some(staff) = get_staff_account(pool, facility_id, staff_id).await? else {
         return Ok(None);
     };
 
     let mut tx = pool.begin().await?;
+    let actor_user_id = proof
+        .as_ref()
+        .map(|actor| actor.user_id)
+        .unwrap_or_default();
+    let proof_deadline = privileged::begin(
+        &mut tx,
+        proof.as_mut(),
+        facility_id,
+        actor_user_id,
+        &[staff.user_id],
+        PermissionCode::AdminStaffManage,
+        false,
+    )
+    .await?;
     sqlx::query(
         r#"
         INSERT INTO password_reset_tokens (token_hash, user_id, facility_id, expires_at, used_at)
@@ -1800,6 +2172,7 @@ pub async fn prepare_staff_password_reset_delivery(
     .bind(setup_token_expires_at)
     .execute(&mut *tx)
     .await?;
+    privileged::finish(&mut tx, proof_deadline).await?;
     tx.commit().await?;
     get_staff_account(pool, facility_id, staff_id).await
 }
@@ -1834,11 +2207,64 @@ pub async fn finalize_staff_password_reset(
     request_id: Option<String>,
     setup_token_hash: &str,
 ) -> anyhow::Result<Option<StaffListItem>> {
+    finalize_staff_password_reset_with_proof(
+        pool,
+        facility_id,
+        staff_id,
+        actor_user_id,
+        request_id,
+        setup_token_hash,
+        None,
+    )
+    .await
+}
+
+/// Mandatory same-transaction proof for HTTP/service callers.
+pub async fn finalize_staff_password_reset_authorized(
+    pool: &PgPool,
+    facility_id: Uuid,
+    staff_id: Uuid,
+    actor_user_id: Uuid,
+    request_id: Option<String>,
+    setup_token_hash: &str,
+    actor: WebAuthnActor,
+) -> anyhow::Result<Option<StaffListItem>> {
+    finalize_staff_password_reset_with_proof(
+        pool,
+        facility_id,
+        staff_id,
+        actor_user_id,
+        request_id,
+        setup_token_hash,
+        Some(actor),
+    )
+    .await
+}
+
+async fn finalize_staff_password_reset_with_proof(
+    pool: &PgPool,
+    facility_id: Uuid,
+    staff_id: Uuid,
+    actor_user_id: Uuid,
+    request_id: Option<String>,
+    setup_token_hash: &str,
+    mut proof: Option<WebAuthnActor>,
+) -> anyhow::Result<Option<StaffListItem>> {
     let Some(staff) = get_staff_account(pool, facility_id, staff_id).await? else {
         return Ok(None);
     };
 
     let mut tx = pool.begin().await?;
+    let proof_deadline = privileged::begin(
+        &mut tx,
+        proof.as_mut(),
+        facility_id,
+        actor_user_id,
+        &[staff.user_id],
+        PermissionCode::AdminStaffManage,
+        false,
+    )
+    .await?;
     // Match interactive password changes/reset completion: account first,
     // then token rows, so concurrent reset paths cannot invert their locks.
     let active_user = sqlx::query_scalar::<_, Uuid>(
@@ -1951,6 +2377,7 @@ pub async fn finalize_staff_password_reset(
         },
     )
     .await?;
+    privileged::finish(&mut tx, proof_deadline).await?;
     tx.commit().await?;
     get_staff_account(pool, facility_id, staff_id).await
 }
@@ -1970,6 +2397,29 @@ pub async fn deactivate_staff_account(
         false,
         "admin.staff.deactivated",
         request_id,
+        None,
+    )
+    .await
+}
+
+/// Mandatory same-transaction proof for HTTP/service callers.
+pub async fn deactivate_staff_account_authorized(
+    pool: &PgPool,
+    facility_id: Uuid,
+    staff_id: Uuid,
+    actor_user_id: Uuid,
+    request_id: Option<String>,
+    actor: WebAuthnActor,
+) -> anyhow::Result<Option<StaffListItem>> {
+    set_staff_active(
+        pool,
+        facility_id,
+        staff_id,
+        actor_user_id,
+        false,
+        "admin.staff.deactivated",
+        request_id,
+        Some(actor),
     )
     .await
 }
@@ -1989,6 +2439,29 @@ pub async fn reactivate_staff_account(
         true,
         "admin.staff.reactivated",
         request_id,
+        None,
+    )
+    .await
+}
+
+/// Mandatory same-transaction proof for HTTP/service callers.
+pub async fn reactivate_staff_account_authorized(
+    pool: &PgPool,
+    facility_id: Uuid,
+    staff_id: Uuid,
+    actor_user_id: Uuid,
+    request_id: Option<String>,
+    actor: WebAuthnActor,
+) -> anyhow::Result<Option<StaffListItem>> {
+    set_staff_active(
+        pool,
+        facility_id,
+        staff_id,
+        actor_user_id,
+        true,
+        "admin.staff.reactivated",
+        request_id,
+        Some(actor),
     )
     .await
 }
@@ -2131,9 +2604,38 @@ pub async fn create_delegation(
     delegation: NewDelegation,
     request_id: Option<String>,
 ) -> anyhow::Result<DelegationListItem> {
+    create_delegation_with_proof(pool, delegation, request_id, None).await
+}
+
+/// Mandatory same-transaction proof for HTTP/service callers.
+pub async fn create_delegation_authorized(
+    pool: &PgPool,
+    delegation: NewDelegation,
+    request_id: Option<String>,
+    actor: WebAuthnActor,
+) -> anyhow::Result<DelegationListItem> {
+    create_delegation_with_proof(pool, delegation, request_id, Some(actor)).await
+}
+
+async fn create_delegation_with_proof(
+    pool: &PgPool,
+    delegation: NewDelegation,
+    request_id: Option<String>,
+    mut proof: Option<WebAuthnActor>,
+) -> anyhow::Result<DelegationListItem> {
     let id = Uuid::new_v4();
     let permission_code = codec::encode(delegation.permission_code)?;
     let mut tx = pool.begin().await?;
+    let proof_deadline = privileged::begin(
+        &mut tx,
+        proof.as_mut(),
+        delegation.facility_id,
+        delegation.actor_user_id,
+        &[delegation.delegate_user_id, delegation.delegator_user_id],
+        PermissionCode::AdminAuthorityManage,
+        false,
+    )
+    .await?;
     let target = sqlx::query_scalar::<_, Uuid>(
         "SELECT id FROM users WHERE id=$1 AND facility_id=$2 AND is_active=TRUE FOR NO KEY UPDATE",
     )
@@ -2195,6 +2697,7 @@ pub async fn create_delegation(
         },
     )
     .await?;
+    privileged::finish(&mut tx, proof_deadline).await?;
     tx.commit().await?;
     get_delegation(pool, delegation.facility_id, id)
         .await?
@@ -2516,12 +3019,23 @@ async fn set_staff_active(
     is_active: bool,
     event_type: &'static str,
     request_id: Option<String>,
+    mut proof: Option<WebAuthnActor>,
 ) -> anyhow::Result<Option<StaffListItem>> {
     let Some(staff) = get_staff_account(pool, facility_id, staff_id).await? else {
         return Ok(None);
     };
 
     let mut tx = pool.begin().await?;
+    let proof_deadline = privileged::begin(
+        &mut tx,
+        proof.as_mut(),
+        facility_id,
+        actor_user_id,
+        &[staff.user_id],
+        PermissionCode::AdminStaffManage,
+        false,
+    )
+    .await?;
     sqlx::query(
         "UPDATE users
          SET is_active = $3,
@@ -2559,6 +3073,7 @@ async fn set_staff_active(
         },
     )
     .await?;
+    privileged::finish(&mut tx, proof_deadline).await?;
     tx.commit().await?;
     get_staff_account(pool, facility_id, staff_id).await
 }
@@ -2573,12 +3088,13 @@ async fn get_organization_unit(
                 organization_units.code,
                 organization_units.name,
                 organization_units.unit_type,
-                organization_units.parent_unit_id,
+                parent.id AS parent_unit_id,
                 parent.name AS parent_unit_name,
                 organization_units.is_active,
                 organization_units.created_at
          FROM organization_units
          LEFT JOIN organization_units parent ON parent.id = organization_units.parent_unit_id
+           AND parent.facility_id = organization_units.facility_id
          WHERE organization_units.facility_id = $1 AND organization_units.id = $2",
     )
     .bind(facility_id)
@@ -2773,11 +3289,14 @@ fn position_query() -> &'static str {
             positions.title,
             positions.org_unit_id,
             organization_units.name AS org_unit_name,
-            positions.template_id,
+            position_templates.id AS template_id,
             positions.status,
             positions.created_at
      FROM positions
-     JOIN organization_units ON organization_units.id = positions.org_unit_id"
+     JOIN organization_units ON organization_units.id = positions.org_unit_id
+       AND organization_units.facility_id = positions.facility_id
+     LEFT JOIN position_templates ON position_templates.id = positions.template_id
+       AND position_templates.facility_id = positions.facility_id"
 }
 
 fn authority_appointment_query() -> &'static str {
@@ -2793,7 +3312,9 @@ fn authority_appointment_query() -> &'static str {
             authority_appointments.created_at
      FROM authority_appointments
      JOIN positions ON positions.id = authority_appointments.position_id
-     JOIN users ON users.id = authority_appointments.user_id"
+          AND positions.facility_id = authority_appointments.facility_id
+     JOIN users ON users.id = authority_appointments.user_id
+       AND users.facility_id = authority_appointments.facility_id"
 }
 
 fn permission_assignment_query() -> &'static str {
@@ -2808,7 +3329,8 @@ fn permission_assignment_query() -> &'static str {
             permission_assignments.status,
             permission_assignments.created_at
      FROM permission_assignments
-     JOIN users ON users.id = permission_assignments.grantee_user_id"
+     JOIN users ON users.id = permission_assignments.grantee_user_id
+       AND users.facility_id = permission_assignments.facility_id"
 }
 
 fn delegation_query() -> &'static str {
@@ -2825,7 +3347,9 @@ fn delegation_query() -> &'static str {
             delegations.created_at
      FROM delegations
      JOIN users delegator ON delegator.id = delegations.delegator_user_id
-     JOIN users delegate ON delegate.id = delegations.delegate_user_id"
+       AND delegator.facility_id = delegations.facility_id
+     JOIN users delegate ON delegate.id = delegations.delegate_user_id
+       AND delegate.facility_id = delegations.facility_id"
 }
 
 fn organization_unit_from_row(

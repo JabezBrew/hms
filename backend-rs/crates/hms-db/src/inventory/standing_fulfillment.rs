@@ -235,7 +235,7 @@ pub async fn issue_standing_request(
     }
     let locations:Vec<Uuid>=sqlx::query_scalar("SELECT id FROM storage_locations WHERE facility_id=$1 AND id=ANY($2) AND is_active ORDER BY id FOR SHARE")
         .bind(actor.facility_id).bind(vec![saved.requesting_location_id,saved.fulfilling_location_id]).fetch_all(&mut *tx).await?;
-    let live=sqlx::query_as::<_,LiveItem>("SELECT id,unit FROM inventory_items WHERE facility_id=$1 AND id=ANY($2) AND is_active AND NOT controlled ORDER BY id FOR SHARE")
+    let live=sqlx::query_as::<_,LiveItem>("SELECT id,unit FROM inventory_items WHERE facility_id=$1 AND id=ANY($2) AND is_active AND NOT controlled AND item_type<>'controlled_substance' ORDER BY id FOR SHARE")
         .bind(actor.facility_id).bind(saved.items.iter().map(|i|i.item_id).collect::<Vec<_>>()).fetch_all(&mut *tx).await?;
     if locations.len() != 2 || live.len() != saved.items.len() {
         return Err(StandingRequestError::ReferencesUnavailable.into());

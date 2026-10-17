@@ -174,7 +174,7 @@ impl ControlledSubstancesService {
             "reason",
         )?;
         let _entry = load_controlled_entry(self.pool(), self.facility_id(), id).await?;
-        let entry = hms_db::inventory::create_controlled_count(
+        let entry = hms_db::inventory::create_controlled_count_authorized(
             self.pool(),
             NewControlledCount {
                 id: Uuid::new_v4(),
@@ -187,12 +187,32 @@ impl ControlledSubstancesService {
                 reason,
                 request_id: Some(ctx.request_id.clone()),
             },
+            crate::services::auth_factor::privileged_actor(ctx)?,
         )
         .await
-        .map_err(|_| {
+        .map_err(|error| {
+            if error
+                .downcast_ref::<hms_db::auth::assurance::FactorError>()
+                .is_some()
+            {
+                return crate::services::auth_factor::error(error);
+            }
+            if let Some(error) = error.downcast_ref::<hms_db::inventory::ControlledWriteError>() {
+                return match error {
+                    hms_db::inventory::ControlledWriteError::InvalidWitness => validation_error(
+                        "witness_user_id",
+                        "Choose a distinct active witness in this facility.",
+                    ),
+                    hms_db::inventory::ControlledWriteError::BalanceReviewRequired=>ApiError::conflict("controlled_balance_review_required","The saved controlled register and physical stock do not agree. Review the records through a governed reconciliation process before another movement or count."),
+                    hms_db::inventory::ControlledWriteError::InvalidLocation => validation_error(
+                        "location_id",
+                        "Choose an active stock location in this facility.",
+                    ),
+                };
+            }
             ApiError::conflict(
-                "controlled_count_create_failed",
-                "Controlled count could not be saved.",
+                "controlled_count_write_unconfirmed",
+                "The controlled count outcome could not be confirmed. Review the saved register and stock before recording another count.",
             )
         })?;
         Ok(object(entry))
@@ -213,7 +233,7 @@ impl ControlledSubstancesService {
         if payload.quantity_delta < 0 && payload.witness_user_id.is_none() {
             return Err(validation_error("witness_user_id", "Witness is required."));
         }
-        let entry = hms_db::inventory::create_controlled_movement(
+        let entry = hms_db::inventory::create_controlled_movement_authorized(
             self.pool(),
             NewControlledMovement {
                 id: Uuid::new_v4(),
@@ -226,12 +246,32 @@ impl ControlledSubstancesService {
                 actor_user_id: ctx.user_id,
                 request_id: Some(ctx.request_id.clone()),
             },
+            crate::services::auth_factor::privileged_actor(ctx)?,
         )
         .await
-        .map_err(|_| {
+        .map_err(|error| {
+            if error
+                .downcast_ref::<hms_db::auth::assurance::FactorError>()
+                .is_some()
+            {
+                return crate::services::auth_factor::error(error);
+            }
+            if let Some(error) = error.downcast_ref::<hms_db::inventory::ControlledWriteError>() {
+                return match error {
+                    hms_db::inventory::ControlledWriteError::InvalidWitness => validation_error(
+                        "witness_user_id",
+                        "Choose a distinct active witness in this facility.",
+                    ),
+                    hms_db::inventory::ControlledWriteError::BalanceReviewRequired=>ApiError::conflict("controlled_balance_review_required","The saved controlled register and physical stock do not agree. Review the records through a governed reconciliation process before another movement or count."),
+                    hms_db::inventory::ControlledWriteError::InvalidLocation => validation_error(
+                        "location_id",
+                        "Choose an active stock location in this facility.",
+                    ),
+                };
+            }
             ApiError::conflict(
-                "controlled_register_create_failed",
-                "Controlled register entry could not be saved.",
+                "controlled_movement_write_unconfirmed",
+                "The controlled movement outcome could not be confirmed. Review the saved register and stock before recording another movement.",
             )
         })?;
         Ok(object(entry))

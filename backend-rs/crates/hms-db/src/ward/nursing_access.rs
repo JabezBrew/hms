@@ -80,7 +80,7 @@ pub(crate) async fn verify(
         .fetch_optional(&mut **tx),
     )
     .await?;
-    let versions: Option<(i64,i64)> = hms_observability::observe_db_query("ward.nursing.proof.user", sqlx::query_as("SELECT session_version,permission_version FROM users WHERE facility_id=$1 AND id=$2 AND is_active FOR SHARE")
+    let versions: Option<(i64,i64)> = hms_observability::observe_db_query("ward.nursing.proof.user", sqlx::query_as("SELECT session_version,permission_version FROM users WHERE facility_id=$1 AND id=$2 AND is_active AND NOT password_change_required FOR SHARE")
         .bind(actor.facility_id).bind(actor.user_id).fetch_optional(&mut **tx)).await?;
     if profile != Some(crate::codec::encode(actor.active_profile)?)
         || versions != Some((actor.session_version, actor.permission_version))

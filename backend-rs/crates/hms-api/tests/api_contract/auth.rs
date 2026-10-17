@@ -19,7 +19,7 @@ async fn auth_login_refresh_logout_and_me_follow_session_contract() {
         .expect("me request succeeds");
     assert_eq!(me_response.status(), StatusCode::OK);
     let me_body = json_body(me_response).await;
-    assert_eq!(me_body["data"]["password_change_required"], true);
+    assert_eq!(me_body["data"]["password_change_required"], false);
 
     let profile_update_response = app
         .clone()
@@ -97,6 +97,7 @@ async fn auth_login_refresh_logout_and_me_follow_session_contract() {
 #[tokio::test]
 async fn auth_login_writes_admin_visible_audit_event() {
     let app = app().await;
+    enroll_owner_test_passkey(&app).await;
     let failed_login_response = app
         .clone()
         .oneshot(
@@ -215,7 +216,36 @@ async fn auth_login_writes_admin_visible_audit_event() {
         .await
         .expect("login request succeeds");
     assert_eq!(login_response.status(), StatusCode::OK);
+    assert!(!login_response.headers().contains_key(SET_COOKIE));
     let login_body = json_body(login_response).await;
+    assert_eq!(login_body["data"]["status"], "factor_required");
+    assert!(login_body["data"]["access_token"].is_null());
+    let pool = app.db_pool().await;
+    let premature: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM audit_events WHERE event_type='auth.login.created'",
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("minimal audit count reads");
+    assert_eq!(
+        premature, 0,
+        "accepted password alone is not an authenticated session"
+    );
+    let options = fixture_json_post(
+        &app,
+        None,
+        "/api/v2/auth/login/passkey/options",
+        json!({"login_grant":login_body["data"]["login_grant"]}),
+    )
+    .await;
+    assert_eq!(options.status(), StatusCode::OK);
+    let options = json_body(options).await;
+    let verified=app.clone().oneshot(Request::builder().method(Method::POST).uri("/api/v2/auth/login/passkey/verify")
+        .header("content-type","application/json").header("x-request-id","auth-login-audit-test")
+        .body(Body::from(json!({"login_grant":login_body["data"]["login_grant"],"challenge_id":options["data"]["challenge_id"],"credential":fixture_assertion(&app,Uuid::from_u128(hms_db::provision::OWNER_USER_ID),&options["data"])}).to_string())).unwrap()).await.unwrap();
+    assert_eq!(verified.status(), StatusCode::OK);
+    assert!(verified.headers().contains_key(SET_COOKIE));
+    let login_body = json_body(verified).await;
     let owner_token = login_body["data"]["access_token"]
         .as_str()
         .expect("access token exists");
@@ -572,7 +602,7 @@ async fn refresh_does_not_restore_high_risk_authentication_freshness() {
     let claims = access_claims(&access_token);
     let authenticated_at = Utc::now() - Duration::minutes(16);
     let pool = app.db_pool().await;
-    sqlx::query("UPDATE refresh_sessions SET session_started_at = $1 WHERE session_id = $2")
+    sqlx::query("UPDATE refresh_sessions SET session_started_at = $1, password_verified_at = $1 WHERE session_id = $2")
         .bind(authenticated_at)
         .bind(claims.session_id)
         .execute(&pool)
@@ -976,8 +1006,8 @@ async fn logout_invalidates_warmed_request_context_cache_for_session() {
     .await;
     let rejected = rejected.expect("revoked-session request completes");
     assert_eq!(rejected.status(), StatusCode::UNAUTHORIZED);
-    // One durable version read plus one rejected session hydration.
-    assert_eq!(observed_queries, 2);
+    // One durable session/version read rejects before hydration or network lookup.
+    assert_eq!(observed_queries, 1);
 }
 
 #[tokio::test]
@@ -1348,17 +1378,45 @@ async fn high_risk_admin_actions_reject_stale_reauth_context() {
 }
 
 #[tokio::test]
-async fn privileged_admin_actions_require_passkey_enrollment() {
+async fn privileged_unenrolled_login_requires_setup_before_any_session_or_admin_action() {
     let app = app().await;
-    let (owner_token, _, _) = login(app.clone(), "owner@hms.local").await;
+    let response = raw_password_login(&app, "owner@hms.local", "ChangeMe123!", None).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert!(!response.headers().contains_key(SET_COOKIE));
+    let body = json_body(response).await;
+    assert_eq!(body["data"]["status"], "setup_required");
+    assert!(body["data"]["access_token"].is_null());
+    assert!(body["data"]["user"].is_null());
+    let grant = body["data"]["login_grant"]
+        .as_str()
+        .expect("restricted setup grant exists");
+    let pool = app.db_pool().await;
+    let sessions: i64 = sqlx::query_scalar("SELECT count(*) FROM refresh_sessions")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(sessions, 0, "password alone creates no ordinary session");
+    assert!(hms_db::auth::list_webauthn_credentials(
+        &pool,
+        app.state().facility_id(),
+        Uuid::from_u128(hms_db::provision::OWNER_USER_ID)
+    )
+    .await
+    .unwrap()
+    .is_empty());
+    let assignments_before: i64 = sqlx::query_scalar("SELECT count(*) FROM permission_assignments")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
     let limited_id = Uuid::from_u128(hms_db::provision::LIMITED_USER_ID);
 
     let response = app
+        .clone()
         .oneshot(
             Request::builder()
                 .method(Method::POST)
                 .uri("/api/v2/admin/permission-assignments")
-                .header(AUTHORIZATION, format!("Bearer {owner_token}"))
+                .header(AUTHORIZATION, format!("Bearer {grant}"))
                 .header("content-type", "application/json")
                 .body(Body::from(
                     json!({
@@ -1377,9 +1435,15 @@ async fn privileged_admin_actions_require_passkey_enrollment() {
         .await
         .expect("passkey-required request succeeds");
 
-    assert_eq!(response.status(), StatusCode::FORBIDDEN);
-    let body = json_body(response).await;
-    assert_eq!(body["error"]["code"], "passkey_required");
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT count(*) FROM permission_assignments")
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
+        assignments_before,
+        "a setup grant cannot authorize privileged mutations"
+    );
 }
 
 #[tokio::test]

@@ -61,6 +61,7 @@ async fn inventory_controlled_substances_and_pharmacy_dispensing_follow_access_r
     let auth_header = format!("Bearer {access_token}");
     let stale_reauth_header = format!("Bearer {}", token_with_stale_reauth(&access_token));
     let owner_id = Uuid::from_u128(hms_db::provision::OWNER_USER_ID);
+    let controlled_witness_id = Uuid::from_u128(hms_db::provision::LIMITED_USER_ID);
 
     let items_response = app
         .clone()
@@ -974,7 +975,7 @@ async fn inventory_controlled_substances_and_pharmacy_dispensing_follow_access_r
                         "location_id": pharmacy_location_id,
                         "movement_type": "dispense",
                         "quantity_delta": -1,
-                        "witness_user_id": owner_id
+                        "witness_user_id": controlled_witness_id
                     })
                     .to_string(),
                 ))
@@ -1073,7 +1074,7 @@ async fn inventory_controlled_substances_and_pharmacy_dispensing_follow_access_r
                 .body(Body::from(
                     json!({
                         "actual_count": 8,
-                        "witness_user_id": owner_id,
+                        "witness_user_id": controlled_witness_id,
                         "category": "missing",
                         "reason": "non-PHI controlled count test",
                         "notes": "non-PHI controlled count test"

@@ -133,7 +133,7 @@ it('retains an opaque barrier when a saved in-flight POST is aborted by the netw
   render(<Harness />);
   await fillObservation(privateNote);
   await screen.findByRole('button', { name: 'Saving…' });
-  expect(posts).toHaveLength(1);
+  await waitFor(() => expect(posts).toHaveLength(1));
   await expireAndConfirm();
   assertPrivateStorage();
   await fillObservation('Synthetic new attempt after dispatched abort');

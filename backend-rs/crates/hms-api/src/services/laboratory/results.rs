@@ -203,18 +203,27 @@ impl LabResultsService {
             PermissionCode::LaboratoryResultVerify,
         )?;
         let _result_context = common::load_result_for_access(&self.state, ctx, id).await?;
-        let result =
-            hms_db::laboratory::verify_result(self.pool(), self.facility_id(), id, ctx.user_id)
-                .await
-                .map_err(|_| {
-                    ApiError::conflict(
-                        "lab_result_verify_failed",
-                        "Lab result could not be verified.",
-                    )
-                })?
-                .ok_or_else(|| {
-                    ApiError::not_found("lab_result_not_found", "Lab result was not found.")
-                })?;
+        let result = hms_db::laboratory::verify_result_authorized(
+            self.pool(),
+            self.facility_id(),
+            id,
+            ctx.user_id,
+            crate::services::auth_factor::privileged_actor(ctx)?,
+        )
+        .await
+        .map_err(|error| {
+            if error
+                .downcast_ref::<hms_db::auth::assurance::FactorError>()
+                .is_some()
+            {
+                return crate::services::auth_factor::error(error);
+            }
+            ApiError::conflict(
+                "lab_result_verify_failed",
+                "Lab result could not be verified.",
+            )
+        })?
+        .ok_or_else(|| ApiError::not_found("lab_result_not_found", "Lab result was not found."))?;
 
         self.state.invalidate_patient_chronicle_cache();
         Ok(object(result))
@@ -254,15 +263,22 @@ impl LabResultsService {
             }
         }
 
-        let verified_count = hms_db::laboratory::verify_results(
+        let verified_count = hms_db::laboratory::verify_results_authorized(
             self.pool(),
             self.facility_id(),
             payload.order_id,
             &result_ids,
             ctx.user_id,
+            crate::services::auth_factor::privileged_actor(ctx)?,
         )
         .await
-        .map_err(|_| {
+        .map_err(|error| {
+            if error
+                .downcast_ref::<hms_db::auth::assurance::FactorError>()
+                .is_some()
+            {
+                return crate::services::auth_factor::error(error);
+            }
             ApiError::conflict(
                 "lab_results_bulk_verify_failed",
                 "Lab results could not be verified.",

@@ -1,5 +1,7 @@
 //! Cryptographic HTTP contracts for the existing enrollment/assertion-test API.
-//! These deliberately do not claim that password login enforces MFA today.
+//! These isolate enrollment/assertion-test crypto from the separate real login/step-up API.
+//! A genuine fixture passkey establishes the initial session; adding a key still
+//! requires its explicit same-session existing-factor management proof.
 
 mod support;
 #[path = "support/webauthn_signing.rs"]
@@ -30,6 +32,9 @@ async fn post(app: &TestApp, token: &str, path: &str, body: Value) -> axum::resp
 }
 
 async fn options(app: &TestApp, token: &str, path: &str) -> Value {
+    if path == REGISTER_OPTIONS {
+        step_up_test_session(app, token, None).await;
+    }
     let response = post(app, token, path, json!({})).await;
     assert_eq!(response.status(), StatusCode::OK);
     let result = json_body(response).await;
@@ -88,7 +93,10 @@ async fn stored_credential(app: &TestApp, token: &str) -> hms_db::auth::WebAuthn
         hms_db::auth::list_webauthn_credentials(&pool, claims.facility_id, claims.sub)
             .await
             .expect("synthetic credential evidence reads");
-    assert_eq!(credentials.len(), 1);
+    assert!(
+        credentials.len() >= 1,
+        "the genuine initial fixture key remains preserved"
+    );
     credentials.remove(0)
 }
 
@@ -109,7 +117,11 @@ async fn real_registration_assertion_and_counter_persist_without_issuing_new_ses
     let challenge = options(&app, &token, AUTH_OPTIONS).await;
     assert_eq!(challenge["userVerification"], "required");
     assert!(
-        challenge["allowCredentials"][0]["id"] == authenticator.credential_id(),
+        challenge["allowCredentials"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|value| value["id"] == authenticator.credential_id()),
         "server allows the registered authenticator"
     );
     let ceremony = Ceremony::from_options(&challenge, ORIGIN, 1);
@@ -196,7 +208,8 @@ async fn registration_rejects_wrong_origin_rp_challenge_presence_and_verificatio
         hms_db::auth::list_webauthn_credentials(&pool, claims.facility_id, claims.sub)
             .await
             .unwrap()
-            .is_empty()
+            .len()
+            == 1
     );
 }
 
@@ -449,7 +462,8 @@ async fn expired_registration_and_assertion_challenges_cannot_change_credentials
         hms_db::auth::list_webauthn_credentials(&pool, claims.facility_id, claims.sub)
             .await
             .unwrap()
-            .is_empty()
+            .len()
+            == 1
     );
 
     register(&app, &token, &authenticator).await;
@@ -665,7 +679,7 @@ async fn assertion_challenge_expiry_is_rechecked_after_lock_wait() {
 }
 
 #[tokio::test]
-async fn session_revocation_during_facility_wait_denies_all_four_ceremony_operations() {
+async fn session_revocation_during_actor_wait_denies_all_four_ceremony_operations() {
     for path in [REGISTER_OPTIONS, AUTH_OPTIONS, REGISTER_VERIFY, AUTH_VERIFY] {
         let app = app().await;
         let (token, _, _) = login(app.clone(), "owner@hms.local").await;
@@ -694,8 +708,11 @@ async fn session_revocation_during_facility_wait_denies_all_four_ceremony_operat
         let (other, _, _) = login(app.clone(), "owner@hms.local").await;
         let before: (i64, i64, i64) = auth_evidence_counts(&pool).await;
         let mut blocker = pool.begin().await.unwrap();
-        sqlx::query("SELECT id FROM facilities WHERE id=$1 FOR UPDATE")
-            .bind(claims.facility_id)
+        // The public revoker now correctly takes its facility first too. Hold
+        // only actor NKU: ceremonies wait on it, while the public revoker's
+        // audit/FK KEY SHARE remains compatible and can actually win.
+        sqlx::query("SELECT id FROM users WHERE id=$1 FOR NO KEY UPDATE")
+            .bind(claims.sub)
             .fetch_one(&mut *blocker)
             .await
             .unwrap();
@@ -703,23 +720,31 @@ async fn session_revocation_during_facility_wait_denies_all_four_ceremony_operat
         let pending_token = token.clone();
         let pending =
             tokio::spawn(async move { post(&pending_app, &pending_token, path, body).await });
-        wait_for_lock(&pool, "%FROM facilities%", "Lock").await;
+        wait_for_lock(&pool, "%FROM users%", "Lock").await;
         // Revoke through the actual public endpoint while the ceremony is
-        // waiting on its first lock; this must not deadlock on a later actor.
-        let revoke = post(
-            &app,
-            &other,
-            &format!("/api/v2/auth/sessions/{}/revoke", claims.session_id),
-            json!({}),
+        // waiting on the actor, after its compatible facility read lock.
+        let revoke = tokio::time::timeout(
+            std::time::Duration::from_secs(3),
+            post(
+                &app,
+                &other,
+                &format!("/api/v2/auth/sessions/{}/revoke", claims.session_id),
+                json!({}),
+            ),
         )
-        .await;
+        .await
+        .expect("public revoke completes without waiting on compatible actor lock");
         assert_eq!(revoke.status(), StatusCode::OK);
         blocker.commit().await.unwrap();
         let denied = pending.await.unwrap();
         assert_eq!(denied.status(), StatusCode::FORBIDDEN);
         assert_eq!(
             json_body(denied).await["error"]["code"],
-            "webauthn_authority_expired"
+            if path == REGISTER_OPTIONS {
+                "factor_authorization_expired"
+            } else {
+                "webauthn_authority_expired"
+            }
         );
         assert_eq!(auth_evidence_counts(&pool).await, before);
     }
@@ -760,7 +785,7 @@ async fn audit_failure_rolls_back_registration_and_matching_invalid_crypto_consu
         "webauthn_verify_failed",
     )
     .await;
-    assert_eq!(auth_evidence_counts(&pool).await, (1, 0, 0));
+    assert_eq!(auth_evidence_counts(&pool).await, (1, 1, 0));
     assert_challenge_unconsumed(&pool, &challenge).await;
 
     // The same atomicity guarantee applies to a matching failed assertion:
@@ -781,7 +806,7 @@ async fn audit_failure_rolls_back_registration_and_matching_invalid_crypto_consu
     assert_challenge_unconsumed(&pool, &challenge).await;
     sqlx::raw_sql("DROP TRIGGER reject_test_webauthn_audit ON audit_events; DROP FUNCTION reject_test_webauthn_audit();").execute(&pool).await.unwrap();
     assert_verified(post(&app, &token, REGISTER_VERIFY, body).await).await;
-    assert_eq!(auth_evidence_counts(&pool).await, (1, 1, 1));
+    assert_eq!(auth_evidence_counts(&pool).await, (1, 2, 1));
     let audit: (Uuid,String,Value) = sqlx::query_as("SELECT actor_user_id,event_type,metadata FROM audit_events WHERE event_type LIKE 'auth.webauthn.%'")
         .fetch_one(&pool).await.unwrap();
     assert!(

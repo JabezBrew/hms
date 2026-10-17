@@ -210,7 +210,7 @@ pub(crate) async fn verify_actor(
     .bind(actor.facility_id)
     .fetch_optional(&mut **tx)
     .await?;
-    let user:Option<(i64,i64)>=sqlx::query_as("SELECT session_version,permission_version FROM users WHERE facility_id=$1 AND id=$2 AND is_active FOR SHARE").bind(actor.facility_id).bind(actor.user_id).fetch_optional(&mut **tx).await?;
+    let user:Option<(i64,i64)>=sqlx::query_as("SELECT session_version,permission_version FROM users WHERE facility_id=$1 AND id=$2 AND is_active AND NOT password_change_required FOR SHARE").bind(actor.facility_id).bind(actor.user_id).fetch_optional(&mut **tx).await?;
     if user.is_none() || profile.is_none() {
         return Err(PrescriptionCourseError::InvalidActor.into());
     }

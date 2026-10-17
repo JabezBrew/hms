@@ -363,7 +363,7 @@ impl NhisService {
             .map_err(|_| ApiError::conflict("claim_load_failed", "Claim could not be loaded."))?
             .ok_or_else(|| ApiError::not_found("claim_not_found", "Claim was not found."))?;
         let _patient = common::load_patient_for_access(&self.state, ctx, claim.patient_id).await?;
-        let entry = hms_db::billing::record_nhis_ar_adjustment(
+        let entry = hms_db::billing::record_nhis_ar_adjustment_authorized(
             self.pool(),
             NewNhisArAdjustment {
                 id: Uuid::new_v4(),
@@ -374,9 +374,16 @@ impl NhisService {
                 reason,
                 recorded_by_user_id: ctx.user_id,
             },
+            crate::services::auth_factor::privileged_actor(ctx)?,
         )
         .await
-        .map_err(|_| {
+        .map_err(|error| {
+            if error
+                .downcast_ref::<hms_db::auth::assurance::FactorError>()
+                .is_some()
+            {
+                return crate::services::auth_factor::error(error);
+            }
             ApiError::conflict(
                 "nhis_ar_adjustment_failed",
                 "NHIS AR adjustment could not be recorded.",

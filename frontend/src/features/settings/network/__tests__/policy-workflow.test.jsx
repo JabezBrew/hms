@@ -19,7 +19,7 @@ async function check() {
 }
 describe('reviewed network policy workflow', () => {
   it('publishes the explicitly reviewed canonical candidate with exact callback and credential payloads', async () => {
-    page(); const publish = await check(); expect(login).toHaveBeenCalledWith(networkUser.email, 'Synthetic password ', 'HMS'); expect(networkApi.preview).toHaveBeenCalledWith({ onsite_cidrs: ['10.10.4.9/24'], offsite_mode: 'readonly' }, expect.objectContaining({ signal: expect.any(AbortSignal) })); expect(networkApi.save).not.toHaveBeenCalled(); expect(screen.getByLabelText('Approved onsite networks')).toBeDisabled();
+    page(); const publish = await check(); expect(login).toHaveBeenCalledWith(networkUser.email, 'Synthetic password ', 'HMS', { signal: expect.any(AbortSignal) }); expect(networkApi.preview).toHaveBeenCalledWith({ onsite_cidrs: ['10.10.4.9/24'], offsite_mode: 'readonly' }, expect.objectContaining({ signal: expect.any(AbortSignal) })); expect(networkApi.save).not.toHaveBeenCalled(); expect(screen.getByLabelText('Approved onsite networks')).toBeDisabled();
     expect(screen.getByLabelText('Reviewed network policy')).toHaveTextContent('10.10.4.0/24'); fireEvent.click(publish); await screen.findByText('Policy publication confirmed');
     expect(networkApi.save).toHaveBeenCalledTimes(1); expect(networkApi.save.mock.calls[0][0]).toMatchObject({ expected_version: 3, onsite_cidrs: ['10.10.4.0/24'], offsite_mode: 'readonly', reason: 'Synthetic approved network change', client_request_id: expect.stringMatching(/^[0-9a-f-]{36}$/) });
     expect(screen.queryByLabelText('Confirm your current password')).not.toBeInTheDocument();

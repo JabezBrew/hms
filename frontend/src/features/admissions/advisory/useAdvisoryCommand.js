@@ -5,11 +5,13 @@ import { hashQueryValue } from '@/shared/lib/privateQueryKey';
 import { useScopedNotifications } from '@/shared/hooks/useScopedNotifications';
 import { advisoryApi } from './api';
 import { advisoryKeys } from './keys';
+import { useCommandTransportLifetime } from '@/shared/hooks/useCommandTransportLifetime';
 
 export function useAdvisoryCommand(scope, patientId, caseId, onDenied) {
   const client = useQueryClient(); const operation = useRef(null); const frozen = useRef(null);
   const capture = useScopedNotifications(hashQueryValue(JSON.stringify([scope, patientId, caseId])));
   const [state, setState] = useState({ pending: false, unknown: false, saved: null, error: null, refreshFailed: false });
+  const interrupted = useCommandTransportLifetime(operation, () => setState((old) => old.saved ? { ...old, pending: false } : { ...old, pending: false, unknown: true, error: 'The sign-in proof changed while this request was pending. Its result is unconfirmed. Check the original result or explicitly retry the unchanged request.' }));
   useLayoutEffect(() => () => operation.current?.abort(), []);
   const run = async (input, recover = false) => {
     if (operation.current || state.saved) return;
@@ -25,6 +27,7 @@ export function useAdvisoryCommand(scope, patientId, caseId, onDenied) {
       try { await client.invalidateQueries({ queryKey: advisoryKeys.context(scope, patientId, caseId) }, { throwOnError: true }); }
       catch { if (!controller.signal.aborted && origin.isCurrent()) setState((old) => ({ ...old, refreshFailed: true })); }
     } catch (error) {
+      if (interrupted(controller)) { if (error.name === 'AdvisoryUnconfirmedError' && frozen.current === command && !command.uncertainty) command.uncertainty = error; return; }
       if (controller.signal.aborted || !origin.isCurrent()) return;
       const unknown = state.unknown || recover || error.name === 'AdvisoryUnconfirmedError';
       if (error.name === 'AdvisoryUnconfirmedError' && !command.uncertainty) command.uncertainty = error;

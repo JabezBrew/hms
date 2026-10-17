@@ -29,6 +29,12 @@ pub struct AuthSecurityState {
     pub passkey_enrolled: bool,
     pub privileged_actions_allowed: bool,
     pub recovery_codes_remaining: i64,
+    #[serde(default)]
+    pub session_assurance: crate::auth_assurance::SessionAssurance,
+    #[serde(default)]
+    pub factor_version: i64,
+    #[serde(default)]
+    pub assurance_version: i64,
 }
 
 impl AuthSecurityState {
@@ -43,26 +49,29 @@ impl AuthSecurityState {
             privileged_user,
             passkey_required,
             passkey_enrolled,
-            privileged_actions_allowed: !passkey_required || passkey_enrolled,
+            privileged_actions_allowed: !passkey_required,
             recovery_codes_remaining: recovery_codes_remaining.max(0),
+            session_assurance: Default::default(),
+            factor_version: 0,
+            assurance_version: 0,
         }
     }
 }
 
+pub const PRIVILEGED_PERMISSIONS: [PermissionCode; 10] = [
+    PermissionCode::AdminAuthorityManage,
+    PermissionCode::AdminFeatureEntitlementsManage,
+    PermissionCode::AdminStaffManage,
+    PermissionCode::SystemOpsView,
+    PermissionCode::ControlledSubstanceManage,
+    PermissionCode::LaboratoryResultVerify,
+    PermissionCode::BillingManage,
+    PermissionCode::NhisClaimManage,
+    PermissionCode::ConsentManage,
+    PermissionCode::PatientBreakGlassInvoke,
+];
 pub fn is_privileged_permission(permission: &PermissionCode) -> bool {
-    matches!(
-        permission,
-        PermissionCode::AdminAuthorityManage
-            | PermissionCode::AdminFeatureEntitlementsManage
-            | PermissionCode::AdminStaffManage
-            | PermissionCode::SystemOpsView
-            | PermissionCode::ControlledSubstanceManage
-            | PermissionCode::LaboratoryResultVerify
-            | PermissionCode::BillingManage
-            | PermissionCode::NhisClaimManage
-            | PermissionCode::ConsentManage
-            | PermissionCode::PatientBreakGlassInvoke
-    )
+    PRIVILEGED_PERMISSIONS.contains(permission)
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize, ToSchema)]
@@ -240,7 +249,7 @@ mod tests {
     use crate::deployment::PermissionCode;
 
     #[test]
-    fn privileged_security_state_blocks_actions_until_passkey_enrolled() {
+    fn enrollment_does_not_manufacture_privileged_session_assurance() {
         let state =
             AuthSecurityState::from_permissions(&[PermissionCode::AdminStaffManage], false, 0);
 
@@ -252,7 +261,8 @@ mod tests {
         let enrolled =
             AuthSecurityState::from_permissions(&[PermissionCode::AdminStaffManage], true, 4);
 
-        assert!(enrolled.privileged_actions_allowed);
+        assert!(!enrolled.privileged_actions_allowed);
+        assert!(enrolled.passkey_enrolled);
         assert_eq!(enrolled.recovery_codes_remaining, 4);
     }
 

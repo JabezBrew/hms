@@ -57,15 +57,9 @@ pub async fn create_dispense(
         dispense.authorization.clone(),
     )
     .await?;
-    let item:Option<(bool,String)>=sqlx::query_as("SELECT controlled,item_type FROM inventory_items WHERE facility_id=$1 AND id=$2 AND is_active FOR SHARE")
-        .bind(dispense.facility_id).bind(dispense.item_id).fetch_optional(&mut *transaction).await?;
-    match item {
-        Some((false, kind)) if kind != "controlled_substance" => {}
-        Some(_) => {
-            anyhow::bail!("controlled items require controlled-substance register workflow")
-        }
-        None => anyhow::bail!("inventory_item_not_actionable"),
-    }
+    super::lock_generic_stock_item_tx(&mut transaction, dispense.facility_id, dispense.item_id)
+        .await?
+        .ok_or_else(|| anyhow::anyhow!("inventory_item_not_actionable"))?;
     if dispense.quantity <= 0 {
         anyhow::bail!("invalid_dispense_quantity");
     }

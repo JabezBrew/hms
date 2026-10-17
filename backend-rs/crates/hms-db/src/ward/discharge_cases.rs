@@ -276,6 +276,75 @@ pub async fn override_discharge_blocker(
     actor_user_id: Uuid,
     reauth_verified_at: DateTime<Utc>,
 ) -> anyhow::Result<Option<DischargeCaseListItem>> {
+    override_discharge_blocker_inner(
+        pool,
+        facility_id,
+        discharge_case_id,
+        blocker_type,
+        reason,
+        actor_user_id,
+        reauth_verified_at,
+        None,
+    )
+    .await
+}
+
+pub async fn override_discharge_blocker_authorized(
+    pool: &PgPool,
+    facility_id: Uuid,
+    discharge_case_id: Uuid,
+    blocker_type: DischargeBlockerKind,
+    reason: String,
+    actor_user_id: Uuid,
+    reauth_verified_at: DateTime<Utc>,
+    authorization: crate::auth::WebAuthnActor,
+) -> anyhow::Result<Option<DischargeCaseListItem>> {
+    override_discharge_blocker_inner(
+        pool,
+        facility_id,
+        discharge_case_id,
+        blocker_type,
+        reason,
+        actor_user_id,
+        reauth_verified_at,
+        Some(authorization),
+    )
+    .await
+}
+
+async fn override_discharge_blocker_inner(
+    pool: &PgPool,
+    facility_id: Uuid,
+    discharge_case_id: Uuid,
+    blocker_type: DischargeBlockerKind,
+    reason: String,
+    actor_user_id: Uuid,
+    reauth_verified_at: DateTime<Utc>,
+    authorization: Option<crate::auth::WebAuthnActor>,
+) -> anyhow::Result<Option<DischargeCaseListItem>> {
+    let mut transaction = pool.begin().await?;
+    // Match canonical complete_discharge: case parent precedes current actor
+    // proof. An actor-first override would invert the existing closure order.
+    let parent:Option<Uuid>=sqlx::query_scalar("SELECT id FROM discharge_cases WHERE facility_id=$1 AND id=$2 AND status='requested' FOR UPDATE")
+        .bind(facility_id).bind(discharge_case_id).fetch_optional(&mut *transaction).await?;
+    if parent.is_none() {
+        return Ok(None);
+    }
+    let privileged_deadline = if let Some(mut actor) = authorization {
+        Some(
+            crate::auth::assurance::require_family_privileged_tx(
+                &mut transaction,
+                &mut actor,
+                facility_id,
+                actor_user_id,
+                hms_domain::deployment::PermissionCode::AdmissionManage,
+                hms_domain::deployment::FeatureKey::Admissions,
+            )
+            .await?,
+        )
+    } else {
+        None
+    };
     let blocker_type = codec::encode(blocker_type)?;
     let row = observe_db_query(
         "ward.discharge_cases.blocker_override",
@@ -315,10 +384,16 @@ pub async fn override_discharge_blocker(
         .bind(reason)
         .bind(actor_user_id)
         .bind(reauth_verified_at)
-        .fetch_optional(pool),
+        .fetch_optional(&mut *transaction),
     )
     .await?;
 
+    sqlx::query("INSERT INTO audit_events(id,facility_id,actor_user_id,event_type,resource_type,resource_id,metadata) VALUES(gen_random_uuid(),$1,$2,'admission.discharge_blocker.overridden','discharge_case',$3,'{}'::jsonb)")
+        .bind(facility_id).bind(actor_user_id).bind(discharge_case_id).execute(&mut *transaction).await?;
+    if let Some(end) = privileged_deadline {
+        crate::auth::assurance::check_privileged_deadline_tx(&mut transaction, end).await?;
+    }
+    transaction.commit().await?;
     match row {
         Some(row) => Ok(Some(
             discharge_item_by_admission(pool, facility_id, row.admission_case_id).await?,

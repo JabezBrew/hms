@@ -723,6 +723,7 @@ fn category_from_row(row: CategoryRow) -> InventoryCategoryListItem {
 }
 
 fn item_from_row(row: ItemRow) -> anyhow::Result<InventoryItemListItem> {
+    let controlled = super::is_controlled_stock_item(row.controlled, &row.item_type);
     Ok(InventoryItemListItem {
         id: row.id,
         category_id: row.category_id,
@@ -733,8 +734,8 @@ fn item_from_row(row: ItemRow) -> anyhow::Result<InventoryItemListItem> {
         item_type: codec::decode(&row.item_type)?,
         unit: row.unit.clone(),
         unit_of_measure: row.unit,
-        controlled: row.controlled,
-        is_controlled: row.controlled,
+        controlled,
+        is_controlled: controlled,
         total_stock: row.total_stock,
         nearest_expiry: row.nearest_expiry,
         updated_at: row.updated_at,

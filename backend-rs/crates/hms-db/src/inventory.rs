@@ -31,9 +31,10 @@ pub use catalog::{
     list_items, list_locations, list_suppliers,
 };
 pub use controlled_substances::{
-    create_controlled_count, create_controlled_movement, get_controlled_register_entry,
+    create_controlled_count, create_controlled_count_authorized, create_controlled_movement,
+    create_controlled_movement_authorized, get_controlled_register_entry,
     list_controlled_discrepancies, list_controlled_register, list_controlled_register_entries,
-    validate_controlled_register_balance,
+    validate_controlled_register_balance, ControlledWriteError,
 };
 pub use pharmacy::{create_dispense, list_dispenses};
 pub use procurement::{
@@ -326,6 +327,43 @@ async fn insert_movement(
     )
     .await?;
     Ok(())
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum GenericStockWriteError {
+    ControlledItem,
+    TooManySupplyLines,
+}
+impl std::fmt::Display for GenericStockWriteError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::ControlledItem => "Controlled stock requires its dedicated ledger workflow.",
+            Self::TooManySupplyLines => "Supply issue supports at most 100 lines.",
+        })
+    }
+}
+impl std::error::Error for GenericStockWriteError {}
+
+pub(crate) fn is_controlled_stock_item(controlled: bool, kind: &str) -> bool {
+    controlled || kind == "controlled_substance"
+}
+
+/// Generic stock writers cannot move controlled stock outside its coupled
+/// register. Retain the item lock through the caller's physical transaction.
+async fn lock_generic_stock_item_tx(
+    tx: &mut sqlx::Transaction<'_, Postgres>,
+    facility: Uuid,
+    item: Uuid,
+) -> anyhow::Result<Option<String>> {
+    let row:Option<(String,bool,String)>=sqlx::query_as("SELECT unit,controlled,item_type FROM inventory_items WHERE facility_id=$1 AND id=$2 AND is_active FOR SHARE")
+        .bind(facility).bind(item).fetch_optional(&mut **tx).await?;
+    let Some((unit, controlled, kind)) = row else {
+        return Ok(None);
+    };
+    if is_controlled_stock_item(controlled, &kind) {
+        return Err(GenericStockWriteError::ControlledItem.into());
+    }
+    Ok(Some(unit))
 }
 
 async fn apply_stock_delta_tx(

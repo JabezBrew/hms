@@ -106,6 +106,9 @@ impl PharmacyService {
         )
         .await
         .map_err(|error| {
+            if let Some(error) = super::common::generic_stock_write_error(&error) {
+                return error;
+            }
             if error.is::<hms_db::clinical::prescription_courses::PrescriptionCourseError>() {
                 return crate::services::clinical::prescription_courses::write_error(error);
             }

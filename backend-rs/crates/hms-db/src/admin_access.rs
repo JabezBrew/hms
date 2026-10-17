@@ -135,6 +135,23 @@ pub async fn revoke_access_grant(
     pool: &PgPool,
     command: RevokeGrant,
 ) -> Result<AccessGrantRevocation, RevokeGrantError> {
+    revoke_access_grant_with_proof(pool, command, None).await
+}
+
+/// Mandatory same-transaction actor proof for the active API.
+pub async fn revoke_access_grant_authorized(
+    pool: &PgPool,
+    command: RevokeGrant,
+    actor: crate::auth::WebAuthnActor,
+) -> Result<AccessGrantRevocation, RevokeGrantError> {
+    revoke_access_grant_with_proof(pool, command, Some(actor)).await
+}
+
+async fn revoke_access_grant_with_proof(
+    pool: &PgPool,
+    command: RevokeGrant,
+    mut proof: Option<crate::auth::WebAuthnActor>,
+) -> Result<AccessGrantRevocation, RevokeGrantError> {
     // Identifiers come exclusively from the enum, never request text.
     let (table, user_column) = match command.kind {
         AccessGrantKind::PermissionAssignment => ("permission_assignments", "grantee_user_id"),
@@ -150,6 +167,16 @@ pub async fn revoke_access_grant(
     .fetch_optional(&mut *tx)
     .await?
     .ok_or(RevokeGrantError::NotFound)?;
+    let proof_deadline = crate::admin::privileged::begin(
+        &mut tx,
+        proof.as_mut(),
+        command.facility_id,
+        command.actor_user_id,
+        &[user_id],
+        hms_domain::deployment::PermissionCode::AdminAuthorityManage,
+        false,
+    )
+    .await?;
     // Same user lock is taken by managed create operations: reconciliation,
     // creation, version change and grant updates cannot interleave.
     let exists = sqlx::query_scalar::<_, Uuid>(
@@ -230,6 +257,7 @@ pub async fn revoke_access_grant(
     } else {
         (false, None)
     };
+    crate::admin::privileged::finish(&mut tx, proof_deadline).await?;
     tx.commit().await?;
     Ok(AccessGrantRevocation {
         id: command.id,

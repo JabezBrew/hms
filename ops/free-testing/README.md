@@ -69,6 +69,18 @@ small synthetic smoke dataset of 50 patients. Account-setup delivery is
 disabled, so staff setup/reset email delivery is not available. Passkey origin
 and RP ID use the chosen HTTPS domain. Keep real patient data out of this host.
 
+The factor-authentication rollout changes privileged sign-in: the bootstrap
+password alone returns a restricted setup grant, without an ordinary session.
+Run the migrator's aggregate `auth-readiness` command in the private migration
+environment and arrange named-user operator bootstrap plus real passkey
+registration and a separate assertion. Raw bootstrap tokens belong only in new
+private files and the reviewed delivery channel. Never automatically enroll a
+test signer onto the tester's normal account. Existing enrolled accounts require
+their existing factor. Readiness, a password response, or a pushed build cannot
+replace authenticated browser acceptance. See the
+[authentication policy](../../docs/v2/2026-10-17-authentication-policy.md) and
+[operator commands](../../backend-rs/crates/hms-migrator/README.md).
+
 Validate and deploy locally before publishing DNS:
 
 ```bash

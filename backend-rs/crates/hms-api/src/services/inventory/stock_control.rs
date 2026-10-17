@@ -201,6 +201,9 @@ impl StockControlService {
         )
         .await
         .map_err(|error| {
+            if let Some(error) = super::common::generic_stock_write_error(&error) {
+                return error;
+            }
             if error.is::<hms_db::clinical::stock_basis::StockBasisError>()
                 || error.is::<hms_db::clinical::prescription_courses::PrescriptionCourseError>()
             {
@@ -570,6 +573,9 @@ impl StockControlService {
         payload: DispenseSupplyRequest,
     ) -> Result<ObjectResponse<SupplyRequestDispenseResult>, ApiError> {
         require_stock_write_access(ctx, self.facility_id())?;
+        if payload.lines.len() > hms_domain::inventory::MAX_LEGACY_SUPPLY_LINES {
+            return Err(super::common::supply_line_limit_error());
+        }
         let lines = payload
             .lines
             .into_iter()
@@ -590,7 +596,10 @@ impl StockControlService {
             ctx.user_id,
         )
         .await
-        .map_err(|_| {
+        .map_err(|error| {
+            if let Some(error) = super::common::generic_stock_write_error(&error) {
+                return error;
+            }
             ApiError::conflict(
                 "supply_request_dispense_failed",
                 "Supply request could not be dispensed.",

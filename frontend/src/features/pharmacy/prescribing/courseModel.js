@@ -1,5 +1,5 @@
 import { emptyScheduledStockForm, scheduledStockPolicyPayload, validateScheduledStockForm } from './scheduledStockPolicy';
-import { hashQueryValue } from '@/shared/lib/privateQueryKey';
+import { authorizationScope } from '@/shared/lib/authorizationScope';
 import { emptyPrnPolicyForm, prnPolicyPayload, validatePrnPolicyForm } from './prnPolicy';
 
 export const PRESCRIBING_CAPABILITY = 'clinical_documentation.manage';
@@ -7,7 +7,7 @@ export const COURSE_ROUTES = ['oral', 'iv', 'im', 'sc', 'topical', 'inhaled', 's
 export const COURSE_FREQUENCIES = ['once', 'daily', 'bid', 'tid', 'qid', 'q4h', 'q6h', 'q8h', 'q12h', 'qhs', 'stat', 'weekly'];
 export const ROUTE_LABELS = { oral: 'Oral (PO)', iv: 'Intravenous (IV)', im: 'Intramuscular (IM)', sc: 'Subcutaneous (SC)', topical: 'Topical', inhaled: 'Inhaled', sublingual: 'Sublingual', rectal: 'Rectal', ophthalmic: 'Ophthalmic', otic: 'Otic', nasal: 'Nasal', transdermal: 'Transdermal', vaginal: 'Vaginal' };
 export const FREQUENCY_LABELS = { once: 'Once', daily: 'Once daily', bid: 'Twice daily (BID)', tid: 'Three times daily (TID)', qid: 'Four times daily (QID)', q4h: 'Every 4 hours', q6h: 'Every 6 hours', q8h: 'Every 8 hours', q12h: 'Every 12 hours', qhs: 'At bedtime', stat: 'Immediately (STAT)', weekly: 'Weekly', prn: 'As needed (PRN)' };
-export function prescribingScope(user, transport) { const context = user?.accessContext || {}; return hashQueryValue(JSON.stringify([transport, user?.id, user?.facilityCode, context.facility_id, context.active_profile, context.session_version, context.permission_version, [...(user?.adminAccess?.capabilities || user?.admin_access?.capabilities || [])].sort(), context.features, context.patient_visibility, context.auth_security])); }
+export function prescribingScope(user, transport) { return authorizationScope(user, transport); }
 export const isPrnSource = (source) => Boolean(source.prn_policy) || source.frequency?.trim().toLowerCase() === 'prn';
 export const documentationAllowed = (source) => ['active', 'on_hold'].includes(source?.status) && !source.has_generated_course && !isPrnSource(source);
 export const courseAllowed = (source, relation) => !source?.successor_prescription_id && (relation === 'renewal' ? ['stopped', 'completed'].includes(source?.status) : ['active', 'on_hold'].includes(source?.status));

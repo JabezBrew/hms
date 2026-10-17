@@ -1484,6 +1484,7 @@ export function useDispenseControlledSubstance() {
   const queryClient = useQueryClient();
 
   return useMutation({
+    retry: false, // A lost response may already have changed physical stock.
     mutationFn: (data) => inventoryApi.dispenseControlledSubstance(data),
     onSuccess: (data, variables) => {
       queryClient.invalidateQueries({ queryKey: inventoryKeys.controlledRegisterDetail(variables.register) });
@@ -1501,6 +1502,7 @@ export function useRecordControlledWastage() {
   const queryClient = useQueryClient();
 
   return useMutation({
+    retry: false,
     mutationFn: (data) => inventoryApi.recordControlledWastage(data),
     onSuccess: (data, variables) => {
       queryClient.invalidateQueries({ queryKey: inventoryKeys.controlledRegisterDetail(variables.register) });
@@ -1517,6 +1519,7 @@ export function useRecordControlledCount() {
   const queryClient = useQueryClient();
 
   return useMutation({
+    retry: false,
     mutationFn: (data) => inventoryApi.recordControlledCount(data),
     onSuccess: (data, variables) => {
       queryClient.invalidateQueries({ queryKey: inventoryKeys.controlledRegisterDetail(variables.register) });

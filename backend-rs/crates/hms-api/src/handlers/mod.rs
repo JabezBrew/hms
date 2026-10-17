@@ -3,6 +3,7 @@ pub mod admin_access;
 pub mod admission_advisories;
 pub mod appointment_series;
 pub mod auth;
+pub mod auth_factor;
 pub mod billing;
 pub mod care;
 pub mod clinical;

@@ -26,22 +26,14 @@ const MAX_DISPLAY_NAME_LEN: usize = 160;
 const MAX_DEVICE_LABEL_LEN: usize = 120;
 
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
 pub struct LoginRequest {
     pub email: String,
     pub password: String,
     pub facility_code: String,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
-pub struct AuthTokenResponse {
-    pub access_token: String,
-    pub token_type: String,
-    pub expires_in_seconds: u64,
-    pub refresh_expires_at: DateTime<Utc>,
-    pub session_idle_expires_at: DateTime<Utc>,
-    pub session_absolute_expires_at: DateTime<Utc>,
-    pub user: AuthUser,
-}
+pub use hms_domain::auth_assurance::AuthTokenResponse;
 
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
 pub struct LogoutResponse {
@@ -155,29 +147,41 @@ pub struct RecoveryCodeGenerateResponse {
     tag = "auth",
     request_body = LoginRequest,
     responses(
-        (status = 200, description = "Login succeeded", body = ObjectResponse<AuthTokenResponse>),
+        (status = 200, description = "Authenticated or restricted factor/setup grant", body = ObjectResponse<hms_domain::auth_assurance::AuthLoginResponse>),
         (status = 401, description = "Login failed", body = ApiErrorResponse)
     )
 )]
 pub async fn login(
     State(state): State<AppState>,
     headers: HeaderMap,
-    Json(payload): Json<LoginRequest>,
-) -> Result<(HeaderMap, Json<ObjectResponse<AuthTokenResponse>>), ApiError> {
-    let device_label = device_label_from_headers(&headers);
-    let outcome = state
-        .login(
-            &payload.email,
-            &payload.password,
-            &payload.facility_code,
-            device_label.as_deref(),
-            Some(current_request_id()),
+    payload: Result<Json<LoginRequest>, axum::extract::rejection::JsonRejection>,
+) -> Result<
+    (
+        HeaderMap,
+        Json<ObjectResponse<hms_domain::auth_assurance::AuthLoginResponse>>,
+    ),
+    ApiError,
+> {
+    let Json(payload) = payload.map_err(|_| {
+        ApiError::bad_request(
+            "invalid_login_request",
+            "Review the supported sign-in fields.",
         )
-        .await
-        .map_err(|_| ApiError::unauthorized())?
-        .ok_or_else(ApiError::unauthorized)?;
-
-    Ok(auth_response(outcome, state.cookie_secure()))
+    })?;
+    let device = device_label_from_headers(&headers);
+    let result = crate::services::auth_factor::login(
+        &state,
+        &payload.email,
+        &payload.password,
+        &payload.facility_code,
+        device.as_deref(),
+        Some(current_request_id()),
+    )
+    .await?;
+    Ok(super::auth_factor::login_response(
+        result,
+        state.cookie_secure(),
+    ))
 }
 
 #[utoipa::path(
@@ -349,18 +353,26 @@ pub async fn complete_password_reset(
 )]
 pub async fn change_password(
     State(state): State<AppState>,
-    RequestContext(user): RequestContext,
+    ctx: NetworkContext,
     Json(payload): Json<ChangePasswordRequest>,
 ) -> Result<Json<ObjectResponse<ChangePasswordResponse>>, ApiError> {
     let outcome = state
         .change_password(
-            user.id,
-            user.facility_id,
+            crate::services::auth_factor::actor(&ctx),
             &payload.current_password,
             &payload.new_password,
         )
         .await
-        .map_err(|_| ApiError::bad_request("password_change_failed", "Password change failed."))?;
+        .map_err(|error| {
+            if error
+                .downcast_ref::<hms_db::auth::assurance::FactorError>()
+                .is_some()
+            {
+                crate::services::auth_factor::error(error)
+            } else {
+                ApiError::bad_request("password_change_failed", "Password change failed.")
+            }
+        })?;
 
     match outcome {
         ChangePasswordOutcome::Changed => {
@@ -515,26 +527,13 @@ pub async fn revoke_all_sessions(
     )
 )]
 pub async fn mfa_status(
-    State(state): State<AppState>,
+    State(_state): State<AppState>,
     RequestContext(user): RequestContext,
 ) -> Result<Json<ObjectResponse<MfaStatusResponse>>, ApiError> {
-    let remaining =
-        hms_db::auth::recovery_codes_remaining(state.db_pool(), user.facility_id, user.id)
-            .await
-            .map_err(|_| {
-                ApiError::bad_request("mfa_status_failed", "MFA status could not be loaded.")
-            })?;
-    let credentials =
-        hms_db::auth::list_webauthn_credentials(state.db_pool(), user.facility_id, user.id)
-            .await
-            .map_err(|_| {
-                ApiError::bad_request("mfa_status_failed", "MFA status could not be loaded.")
-            })?;
-    let security = hms_domain::auth::AuthSecurityState::from_permissions(
-        &user.permissions,
-        !credentials.is_empty(),
-        remaining,
-    );
+    // The resolved exact-session facts include the live factor epoch and
+    // assurance. Enrollment alone must never manufacture privileged proof,
+    // and this metadata response need not load every stored credential blob.
+    let security = &user.auth_security;
 
     Ok(Json(object(MfaStatusResponse {
         totp_enrolled: false,
@@ -672,37 +671,18 @@ pub async fn webauthn_authentication_verify(
 )]
 pub async fn generate_recovery_codes(
     State(state): State<AppState>,
-    RequestContext(user): RequestContext,
-    Json(payload): Json<RecoveryCodeGenerateRequest>,
+    ctx: NetworkContext,
+    payload: Result<Json<RecoveryCodeGenerateRequest>, axum::extract::rejection::JsonRejection>,
 ) -> Result<Json<ObjectResponse<RecoveryCodeGenerateResponse>>, ApiError> {
-    let account = hms_db::auth::user_by_id(state.db_pool(), user.id)
-        .await
-        .map_err(|_| ApiError::unauthorized())?
-        .ok_or_else(ApiError::unauthorized)?;
-    if account.facility_id != user.facility_id
-        || !hms_auth::verify_password_hash(&account.password_hash, &payload.current_password)
-    {
-        return Err(ApiError::forbidden(
-            "fresh_reauth_required",
-            "Current password is required to regenerate recovery codes.",
-        ));
-    }
-
-    let codes = hms_auth::generate_recovery_codes(10);
-    let code_hashes = codes
-        .iter()
-        .map(|code| hms_auth::hash_recovery_code(code))
-        .collect::<Vec<_>>();
-    hms_db::auth::replace_recovery_codes(state.db_pool(), user.facility_id, user.id, code_hashes)
-        .await
-        .map_err(|_| {
-            ApiError::bad_request(
-                "recovery_codes_failed",
-                "Recovery codes could not be generated.",
-            )
-        })?;
-    state.invalidate_auth_cache_for_user(user.facility_id, user.id);
-
+    let Json(payload) = payload.map_err(|_| {
+        ApiError::bad_request(
+            "invalid_factor_request",
+            "Review the supported recovery fields.",
+        )
+    })?;
+    let codes =
+        crate::services::auth_factor::replace_recovery(&state, &ctx, &payload.current_password)
+            .await?;
     Ok(Json(object(RecoveryCodeGenerateResponse { codes })))
 }
 
@@ -718,7 +698,7 @@ fn validate_profile_update(payload: &UpdateAuthProfileRequest) -> Result<(), Api
     Ok(())
 }
 
-fn device_label_from_headers(headers: &HeaderMap) -> Option<String> {
+pub(crate) fn device_label_from_headers(headers: &HeaderMap) -> Option<String> {
     headers
         .get(DEVICE_LABEL_HEADER_NAME)
         .and_then(|value| value.to_str().ok())
@@ -727,7 +707,7 @@ fn device_label_from_headers(headers: &HeaderMap) -> Option<String> {
         .map(|value| value.chars().take(MAX_DEVICE_LABEL_LEN).collect())
 }
 
-fn auth_response(
+pub(crate) fn auth_response(
     outcome: LoginOutcome,
     cookie_secure: bool,
 ) -> (HeaderMap, Json<ObjectResponse<AuthTokenResponse>>) {

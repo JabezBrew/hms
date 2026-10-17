@@ -27,6 +27,17 @@ for local development, staging, demo data, and performance data.
   only version, range count, and replay status. See
   `docs/v2/2026-10-16-trusted-network-policy-scope.md` at the repository root for
   the full reviewed operator contract.
+- `hms-migrator auth-readiness --facility-code ...`: report aggregate enrollment,
+  structural-key and RP/origin readiness facts. This cannot prove that a person
+  can use a stored key.
+- `hms-migrator bootstrap-factor`: issue a named user's one-time setup token only
+  after explicit `--identity-checked`, with the raw token written to a new private
+  `--token-file`. It creates no ordinary session or factor assurance.
+- `hms-migrator retire-factor`: logically retire a named user's credential after
+  explicit identity-check acknowledgment and a bounded reason on stdin. Original
+  key material and immutable operator-review evidence remain stored. See
+  `docs/v2/2026-10-17-session-factor-assurance-scope.md` for rollout and identity
+  boundaries; no account is repaired or enrolled automatically at startup.
 
 ## Related Code
 

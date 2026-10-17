@@ -14,6 +14,7 @@ use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use rand_core::{OsRng, RngCore};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
+use std::sync::atomic::{AtomicU32, Ordering};
 
 #[derive(Clone)]
 pub struct Ceremony {
@@ -68,6 +69,7 @@ impl Ceremony {
 pub struct SoftwareAuthenticator {
     signing_key: EcdsaKeyPair,
     credential_id: [u8; 32],
+    last_counter: AtomicU32,
 }
 
 impl SoftwareAuthenticator {
@@ -79,6 +81,7 @@ impl SoftwareAuthenticator {
         Self {
             signing_key,
             credential_id,
+            last_counter: AtomicU32::new(0),
         }
     }
 
@@ -120,9 +123,23 @@ impl SoftwareAuthenticator {
         self.assertion_using_signer(ceremony, self)
     }
 
+    /// Ordinary shared fixtures use a genuine increasing authenticator counter.
+    /// Explicit Ceremony counters remain available for negative replay tests.
+    pub fn next_assertion(&self, options: &Value, origin: &str) -> Value {
+        let previous = self
+            .last_counter
+            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |value| {
+                value.checked_add(1)
+            })
+            .expect("synthetic authenticator counter remains in range");
+        self.assertion(&Ceremony::from_options(options, origin, previous + 1))
+    }
+
     /// A valid DER signature made with another private key tests signature
     /// verification specifically, rather than just invalid encoding rejection.
     pub fn assertion_using_signer(&self, ceremony: &Ceremony, signer: &Self) -> Value {
+        self.last_counter
+            .fetch_max(ceremony.counter, Ordering::SeqCst);
         let client_data = ceremony.client_data("webauthn.get");
         let authenticator_data = ceremony.authenticator_data(false);
         let mut signed = authenticator_data.clone();

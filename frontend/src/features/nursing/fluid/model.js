@@ -1,4 +1,4 @@
-import { hashQueryValue } from '@/shared/lib/privateQueryKey';
+import { authorizationScope } from '@/shared/lib/authorizationScope';
 export const INTAKE = { oral: 'Oral', iv: 'IV fluids', enteral: 'Enteral feed', blood: 'Blood products' };
 export const OUTPUT = { urine: 'Urine', vomit: 'Vomit', stool: 'Stool', drain: 'Drain', ng_suction: 'NG suction', other: 'Other' };
 export const emptyFluidValues = () => ({ recorded_at: new Date().toISOString().slice(0, 16), intake_ml: '', output_ml: '', metadata: { intake_category: '', output_category: '', intake_subcategory: '', output_subcategory: '', output_colour: '', notes: '' } });
@@ -16,7 +16,5 @@ export const fluidTime = (value) => new Date(value).toISOString().slice(0,16).re
 
 /** Only opaque hashes of durable authorization evidence enter clinical keys. */
 export function fluidAccessScope(user, clientScope) {
-  const context = user?.accessContext || {};
-  return hashQueryValue(JSON.stringify([clientScope, user?.id, context.facility_id, context.active_profile, context.session_version, context.permission_version,
-    [...(user?.adminAccess?.capabilities || [])].sort(), [...(context.features || [])].sort(), [...(context.patient_visibility || [])].sort(), context.auth_security]));
+  return authorizationScope(user, clientScope);
 }

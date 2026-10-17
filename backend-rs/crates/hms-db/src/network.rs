@@ -107,9 +107,38 @@ struct SavedCommand {
 /// use the same CAS/idempotency path with an explicit facility and no fake user.
 pub async fn update_policy(
     pool: &PgPool,
+    actor: NetworkPolicyActor,
+    input: UpdateNetworkPolicyRequest,
+    current_client: Option<IpAddr>,
+) -> anyhow::Result<NetworkPolicyWriteResult> {
+    update_policy_with_proof(pool, actor, input, current_client, None).await
+}
+
+/// Mandatory same-session factor proof for authenticated API publication.
+pub async fn update_policy_authorized(
+    pool: &PgPool,
+    actor: NetworkPolicyActor,
+    input: UpdateNetworkPolicyRequest,
+    current_client: Option<IpAddr>,
+    proof: crate::auth::WebAuthnActor,
+) -> anyhow::Result<NetworkPolicyWriteResult> {
+    if actor.user_id != Some(proof.user_id)
+        || actor.facility_id != proof.facility_id
+        || actor.session_id != Some(proof.session_id)
+        || actor.auth_versions != Some((proof.session_version, proof.permission_version))
+        || actor.active_profile != Some(proof.active_profile)
+    {
+        return Err(crate::auth::assurance::FactorError::AuthorizationExpired.into());
+    }
+    update_policy_with_proof(pool, actor, input, current_client, Some(proof)).await
+}
+
+async fn update_policy_with_proof(
+    pool: &PgPool,
     mut actor: NetworkPolicyActor,
     mut input: UpdateNetworkPolicyRequest,
     current_client: Option<IpAddr>,
+    mut proof: Option<crate::auth::WebAuthnActor>,
 ) -> anyhow::Result<NetworkPolicyWriteResult> {
     let candidate = normalize_candidate(NetworkPolicyCandidate {
         onsite_cidrs: input.onsite_cidrs,
@@ -158,8 +187,18 @@ pub async fn update_policy(
     {
         return Err(NetworkPolicyError::InvalidActor.into());
     }
+    let proof_deadline = crate::admin::privileged::begin(
+        &mut tx,
+        proof.as_mut(),
+        actor.facility_id,
+        actor.user_id.unwrap_or_default(),
+        &[],
+        hms_domain::deployment::PermissionCode::AdminAuthorityManage,
+        false,
+    )
+    .await?;
     if let Some(user) = actor.user_id {
-        let valid:Option<(i64,i64)>=sqlx::query_as("SELECT session_version,permission_version FROM users WHERE id=$1 AND facility_id=$2 AND is_active FOR SHARE").bind(user).bind(actor.facility_id).fetch_optional(&mut *tx).await?;
+        let valid:Option<(i64,i64)>=sqlx::query_as("SELECT session_version,permission_version FROM users WHERE id=$1 AND facility_id=$2 AND is_active AND NOT password_change_required FOR SHARE").bind(user).bind(actor.facility_id).fetch_optional(&mut *tx).await?;
         if valid.is_none() || valid != actor.auth_versions {
             return Err(NetworkPolicyError::InvalidActor.into());
         }
@@ -185,6 +224,7 @@ pub async fn update_policy(
             .ok_or_else(|| anyhow::anyhow!("network_policy_command_incomplete"))?;
         let row=sqlx::query_as::<_,PolicyRow>("SELECT version,onsite_cidrs::text[] AS onsite_cidrs,offsite_mode,updated_at,updated_by_user_id FROM facility_network_policy_versions WHERE facility_id=$1 AND version=$2").bind(actor.facility_id).bind(version).fetch_one(&mut *tx).await?;
         check_deadline(&mut tx, &actor).await?;
+        crate::admin::privileged::finish(&mut tx, proof_deadline).await?;
         tx.commit().await?;
         return Ok(NetworkPolicyWriteResult {
             client_request_id: input.client_request_id,
@@ -228,6 +268,7 @@ pub async fn update_policy(
     sqlx::query("UPDATE facility_network_policy_commands SET result_version=$3 WHERE facility_id=$1 AND request_key_hash=$2").bind(actor.facility_id).bind(&key).bind(next).execute(&mut *tx).await?;
     sqlx::query("INSERT INTO audit_events(id,facility_id,actor_user_id,request_id,event_type,resource_type,resource_id,metadata) VALUES($1,$2,$3,$4,'network.policy.updated','network_policy',$2,jsonb_build_object('version',$5::bigint,'mode',$6::text,'range_count',$7::integer,'source',$8::text))").bind(Uuid::new_v4()).bind(actor.facility_id).bind(actor.user_id).bind(&actor.request_id).bind(next).bind(mode).bind(input.onsite_cidrs.len() as i32).bind(source).execute(&mut *tx).await?;
     check_deadline(&mut tx, &actor).await?;
+    crate::admin::privileged::finish(&mut tx, proof_deadline).await?;
     tx.commit().await?;
     Ok(NetworkPolicyWriteResult {
         client_request_id: input.client_request_id,

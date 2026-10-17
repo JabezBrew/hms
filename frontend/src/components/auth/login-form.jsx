@@ -2,7 +2,8 @@ import Eye from 'lucide-react/dist/esm/icons/eye.js';
 import EyeOff from 'lucide-react/dist/esm/icons/eye-off.js';
 import LogIn from 'lucide-react/dist/esm/icons/log-in.js';
 import { useNavigate } from 'react-router-dom';
-import { useReducer, useRef } from "react";
+import { useLayoutEffect, useReducer, useRef } from "react";
+import { FactorLoginLoader } from '@/features/auth/FactorLoginLoader';
 
 import { useAuth } from "../../lib/auth.jsx"
 import { isRustV2ApiMode } from "../../lib/api/v2/runtime"
@@ -36,9 +37,12 @@ export function LoginForm() {
   const [state, dispatch] = useReducer(loginFormReducer, null, createInitialLoginFormState)
   const { email, password, facilityCode, showPassword, isLoading } = state
   const isSubmittingRef = useRef(false)
-  const { login, mfaSession } = useAuth()
+  const { login, startPasskeySetup, mfaSession, pendingFactor, cancelPendingLogin, error: authError } = useAuth()
   const navigate = useNavigate();
   const showFacilityCode = isRustV2ApiMode() || isMultiFacilityModeEnabled()
+  useLayoutEffect(() => () => cancelPendingLogin?.(), [cancelPendingLogin])
+
+  if (isRustV2ApiMode() && pendingFactor) return <FactorLoginLoader />
 
   if (mfaSession) {
     return <MFAChallenge />
@@ -54,8 +58,9 @@ export function LoginForm() {
 
     try {
       const normalizedFacilityCode = facilityCode.trim().toUpperCase()
+      const authenticate = e.nativeEvent?.submitter?.value === 'setup' ? startPasskeySetup : login
       const response = showFacilityCode
-        ? await login(email.trim(), password, normalizedFacilityCode)
+        ? await authenticate(email.trim(), password, normalizedFacilityCode)
         : await login(email.trim(), password);
       if (response?.mfaRequired) {
         return;
@@ -66,7 +71,7 @@ export function LoginForm() {
       // Error is already handled in the auth provider
     } finally {
       isSubmittingRef.current = false;
-      dispatch({ type: "patch", patch: { isLoading: false } })
+      dispatch({ type: "patch", patch: { isLoading: false, password: '' } })
     }
   }
 
@@ -89,6 +94,7 @@ export function LoginForm() {
 
       {/* Login Form */}
       <form onSubmit={handleSubmit} className="space-y-5">
+        {isRustV2ApiMode() && authError && <p role="alert" className="text-sm text-destructive">{authError}</p>}
         <div className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="email" className="text-sm font-medium">
@@ -177,6 +183,7 @@ export function LoginForm() {
         >
           {isLoading ? "Signing in..." : "Sign In"}
         </Button>
+        {isRustV2ApiMode() && <Button type="submit" name="intent" value="setup" variant="outline" className="w-full" disabled={isLoading}>Set up first passkey</Button>}
       </form>
 
     </div>

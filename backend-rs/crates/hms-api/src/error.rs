@@ -65,6 +65,15 @@ impl ApiError {
         }
     }
 
+    pub fn too_many_requests(code: &'static str, message: &'static str) -> Self {
+        Self {
+            status: StatusCode::TOO_MANY_REQUESTS,
+            code,
+            message,
+            details: json!({}),
+        }
+    }
+
     pub fn conflict(code: &'static str, message: &'static str) -> Self {
         Self {
             status: StatusCode::CONFLICT,
@@ -78,6 +87,10 @@ impl ApiError {
 impl From<hms_access::AccessError> for ApiError {
     fn from(error: hms_access::AccessError) -> Self {
         match error {
+            hms_access::AccessError::FactorVerificationRequired => ApiError::forbidden(
+                "passkey_verification_required",
+                "A fresh verification with an existing passkey is required.",
+            ),
             hms_access::AccessError::MissingFacility
             | hms_access::AccessError::WrongFacility
             | hms_access::AccessError::MissingPermission => ApiError::forbidden(

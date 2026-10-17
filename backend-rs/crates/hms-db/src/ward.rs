@@ -37,7 +37,7 @@ pub use bed_management::{
 pub use discharge_cases::{
     cancel_discharge, complete_discharge, complete_discharge_authorized, get_discharge_case,
     hold_discharge_blocker, list_discharge_cases, override_discharge_blocker,
-    record_nursing_release, request_discharge,
+    override_discharge_blocker_authorized, record_nursing_release, request_discharge,
 };
 pub use fluid::*;
 pub use handoff::{

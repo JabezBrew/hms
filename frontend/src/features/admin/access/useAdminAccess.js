@@ -36,7 +36,7 @@ export function useRevokeAccessGrant({ grant, user, reauthenticate }) {
     dispatch({ busy: true, error: null });
     let mutationStarted = false;
     try {
-      const authenticated = await reauthenticate(user.email, password, user.facilityCode);
+      const authenticated = await reauthenticate(user.email, password, user.facilityCode, { signal: controller.signal });
       if (controller.signal.aborted) return false;
       if (!sameScope(user, authenticated)) throw new Error('The signed-in account or access scope changed. Reload before changing access.');
       const decision = state.unconfirmed ? lastDecision.current : reconciliation;

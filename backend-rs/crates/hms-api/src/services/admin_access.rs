@@ -66,9 +66,10 @@ pub async fn revoke(
         state.facility_id(),
         PermissionCode::AdminAuthorityManage,
     )?;
-    let result=hms_db::admin_access::revoke_access_grant(state.db_pool(),RevokeGrant {
+    let result=hms_db::admin_access::revoke_access_grant_authorized(state.db_pool(),RevokeGrant {
         facility_id:state.facility_id(),actor_user_id:ctx.user_id,id,kind,reconciliation:payload.reconciliation,request_id:Some(ctx.request_id.clone()),
-    }).await.map_err(|error|match error {
+    }, super::auth_factor::privileged_actor(ctx)?).await.map_err(|error|match error {
+        RevokeGrantError::Other(error) if error.downcast_ref::<hms_db::auth::assurance::FactorError>().is_some()=>super::auth_factor::error(error),
         RevokeGrantError::NotFound=>ApiError::not_found("access_grant_not_found","Access grant was not found."),
         RevokeGrantError::ReconciliationRequired=>ApiError::conflict("access_grant_reconciliation_required","Choose whether to retain independent access or remove the historical permission copy before revoking this grant."),
         _=>ApiError::conflict("access_grant_revoke_failed","The access grant could not be confirmed as revoked. Refresh its status before trying again."),

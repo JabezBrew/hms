@@ -19,7 +19,7 @@ describe('managed access revocation', () => {
   it('confirms the same account, sends explicit reconciliation and never caches a password', async () => {
     const { result } = setup();
     await act(async () => expect(await result.current.submit({ ...credentials, reconciliation: 'remove_historical_copy' })).toBe(true));
-    expect(login).toHaveBeenCalledWith(user.email, credentials.password, 'HMS');
+    expect(login).toHaveBeenCalledWith(user.email, credentials.password, 'HMS', { signal: expect.any(AbortSignal) });
     expect(adminAccessApi.revoke).toHaveBeenCalledWith(grant.kind, grant.id, 'remove_historical_copy', { signal: expect.any(AbortSignal) });
     expect(result.current.saved).toEqual(saved); expect(client.getMutationCache().getAll()).toEqual([]);
     expect(JSON.stringify(client.getQueryCache().getAll())).not.toContain(credentials.password);
@@ -56,7 +56,7 @@ describe('managed access revocation', () => {
   it('guards duplicate submission and navigation during password confirmation', async () => {
     let resolve; login.mockImplementationOnce(() => new Promise((done) => { resolve = done; })); const view = setup(); let pending;
     act(() => { pending = view.result.current.submit(credentials); });
-    await act(async () => expect(await view.result.current.submit(credentials)).toBe(false)); expect(login).toHaveBeenCalledTimes(1); view.unmount();
+    await act(async () => expect(await view.result.current.submit(credentials)).toBe(false)); expect(login).toHaveBeenCalledTimes(1); const signal = login.mock.calls[0][3].signal; view.unmount(); expect(signal.aborted).toBe(true);
     await act(async () => { resolve(user); await pending; }); expect(adminAccessApi.revoke).not.toHaveBeenCalled();
   });
   it('requires a historical choice and clears the password after a definite denial', async () => {

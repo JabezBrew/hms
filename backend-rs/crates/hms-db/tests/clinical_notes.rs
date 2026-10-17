@@ -277,13 +277,9 @@ async fn pinned_templates_preserve_schema_and_require_author_or_explicit_overrid
     .await
     .unwrap();
     // A distinct valid local actor cannot amend another author's evidence.
-    let other: Uuid =
-        sqlx::query_scalar("SELECT id FROM users WHERE facility_id=$1 AND id<>$2 LIMIT 1")
-            .bind(f.db.facility_id())
-            .bind(f.actor.user_id)
-            .fetch_one(f.db.pool())
-            .await
-            .unwrap();
+    let other = Uuid::new_v4();
+    sqlx::query("INSERT INTO users(id,facility_id,email,display_name,password_hash,is_active,password_change_required) VALUES($1,$2,$3,'Synthetic eligible note reviewer','synthetic-not-used-for-signin',true,false)")
+        .bind(other).bind(f.db.facility_id()).bind(format!("note-reviewer-{other}@example.invalid")).execute(f.db.pool()).await.unwrap();
     let mut other = actor(&f.db, other).await;
     typed(
         &notes::amend(f.db.pool(), other.clone(), imported.id, f.amendment(1))

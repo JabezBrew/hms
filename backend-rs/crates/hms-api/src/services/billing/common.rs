@@ -48,12 +48,7 @@ pub(super) fn require_billing_high_risk_access(
         PermissionCode::BillingManage,
         Utc::now(),
     )
-    .map_err(|_| {
-        ApiError::forbidden(
-            "high_risk_billing_denied",
-            "Fresh reauthentication and billing approval are required for this action.",
-        )
-    })
+    .map_err(ApiError::from)
 }
 
 pub(super) fn require_nhis_access(
@@ -583,7 +578,7 @@ mod tests {
 
     fn ctx() -> RequestContext {
         let facility_id = Uuid::new_v4();
-        let user = AuthUser {
+        let mut user = AuthUser {
             id: Uuid::new_v4(),
             email: "billing@hms.local".to_owned(),
             display_name: "Billing Officer".to_owned(),
@@ -611,6 +606,15 @@ mod tests {
                 4,
             ),
         };
+        // Pure policy tests represent the verifier's resolved proof facts;
+        // HTTP fixtures establish these through genuine signed assertions.
+        let verified_at = Utc::now();
+        user.auth_security.session_assurance = hms_domain::auth_assurance::SessionAssurance {
+            method: Some(hms_domain::auth_assurance::FactorMethod::Passkey),
+            verified_at: Some(verified_at),
+            expires_at: Some(verified_at + chrono::Duration::minutes(15)),
+            credential_id: Some(Uuid::new_v4()),
+        };
         RequestContext::new(
             "request-1".to_owned(),
             Uuid::new_v4(),
@@ -625,6 +629,12 @@ mod tests {
     fn high_risk_billing_action_requires_permission_and_fresh_reauth() {
         let valid = ctx();
         assert!(require_billing_high_risk_access(&valid, valid.facility_id).is_ok());
+
+        let mut missing_factor = ctx();
+        missing_factor.user.auth_security.session_assurance = Default::default();
+        assert!(
+            require_billing_high_risk_access(&missing_factor, missing_factor.facility_id).is_err()
+        );
 
         let mut missing_permission = ctx();
         missing_permission

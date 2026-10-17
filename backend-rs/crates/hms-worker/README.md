@@ -52,6 +52,11 @@ path.
   clinical payloads.
 - Persisted job failures and processing logs use fixed codes/classes. Never
   persist or log arbitrary SQL, payload, serde, or error-chain text.
+- Each poll also performs best-effort bounded cleanup of authentication grants,
+  ceremony challenges and issue budgets expired for more than a day. Child-first
+  `SKIP LOCKED` batches and local database timeouts limit work; credentials,
+  sessions, audit and reviewed operator evidence are retained. See
+  `docs/v2/2026-10-17-session-factor-assurance-scope.md` at the repository root.
 - Add new worker job families deliberately; do not imply external side effects
   exist here until code implements them.
 

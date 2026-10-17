@@ -8,7 +8,7 @@ export const NETWORK_MODES = [
 ];
 export const NETWORK_REASONS = new Set(['onsite', 'offsite_readonly', 'offsite_denied', 'offsite_fresh_reauth', 'reauth_required', 'policy_unconfigured', 'client_unknown']);
 
-export { authorizationIdentity as networkEditorIdentity, authorizationScope as networkAccessScope } from '@/shared/lib/authorizationScope';
+export { authorizationIdentity as networkEditorIdentity, requestAuthorizationScope as networkAccessScope } from '@/shared/lib/authorizationScope';
 export function assertNetworkSession(current, authenticated) {
   if (!current?.id || !current.email || !current.facilityCode || !current.accessContext?.facility_id || !current.accessContext?.active_profile
     || authenticated?.mfaRequired || authenticated?.id !== current.id || authenticated.facilityCode !== current.facilityCode

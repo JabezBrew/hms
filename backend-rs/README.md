@@ -54,6 +54,26 @@ routes/* -> handlers/* -> services/* -> hms-access
 | `hms-worker` | `crates/hms-worker/src/main.rs` | Background worker runtime. |
 | `hms-migrator` | `crates/hms-migrator/src/main.rs` | Migrations and provisioning. |
 
+## Authentication rollout
+
+Password sign-in can return a restricted `setup_required` or `factor_required`
+grant rather than a normal token. An enrolled account must verify its existing
+factor; an unenrolled privileged account needs named-user operator setup and a
+separate signed passkey assertion. Voluntary first-key setup for other accounts
+uses the explicit setup-start operation. Password-only compatibility remains
+limited to unenrolled accounts outside the privileged-login policy.
+
+Run `hms-migrator auth-readiness --facility-code ...` in the private migration
+environment before rollout. Arrange a real identity check and secure one-time
+token delivery for each named user who needs `bootstrap-factor`; do not enroll
+an ephemeral test signer onto a human account. Readiness counts cannot prove
+physical authenticator usability. Use the exact configured browser origin/RP
+pair; staging requires the reviewed HTTPS origin. Migration022 creates no factor
+assurance for existing sessions. See
+[`authentication policy`](../docs/v2/2026-10-17-authentication-policy.md),
+[`session assurance scope`](../docs/v2/2026-10-17-session-factor-assurance-scope.md)
+and the [migrator commands](crates/hms-migrator/README.md).
+
 ## Schema And Generated Contracts
 
 - SQL migrations live in `migrations/`.

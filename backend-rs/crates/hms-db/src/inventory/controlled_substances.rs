@@ -14,6 +14,93 @@ use super::{
 use crate::codec;
 use crate::PgPool;
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ControlledWriteError {
+    InvalidWitness,
+    InvalidLocation,
+    BalanceReviewRequired,
+}
+impl std::fmt::Display for ControlledWriteError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::InvalidWitness => "A distinct active local witness is required.",
+            Self::InvalidLocation => "An active local stock location is required.",
+            Self::BalanceReviewRequired => {
+                "The saved register and physical stock require governed reconciliation."
+            }
+        })
+    }
+}
+impl std::error::Error for ControlledWriteError {}
+
+/// Canonical facility -> sorted actor/witness users -> exact actor proof.
+/// Witness identity is metadata, not a separate authenticated attestation.
+async fn lock_controlled_users(
+    tx: &mut sqlx::Transaction<'_, Postgres>,
+    facility: Uuid,
+    actor: Uuid,
+    witness: Option<Uuid>,
+) -> anyhow::Result<()> {
+    if witness == Some(actor) {
+        return Err(ControlledWriteError::InvalidWitness.into());
+    }
+    let active: Option<Uuid> =
+        sqlx::query_scalar("SELECT id FROM facilities WHERE id=$1 AND is_active FOR SHARE")
+            .bind(facility)
+            .fetch_optional(&mut **tx)
+            .await?;
+    if active.is_none() {
+        return Err(crate::auth::assurance::FactorError::AuthorizationExpired.into());
+    }
+    let mut ids = vec![actor];
+    if let Some(witness) = witness {
+        ids.push(witness);
+    }
+    ids.sort_unstable();
+    let found:Vec<Uuid>=sqlx::query_scalar("SELECT id FROM users WHERE facility_id=$1 AND id=ANY($2) AND is_active ORDER BY id FOR NO KEY UPDATE").bind(facility).bind(&ids).fetch_all(&mut **tx).await?;
+    if !found.contains(&actor) {
+        return Err(crate::auth::assurance::FactorError::AuthorizationExpired.into());
+    }
+    if found != ids {
+        return Err(ControlledWriteError::InvalidWitness.into());
+    }
+    Ok(())
+}
+async fn lock_controlled_location(
+    tx: &mut sqlx::Transaction<'_, Postgres>,
+    facility: Uuid,
+    location: Uuid,
+) -> anyhow::Result<()> {
+    let found: Option<Uuid> = sqlx::query_scalar(
+        "SELECT id FROM storage_locations WHERE facility_id=$1 AND id=$2 AND is_active FOR SHARE",
+    )
+    .bind(facility)
+    .bind(location)
+    .fetch_optional(&mut **tx)
+    .await?;
+    if found.is_none() {
+        return Err(ControlledWriteError::InvalidLocation.into());
+    }
+    Ok(())
+}
+
+/// The item parent is held by every public physical writer. Never infer an
+/// opening ledger balance or reinterpret a divergent legacy stock history.
+async fn require_coupled_controlled_stock(
+    tx: &mut sqlx::Transaction<'_, Postgres>,
+    facility: Uuid,
+    item: Uuid,
+    location: Uuid,
+    ledger: i64,
+) -> anyhow::Result<()> {
+    let coupled:bool=sqlx::query_scalar("SELECT COALESCE(sum(quantity_on_hand),0)=$4::numeric FROM stock_batches WHERE facility_id=$1 AND item_id=$2 AND location_id=$3")
+        .bind(facility).bind(item).bind(location).bind(ledger).fetch_one(&mut **tx).await?;
+    if !coupled {
+        return Err(ControlledWriteError::BalanceReviewRequired.into());
+    }
+    Ok(())
+}
+
 #[derive(Clone, Debug, FromRow)]
 struct ControlledRow {
     id: Uuid,
@@ -296,25 +383,80 @@ pub async fn create_controlled_count(
     pool: &PgPool,
     count: NewControlledCount,
 ) -> anyhow::Result<ControlledSubstanceRegisterItem> {
+    create_controlled_count_inner(pool, count, None).await
+}
+
+pub async fn create_controlled_count_authorized(
+    pool: &PgPool,
+    count: NewControlledCount,
+    authorization: crate::auth::WebAuthnActor,
+) -> anyhow::Result<ControlledSubstanceRegisterItem> {
+    create_controlled_count_inner(pool, count, Some(authorization)).await
+}
+
+async fn create_controlled_count_inner(
+    pool: &PgPool,
+    count: NewControlledCount,
+    authorization: Option<crate::auth::WebAuthnActor>,
+) -> anyhow::Result<ControlledSubstanceRegisterItem> {
     if count.actual_count < 0 {
         anyhow::bail!("controlled count cannot be negative");
     }
-    let context = controlled_context_by_id(pool, count.facility_id, count.register_entry_id)
-        .await?
-        .ok_or_else(|| anyhow::anyhow!("controlled register entry was not found"))?;
-    let current_balance = current_controlled_balance(
-        pool,
-        count.facility_id,
-        context.item_id,
-        context.location_id,
-    )
-    .await?;
-    let quantity_delta = count.actual_count - current_balance;
     if count.reason.trim().is_empty() {
         anyhow::bail!("controlled discrepancy reason is required");
     }
 
     let mut tx = pool.begin().await?;
+    lock_controlled_users(
+        &mut tx,
+        count.facility_id,
+        count.actor_user_id,
+        Some(count.witness_user_id),
+    )
+    .await?;
+    let privileged_deadline = if let Some(mut actor) = authorization {
+        Some(
+            crate::auth::assurance::require_family_privileged_tx(
+                &mut tx,
+                &mut actor,
+                count.facility_id,
+                count.actor_user_id,
+                hms_domain::deployment::PermissionCode::ControlledSubstanceManage,
+                hms_domain::deployment::FeatureKey::Inventory,
+            )
+            .await?,
+        )
+    } else {
+        None
+    };
+    let context = controlled_context_by_id(&mut *tx, count.facility_id, count.register_entry_id)
+        .await?
+        .ok_or_else(|| anyhow::anyhow!("controlled register entry was not found"))?;
+    sqlx::query("SELECT id FROM inventory_items WHERE facility_id=$1 AND id=$2 FOR UPDATE")
+        .bind(count.facility_id)
+        .bind(context.item_id)
+        .fetch_one(&mut *tx)
+        .await?;
+    lock_controlled_location(&mut tx, count.facility_id, context.location_id).await?;
+    let current_balance = current_controlled_balance(
+        &mut *tx,
+        count.facility_id,
+        context.item_id,
+        context.location_id,
+    )
+    .await?;
+    require_coupled_controlled_stock(
+        &mut tx,
+        count.facility_id,
+        context.item_id,
+        context.location_id,
+        current_balance,
+    )
+    .await?;
+    let quantity_delta = count
+        .actual_count
+        .checked_sub(current_balance)
+        .ok_or_else(|| anyhow::anyhow!("controlled quantity is outside the supported range"))?;
     let movement = NewControlledMovement {
         id: count.id,
         facility_id: count.facility_id,
@@ -327,8 +469,7 @@ pub async fn create_controlled_count(
         request_id: count.request_id.clone(),
     };
     insert_controlled_movement_tx(&mut tx, movement.clone(), current_balance).await?;
-    insert_controlled_movement_audit_tx(&mut tx, &movement, current_balance + quantity_delta)
-        .await?;
+    insert_controlled_movement_audit_tx(&mut tx, &movement, count.actual_count).await?;
 
     if quantity_delta != 0 {
         let discrepancy_id = Uuid::new_v4();
@@ -376,6 +517,9 @@ pub async fn create_controlled_count(
         .await?;
     }
 
+    if let Some(end) = privileged_deadline {
+        crate::auth::assurance::check_privileged_deadline_tx(&mut tx, end).await?;
+    }
     tx.commit().await?;
     fetch_controlled_by_id(pool, count.facility_id, count.id)
         .await?
@@ -386,9 +530,47 @@ pub async fn create_controlled_movement(
     pool: &PgPool,
     movement: NewControlledMovement,
 ) -> anyhow::Result<ControlledSubstanceRegisterItem> {
+    create_controlled_movement_inner(pool, movement, None).await
+}
+
+pub async fn create_controlled_movement_authorized(
+    pool: &PgPool,
+    movement: NewControlledMovement,
+    authorization: crate::auth::WebAuthnActor,
+) -> anyhow::Result<ControlledSubstanceRegisterItem> {
+    create_controlled_movement_inner(pool, movement, Some(authorization)).await
+}
+
+async fn create_controlled_movement_inner(
+    pool: &PgPool,
+    movement: NewControlledMovement,
+    authorization: Option<crate::auth::WebAuthnActor>,
+) -> anyhow::Result<ControlledSubstanceRegisterItem> {
     let mut tx = pool.begin().await?;
+    lock_controlled_users(
+        &mut tx,
+        movement.facility_id,
+        movement.actor_user_id,
+        movement.witness_user_id,
+    )
+    .await?;
+    let privileged_deadline = if let Some(mut actor) = authorization {
+        Some(
+            crate::auth::assurance::require_family_privileged_tx(
+                &mut tx,
+                &mut actor,
+                movement.facility_id,
+                movement.actor_user_id,
+                hms_domain::deployment::PermissionCode::ControlledSubstanceManage,
+                hms_domain::deployment::FeatureKey::Inventory,
+            )
+            .await?,
+        )
+    } else {
+        None
+    };
     // Hold the physical item basis before any first-entry metadata is read.
-    let controlled:Option<bool>=sqlx::query_scalar("SELECT controlled FROM inventory_items WHERE facility_id=$1 AND id=$2 AND is_active FOR SHARE")
+    let controlled:Option<bool>=sqlx::query_scalar("SELECT (controlled OR item_type='controlled_substance') FROM inventory_items WHERE facility_id=$1 AND id=$2 AND is_active FOR UPDATE")
         .bind(movement.facility_id).bind(movement.item_id).fetch_optional(&mut *tx).await?;
     if controlled != Some(true) {
         anyhow::bail!("controlled register requires a controlled item");
@@ -396,6 +578,7 @@ pub async fn create_controlled_movement(
     if movement.quantity_delta < 0 && movement.witness_user_id.is_none() {
         anyhow::bail!("negative controlled movement requires a witness");
     }
+    lock_controlled_location(&mut tx, movement.facility_id, movement.location_id).await?;
     let current_balance = current_controlled_balance(
         &mut *tx,
         movement.facility_id,
@@ -403,13 +586,26 @@ pub async fn create_controlled_movement(
         movement.location_id,
     )
     .await?;
-    let next_balance = current_balance + movement.quantity_delta;
+    require_coupled_controlled_stock(
+        &mut tx,
+        movement.facility_id,
+        movement.item_id,
+        movement.location_id,
+        current_balance,
+    )
+    .await?;
+    let next_balance = current_balance
+        .checked_add(movement.quantity_delta)
+        .ok_or_else(|| anyhow::anyhow!("controlled quantity is outside the supported range"))?;
     if next_balance < 0 {
         anyhow::bail!("controlled balance cannot become negative");
     }
 
     insert_controlled_movement_tx(&mut tx, movement.clone(), current_balance).await?;
     insert_controlled_movement_audit_tx(&mut tx, &movement, next_balance).await?;
+    if let Some(end) = privileged_deadline {
+        crate::auth::assurance::check_privileged_deadline_tx(&mut tx, end).await?;
+    }
     tx.commit().await?;
     fetch_controlled_by_id(pool, movement.facility_id, movement.id)
         .await?
@@ -475,7 +671,9 @@ async fn insert_controlled_movement_tx(
     movement: NewControlledMovement,
     current_balance: i64,
 ) -> anyhow::Result<()> {
-    let next_balance = current_balance + movement.quantity_delta;
+    let next_balance = current_balance
+        .checked_add(movement.quantity_delta)
+        .ok_or_else(|| anyhow::anyhow!("controlled quantity is outside the supported range"))?;
     if next_balance < 0 {
         anyhow::bail!("controlled balance cannot become negative");
     }
@@ -485,9 +683,9 @@ async fn insert_controlled_movement_tx(
             r#"
             INSERT INTO controlled_substance_register (
                 id, facility_id, item_id, location_id, movement_type, quantity_delta,
-                balance_after, witness_user_id, created_by_user_id
+                balance_after, witness_user_id, created_by_user_id, created_at
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, clock_timestamp())
             "#,
         )
         .bind(movement.id)
@@ -562,11 +760,14 @@ async fn fetch_controlled_by_id(
     .transpose()
 }
 
-async fn controlled_context_by_id(
-    pool: &PgPool,
+async fn controlled_context_by_id<'e, E>(
+    executor: E,
     facility_id: Uuid,
     id: Uuid,
-) -> anyhow::Result<Option<ControlledContextRow>> {
+) -> anyhow::Result<Option<ControlledContextRow>>
+where
+    E: sqlx::Executor<'e, Database = Postgres>,
+{
     hms_observability::observe_db_query(
         "inventory.controlled_register.context_by_id",
         sqlx::query_as::<_, ControlledContextRow>(
@@ -578,7 +779,7 @@ async fn controlled_context_by_id(
         )
         .bind(facility_id)
         .bind(id)
-        .fetch_optional(pool),
+        .fetch_optional(executor),
     )
     .await
     .map_err(Into::into)

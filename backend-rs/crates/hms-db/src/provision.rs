@@ -7562,20 +7562,24 @@ async fn seed_inventory_baseline(
             true,
         ),
     ] {
+        // A governed catalog correction may rename the shipped code. Identity
+        // remains the canonical local ID, so preserve that reviewed row first.
+        let existing: Option<Uuid> =
+            sqlx::query_scalar("SELECT id FROM inventory_items WHERE facility_id=$1 AND id=$2")
+                .bind(baseline.facility_id)
+                .bind(id)
+                .fetch_optional(pool)
+                .await?;
+        if existing.is_some() {
+            continue;
+        }
         sqlx::query(
             r#"
             INSERT INTO inventory_items (
                 id, facility_id, category_id, code, name, item_type, unit, controlled
             )
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-            ON CONFLICT (facility_id, code) DO UPDATE
-            SET id = EXCLUDED.id,
-                category_id = EXCLUDED.category_id,
-                name = EXCLUDED.name,
-                item_type = EXCLUDED.item_type,
-                unit = EXCLUDED.unit,
-                controlled = EXCLUDED.controlled,
-                is_active = TRUE
+            ON CONFLICT DO NOTHING
             "#,
         )
         .bind(id)
@@ -7588,6 +7592,20 @@ async fn seed_inventory_baseline(
         .bind(controlled)
         .execute(pool)
         .await?;
+        // A baseline deploy supplies missing defaults; it must not reinterpret
+        // retained physical stock, reactivate a retired item, or rewrite an ID.
+        // Downstream seed references use canonical local IDs. If another row
+        // owns the shipped code or ID, require operator review, never rekey it.
+        let actual_id: Option<Uuid> =
+            sqlx::query_scalar("SELECT id FROM inventory_items WHERE facility_id=$1 AND id=$2")
+                .bind(baseline.facility_id)
+                .bind(id)
+                .fetch_optional(pool)
+                .await?;
+        anyhow::ensure!(
+            actual_id == Some(id),
+            "baseline_inventory_item_review_required"
+        );
     }
 
     for (id, code, name, location_type, temperature_zone) in [

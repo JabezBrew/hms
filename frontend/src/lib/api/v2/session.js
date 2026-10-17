@@ -1,4 +1,6 @@
 import { getClientDeviceLabel } from '@/lib/device-label';
+import { hashQueryValue } from '@/shared/lib/privateQueryKey';
+import { publishFactorRequirement } from '@/shared/lib/factorRequiredSignal';
 
 import { apiErrorFromEnvelope } from './errors';
 import { appendV2QueryParams, buildV2ApiUrl } from './runtime';
@@ -13,6 +15,7 @@ let canRefreshSession = () => true;
 let isRefreshing = false;
 let refreshPromise = null;
 const scopeSubscribers = new Set();
+const FACTOR_REQUIRED_CODES = new Set(['passkey_verification_required', 'password_confirmation_required', 'reauth_required']);
 export function subscribeV2ClientScope(subscriber) { scopeSubscribers.add(subscriber); return () => scopeSubscribers.delete(subscriber); }
 const publishScopeChange = () => scopeSubscribers.forEach((subscriber) => subscriber());
 
@@ -68,11 +71,15 @@ export function hasV2RefreshSessionHint() {
   return Boolean(readCookie('hms_v2_csrf'));
 }
 
-export function getV2ClientScopeKey() {
+export function getV2ClientScopeForToken(token, facility) {
   return [
-    `facility:${hashScopeValue(getFacilityCode())}`,
-    `token:${hashScopeValue(getAccessToken())}`,
+    `facility:${hashScopeValue(facility)}`,
+    `token:${hashScopeValue(token)}`,
   ].join(':');
+}
+
+export function getV2ClientScopeKey() {
+  return getV2ClientScopeForToken(getAccessToken(), getFacilityCode());
 }
 
 export async function performV2TokenRefresh({ notifyFailure = true } = {}) {
@@ -145,7 +152,8 @@ async function rawV2Request(requestConfig, retryWithRefresh = true) {
   if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
   const originAuthority = currentNetworkAuthorityScope();
   const originTransport = getV2ClientScopeKey();
-  const originPrincipal = currentNetworkPrincipal();
+  const requestPrincipal = currentNetworkPrincipal();
+  const originPrincipal = requestPrincipal ? { ...requestPrincipal } : null;
   assertNetworkRequestAllowed({ method, path, transportScope: originTransport });
 
   const resolvedPath = replacePathParams(path, pathParams);
@@ -252,6 +260,14 @@ async function rawV2Request(requestConfig, retryWithRefresh = true) {
     }
   }
 
+  // A late response from another account or authority cannot prompt the current
+  // user. The UI receives only its existing opaque authorization-scope hash.
+  if (response.status === 403 && FACTOR_REQUIRED_CODES.has(data?.error?.code)
+    && !signal?.aborted && originPrincipal?.id && originAuthority
+    && currentNetworkAuthorityScope() === originAuthority && getV2ClientScopeKey() === originTransport
+    && ['id', 'facility_id', 'active_profile'].every((key) => currentNetworkPrincipal()?.[key] === originPrincipal[key])) {
+    publishFactorRequirement(hashQueryValue(JSON.stringify([originTransport, originAuthority])));
+  }
   const failure = apiErrorFromEnvelope(response.status, data); attachWriteResponseMetadata(failure, attempt); throw failure;
 }
 

@@ -1,4 +1,5 @@
 import { hashQueryValue } from './privateQueryKey';
+import { workflowIdentityKey, workflowScope } from './workflowContinuity';
 
 // A normal credential confirmation rotates the token. Keep that operation
 // mounted while resetting copied drafts when the actor or authority changes.
@@ -8,4 +9,6 @@ export function authorizationIdentity(user) {
     hashQueryValue(JSON.stringify([[...(user?.adminAccess?.capabilities || [])].sort(), [...(user?.accessContext?.features || [])].sort(),
       [...(user?.accessContext?.patient_visibility || [])].sort(), user?.accessContext?.auth_security]))]);
 }
-export const authorizationScope = (user, clientScope) => hashQueryValue(JSON.stringify([clientScope, authorizationIdentity(user)]));
+export const requestAuthorizationScope = (user, clientScope) => hashQueryValue(JSON.stringify([clientScope, authorizationIdentity(user)]));
+export const authorizationScope = (user, clientScope) => workflowScope(requestAuthorizationScope(user, clientScope));
+export const workflowAuthorizationIdentity = (user, clientScope) => workflowIdentityKey(requestAuthorizationScope(user, clientScope), hashQueryValue(authorizationIdentity(user)));

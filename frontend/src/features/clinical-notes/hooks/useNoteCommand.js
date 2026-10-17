@@ -7,12 +7,14 @@ import { noteWorkspaceApi } from '../api/workspace';
 import { noteKeys } from '../keys';
 import { useScopedNotifications } from '@/shared/hooks/useScopedNotifications';
 import { hashQueryValue } from '@/shared/lib/privateQueryKey';
+import { useCommandTransportLifetime } from '@/shared/hooks/useCommandTransportLifetime';
 
 export function useNoteCommand(scope, patientId, onSaved) {
   const client = useQueryClient(); const operation = useRef(null); const frozen = useRef(null);
   const { user } = useAuth();
   const capture = useScopedNotifications(patientId ? hashQueryValue(patientId) : null);
   const [state, setState] = useState({ pending: false, unknown: false, saved: null, error: null, refreshFailed: false });
+  const interrupted = useCommandTransportLifetime(operation, () => setState((old) => old.saved ? { ...old, pending: false } : { ...old, pending: false, unknown: true, error: 'The sign-in proof changed while this request was pending. Its result is unconfirmed. Check the original result or explicitly retry the unchanged request.' }));
   useEffect(() => () => operation.current?.abort(), []);
   const run = async (input, recover = false) => {
     if (operation.current || state.saved) return;
@@ -30,6 +32,7 @@ export function useNoteCommand(scope, patientId, onSaved) {
       try { await Promise.all([client.invalidateQueries({ queryKey: command.kind.startsWith('template') ? noteKeys.templates(scope) : noteKeys.patient(scope, patientId) }), ...(patientId ? [invalidatePatientTimelineQueries(client, patientId)] : [])]); }
       catch { if (!controller.signal.aborted && lease.isCurrent()) setState((old) => ({ ...old, refreshFailed: true })); }
     } catch (error) {
+      if (interrupted(controller)) { if (error.name === 'ClinicalNoteUnconfirmedError' && frozen.current === command && !command.uncertainty) command.uncertainty = error; return; }
       if (controller.signal.aborted || !lease.isCurrent()) return;
       const unknown = state.unknown || recover || error.name === 'ClinicalNoteUnconfirmedError';
       if (error.name === 'ClinicalNoteUnconfirmedError' && !command.uncertainty) command.uncertainty = error;

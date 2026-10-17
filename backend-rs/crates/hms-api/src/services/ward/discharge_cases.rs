@@ -335,7 +335,7 @@ impl DischargeCasesService {
                 })?;
         let _patient =
             common::load_patient_for_access(&self.state, ctx, existing.patient_id).await?;
-        let discharge = hms_db::ward::override_discharge_blocker(
+        let discharge = hms_db::ward::override_discharge_blocker_authorized(
             self.state.db_pool(),
             self.state.facility_id(),
             id,
@@ -343,9 +343,16 @@ impl DischargeCasesService {
             reason,
             ctx.user_id,
             ctx.reauth.verified_at.unwrap_or_else(Utc::now),
+            crate::services::auth_factor::privileged_actor(ctx)?,
         )
         .await
-        .map_err(|_| {
+        .map_err(|error| {
+            if error
+                .downcast_ref::<hms_db::auth::assurance::FactorError>()
+                .is_some()
+            {
+                return crate::services::auth_factor::error(error);
+            }
             ApiError::conflict(
                 "discharge_blocker_override_failed",
                 "Blocker could not be overridden.",

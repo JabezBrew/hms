@@ -1,8 +1,7 @@
 //! Existing enrollment/assertion ceremonies with live, exact-session authority.
 //! These endpoints do not establish login MFA or privileged session assurance.
 
-use chrono::Duration;
-use hms_auth::{StoredPasskey, WebAuthnConfig};
+use hms_auth::StoredPasskey;
 use hms_db::auth::{WebAuthnActor, WebAuthnCeremonyType, WebAuthnError};
 use serde_json::Value;
 use uuid::Uuid;
@@ -27,7 +26,16 @@ pub async fn options(
     ctx: &NetworkContext,
     kind: WebAuthnCeremonyType,
 ) -> Result<Value, ApiError> {
-    let config = config()?;
+    let _permit = state
+        .auth_crypto_permit()
+        .await
+        .map_err(super::auth_factor::error)?;
+    let config = state.webauthn_config();
+    if matches!(kind, WebAuthnCeremonyType::Registration) {
+        hms_db::auth::assurance::registration_proof(state.db_pool(), actor(ctx))
+            .await
+            .map_err(super::auth_factor::error)?;
+    }
     let credentials = hms_db::auth::webauthn_credentials_authorized(state.db_pool(), actor(ctx))
         .await
         .map_err(error)?;
@@ -97,7 +105,11 @@ pub async fn verify(
                 "Passkey challenge is required.",
             )
         })?;
-    let config = config()?;
+    let _permit = state
+        .auth_crypto_permit()
+        .await
+        .map_err(super::auth_factor::error)?;
+    let config = state.webauthn_config();
     let ceremony = hms_db::auth::begin_webauthn_ceremony(state.db_pool(), actor(ctx), id, kind)
         .await
         .map_err(error)?;
@@ -141,16 +153,6 @@ fn stored(credentials: &[hms_db::auth::WebAuthnCredentialRow]) -> Vec<StoredPass
         .collect()
 }
 
-fn config() -> Result<WebAuthnConfig, ApiError> {
-    Ok(WebAuthnConfig {
-        rp_id: std::env::var("HMS_WEBAUTHN_RP_ID").unwrap_or_else(|_| "localhost".to_owned()),
-        rp_origin: std::env::var("HMS_WEBAUTHN_RP_ORIGIN")
-            .unwrap_or_else(|_| "http://localhost:8080".to_owned()),
-        rp_name: std::env::var("HMS_WEBAUTHN_RP_NAME").unwrap_or_else(|_| "HMS".to_owned()),
-        challenge_ttl: Duration::minutes(5),
-    })
-}
-
 fn start_failed() -> ApiError {
     ApiError::bad_request("webauthn_start_failed", "Passkey ceremony could not start.")
 }
@@ -158,6 +160,12 @@ fn verification_failed() -> ApiError {
     ApiError::bad_request("webauthn_verify_failed", "Passkey verification failed.")
 }
 fn error(error: anyhow::Error) -> ApiError {
+    if error
+        .downcast_ref::<hms_db::auth::assurance::FactorError>()
+        .is_some()
+    {
+        return super::auth_factor::error(error);
+    }
     match error.downcast_ref::<WebAuthnError>() {
         Some(WebAuthnError::AuthorizationExpired) => ApiError::forbidden(
             "webauthn_authority_expired",

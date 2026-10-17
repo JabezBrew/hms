@@ -54,6 +54,7 @@ pub struct WebAuthnCeremony {
     kind: WebAuthnCeremonyType,
     challenge: Challenge,
     credentials: Vec<WebAuthnCredentialRow>,
+    privileged_deadline: Option<super::assurance::PrivilegedDeadline>,
 }
 
 async fn deadline(tx: &mut Transaction<'_, Postgres>, actor: &WebAuthnActor) -> anyhow::Result<()> {
@@ -82,7 +83,7 @@ async fn verify(
     .fetch_optional(&mut **tx)
     .await?;
     let versions: Option<(i64, i64)> = sqlx::query_as(
-        "SELECT session_version,permission_version FROM users WHERE facility_id=$1 AND id=$2 AND is_active FOR SHARE",
+        "SELECT session_version,permission_version FROM users WHERE facility_id=$1 AND id=$2 AND is_active FOR NO KEY UPDATE",
     )
     .bind(actor.facility_id)
     .bind(actor.user_id)
@@ -125,13 +126,7 @@ async fn credentials(
     tx: &mut Transaction<'_, Postgres>,
     actor: &WebAuthnActor,
 ) -> anyhow::Result<Vec<WebAuthnCredentialRow>> {
-    Ok(sqlx::query_as(
-        "SELECT id,credential_id,passkey,label,created_at,last_used_at FROM auth_webauthn_credentials WHERE facility_id=$1 AND user_id=$2 AND disabled_at IS NULL ORDER BY id FOR UPDATE",
-    )
-    .bind(actor.facility_id)
-    .bind(actor.user_id)
-    .fetch_all(&mut **tx)
-    .await?)
+    super::assurance::bounded_credentials(tx, actor.facility_id, actor.user_id).await
 }
 
 pub async fn insert_webauthn_challenge_bound(
@@ -144,6 +139,8 @@ pub async fn insert_webauthn_challenge_bound(
 ) -> anyhow::Result<()> {
     let mut tx = pool.begin().await?;
     verify(&mut tx, &mut actor).await?;
+    super::assurance::reserve_legacy_ceremony(&mut tx, actor.facility_id, actor.user_id, kind)
+        .await?;
     sqlx::query(
         "INSERT INTO auth_webauthn_challenges(id,user_id,facility_id,ceremony_type,state,expires_at,initiating_session_id,session_version,permission_version,active_profile) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)",
     )
@@ -188,6 +185,19 @@ pub async fn begin_webauthn_ceremony(
     .fetch_optional(&mut *tx)
     .await?
     .ok_or(WebAuthnError::InvalidChallenge)?;
+    let privileged_deadline = if matches!(kind, WebAuthnCeremonyType::Registration) {
+        let end = super::assurance::require_privileged_tx(&mut tx, &mut actor).await?;
+        if super::assurance::bounded_credentials(&mut tx, actor.facility_id, actor.user_id)
+            .await?
+            .len()
+            >= hms_domain::auth_assurance::MAX_ACTIVE_PASSKEYS as usize
+        {
+            return Err(super::assurance::FactorError::CredentialLimit.into());
+        }
+        Some(end)
+    } else {
+        None
+    };
     let credentials = match kind {
         WebAuthnCeremonyType::Authentication => credentials(&mut tx, &actor).await?,
         WebAuthnCeremonyType::Registration => Vec::new(),
@@ -199,6 +209,7 @@ pub async fn begin_webauthn_ceremony(
         kind,
         challenge,
         credentials,
+        privileged_deadline,
     };
     ceremony.check().await?;
     Ok(ceremony)
@@ -215,6 +226,9 @@ impl WebAuthnCeremony {
 
     async fn check(&mut self) -> anyhow::Result<()> {
         deadline(&mut self.tx, &self.actor).await?;
+        if let Some(end) = self.privileged_deadline {
+            super::assurance::check_privileged_deadline_tx(&mut self.tx, end).await?;
+        }
         let valid: bool = sqlx::query_scalar("SELECT clock_timestamp() < $1")
             .bind(self.challenge.expires_at)
             .fetch_one(&mut *self.tx)

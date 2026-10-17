@@ -72,7 +72,7 @@ describe('Rust emergency access lifecycle', () => {
     const { result } = setup();
     await waitFor(() => expect(result.current.statusLoading).toBe(false));
     await act(async () => { expect(await result.current.submit(payload)).toBe(true); });
-    expect(reauthenticate).toHaveBeenCalledWith(user.email, 'Synthetic password ', 'HMS');
+    expect(reauthenticate).toHaveBeenCalledWith(user.email, 'Synthetic password ', 'HMS', { signal: expect.any(AbortSignal) });
     expect(patientsApi.requestBreakGlass).toHaveBeenCalledWith('patient-1', {
       category: payload.category, reason_text: 'Urgent handover',
     }, { signal: expect.any(AbortSignal) });
@@ -156,7 +156,9 @@ describe('Rust emergency access lifecycle', () => {
     act(() => { pending = view.result.current.submit(payload); });
     await act(async () => { await view.result.current.submit(payload); });
     expect(reauthenticate).toHaveBeenCalledTimes(1);
+    const signal = reauthenticate.mock.calls[0][3].signal;
     view.unmount();
+    expect(signal.aborted).toBe(true);
     await act(async () => { finishLogin(user); await pending; });
     expect(patientsApi.requestBreakGlass).not.toHaveBeenCalled();
   });

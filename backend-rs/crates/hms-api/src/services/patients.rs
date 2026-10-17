@@ -831,8 +831,20 @@ impl PatientsService {
         patient_id: Uuid,
         payload: StartBreakGlassGrantRequest,
     ) -> Result<ObjectResponse<BreakGlassGrant>, ApiError> {
+        hms_access::require_feature(ctx, FeatureKey::Patients)?;
+        hms_access::require_patient_workflow_access(
+            ctx,
+            self.facility_id(),
+            PermissionCode::PatientBreakGlassInvoke,
+        )?;
+        hms_access::require_high_risk_facility_permission(
+            ctx,
+            self.facility_id(),
+            PermissionCode::PatientBreakGlassInvoke,
+            Utc::now(),
+        )?;
         let reason_text = normalize_break_glass_reason(payload.reason_text)?;
-        let outcome = hms_db::auth::start_break_glass_grant(
+        let outcome = hms_db::auth::start_break_glass_grant_authorized(
             self.pool(),
             StartBreakGlassGrant {
                 id: Uuid::new_v4(),
@@ -845,9 +857,16 @@ impl PatientsService {
                 now: Utc::now(),
                 reauth_verified_at: ctx.reauth.verified_at,
             },
+            crate::services::auth_factor::privileged_actor(ctx)?,
         )
         .await
-        .map_err(|_| {
+        .map_err(|error| {
+            if error
+                .downcast_ref::<hms_db::auth::assurance::FactorError>()
+                .is_some()
+            {
+                return crate::services::auth_factor::error(error);
+            }
             ApiError::conflict(
                 "break_glass_grant_failed",
                 "Break-glass access could not be granted.",

@@ -9,8 +9,10 @@ import { PageState } from '@/shared/components/page/PageState';
 import { Button } from '@/components/ui/button';
 import { NetworkAccessNotice } from './NetworkAccessNotice';
 import { NetworkPolicyEditor } from './NetworkPolicyEditor';
-import { NETWORK_ADMIN_CAPABILITY, networkEditorIdentity } from './model';
+import { NETWORK_ADMIN_CAPABILITY } from './model';
 import { useNetworkPolicy } from './hooks';
+import { useV2TransportScope } from './hooks';
+import { workflowAuthorizationIdentity } from '@/shared/lib/authorizationScope';
 
 function PolicyWorkspace({ user, reauthenticate }) {
   const query = useNetworkPolicy(true); const [verified, setVerified] = useState(null);
@@ -27,6 +29,7 @@ function PolicyWorkspace({ user, reauthenticate }) {
 }
 export default function NetworkPolicyPage() {
   const meta = usePageMeta({ title: 'Network access', breadcrumbs: [{ label: 'Settings', path: '/settings' }, { label: 'Network access' }] });
-  const { user, login } = useAuth(); const allowed = isRustV2ApiMode() && userHasCapability(user, NETWORK_ADMIN_CAPABILITY);
-  return <PageShell>{meta}<PageHeader title="Network access" description="Review approved facility networks and offsite workflow access." />{allowed ? <PolicyWorkspace key={networkEditorIdentity(user)} user={user} reauthenticate={login} /> : <PageState variant="denied" title="Network administration access required" description="An authorized facility administrator can review network access policy." />}</PageShell>;
+  const { user, login: legacyLogin, reauthenticate } = useAuth(); const login = reauthenticate || legacyLogin; const allowed = isRustV2ApiMode() && userHasCapability(user, NETWORK_ADMIN_CAPABILITY);
+  const transport = useV2TransportScope();
+  return <PageShell>{meta}<PageHeader title="Network access" description="Review approved facility networks and offsite workflow access." />{allowed ? <PolicyWorkspace key={workflowAuthorizationIdentity(user, transport)} user={user} reauthenticate={login} /> : <PageState variant="denied" title="Network administration access required" description="An authorized facility administrator can review network access policy." />}</PageShell>;
 }

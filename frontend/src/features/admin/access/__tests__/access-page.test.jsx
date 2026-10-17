@@ -27,7 +27,7 @@ beforeEach(() => {
   });
 });
 afterEach(() => { client.clear(); globalThis.fetch = originalFetch; window.__HMS_RUNTIME_CONFIG__ = originalRuntime; __resetV2ApiClientForTests(); });
-function page(actor = user) { return render(<AuthContext.Provider value={{ user: actor, login }}><QueryClientProvider client={client}><MemoryRouter><AccessGrantsPage /></MemoryRouter></QueryClientProvider></AuthContext.Provider>); }
+function page(actor = user, reauthenticate) { return render(<AuthContext.Provider value={{ user: actor, login, reauthenticate }}><QueryClientProvider client={client}><MemoryRouter><AccessGrantsPage /></MemoryRouter></QueryClientProvider></AuthContext.Provider>); }
 function writes() { return globalThis.fetch.mock.calls.filter(([, request]) => request.method === 'POST'); }
 async function openAndFill() {
   fireEvent.click(await screen.findByRole('button', { name: 'Revoke permission assignment for Synthetic staff' }));
@@ -35,6 +35,12 @@ async function openAndFill() {
   fireEvent.change(screen.getByLabelText('Confirm your current password'), { target: { value: 'Synthetic password' } });
 }
 describe('access grants through the real generated adapter', () => {
+  it('confirms the existing session instead of starting another account login', async () => {
+    const reauthenticate = vi.fn().mockResolvedValue(user); login.mockRejectedValue(new Error('A new login must not run'));
+    page(user, reauthenticate); await openAndFill(); fireEvent.click(screen.getByRole('button', { name: 'Revoke grant' }));
+    await screen.findByText('Revocation confirmed'); expect(login).not.toHaveBeenCalled();
+    expect(reauthenticate).toHaveBeenCalledWith(user.email, 'Synthetic password', 'HMS', { signal: expect.any(AbortSignal) });
+  });
   it('loads bounded cursor pages and clears the cursor when changing grant type', async () => {
     page(); await screen.findByText('Synthetic staff'); fireEvent.click(screen.getByRole('button', { name: 'Next' })); await screen.findByText('Second synthetic staff');
     expect(globalThis.fetch.mock.calls.some(([url]) => new URL(url).searchParams.get('cursor') === 'opaque-next')).toBe(true);

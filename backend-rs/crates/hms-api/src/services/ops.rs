@@ -443,16 +443,20 @@ impl OpsService {
         let request_context_cache = request_context_cache_snapshot(&metrics, &historical, &query);
         let rum = self.rum_snapshot(&metrics, &historical, &query);
 
-        Ok(object(OpsOverviewSnapshot {
-            runtime: runtime_summary(&self.state),
-            api: api_health_summary(readiness),
-            db_pool,
-            route_latency,
-            request_context_cache,
-            rum,
-            unavailable: unavailable_ops_sources(),
-            source: historical_or_fallback_source(&query, &historical),
-        }))
+        self.authorized_snapshot(
+            operator,
+            OpsOverviewSnapshot {
+                runtime: runtime_summary(&self.state),
+                api: api_health_summary(readiness),
+                db_pool,
+                route_latency,
+                request_context_cache,
+                rum,
+                unavailable: unavailable_ops_sources(),
+                source: historical_or_fallback_source(&query, &historical),
+            },
+        )
+        .await
     }
 
     pub async fn performance(
@@ -468,19 +472,27 @@ impl OpsService {
             .await;
         let source = historical_or_fallback_source(&query, &historical);
 
-        Ok(object(OpsPerformanceSnapshot {
-            route_latency: route_latency_snapshot(&metrics, &historical, &query),
-            clinical_budgets: OpsClinicalBudgetSnapshot {
-                budgets: clinical_budgets_snapshot(&metrics, &historical, &query),
-                source: source.clone(),
+        self.authorized_snapshot(
+            operator,
+            OpsPerformanceSnapshot {
+                route_latency: route_latency_snapshot(&metrics, &historical, &query),
+                clinical_budgets: OpsClinicalBudgetSnapshot {
+                    budgets: clinical_budgets_snapshot(&metrics, &historical, &query),
+                    source: source.clone(),
+                },
+                request_context_cache: request_context_cache_snapshot(
+                    &metrics,
+                    &historical,
+                    &query,
+                ),
+                payload: OpsPayloadSnapshot {
+                    routes: payload_snapshot(&metrics, &historical, &query),
+                    source: source.clone(),
+                },
+                source,
             },
-            request_context_cache: request_context_cache_snapshot(&metrics, &historical, &query),
-            payload: OpsPayloadSnapshot {
-                routes: payload_snapshot(&metrics, &historical, &query),
-                source: source.clone(),
-            },
-            source,
-        }))
+        )
+        .await
     }
 
     pub async fn database(
@@ -500,11 +512,15 @@ impl OpsService {
             .slow_query_fingerprints_snapshot(&metrics, &query)
             .await;
 
-        Ok(object(OpsDatabaseSnapshot {
-            db_pool,
-            slow_query_fingerprints,
-            source,
-        }))
+        self.authorized_snapshot(
+            operator,
+            OpsDatabaseSnapshot {
+                db_pool,
+                slow_query_fingerprints,
+                source,
+            },
+        )
+        .await
     }
 
     pub async fn frontend(
@@ -526,11 +542,11 @@ impl OpsService {
             .prometheus_provider()
             .summary_for_window(query.window.as_str())
             .await;
-        Ok(object(route_latency_snapshot(
-            &metrics,
-            &historical,
-            &query,
-        )))
+        self.authorized_snapshot(
+            operator,
+            route_latency_snapshot(&metrics, &historical, &query),
+        )
+        .await
     }
 
     pub async fn clinical_budgets(
@@ -544,10 +560,14 @@ impl OpsService {
             .prometheus_provider()
             .summary_for_window(query.window.as_str())
             .await;
-        Ok(object(OpsClinicalBudgetSnapshot {
-            budgets: clinical_budgets_snapshot(&metrics, &historical, &query),
-            source: historical_or_fallback_source(&query, &historical),
-        }))
+        self.authorized_snapshot(
+            operator,
+            OpsClinicalBudgetSnapshot {
+                budgets: clinical_budgets_snapshot(&metrics, &historical, &query),
+                source: historical_or_fallback_source(&query, &historical),
+            },
+        )
+        .await
     }
 
     pub async fn db_pool(
@@ -561,7 +581,11 @@ impl OpsService {
             .prometheus_provider()
             .summary_for_window(query.window.as_str())
             .await;
-        Ok(object(self.db_pool_snapshot(&metrics, &historical, &query)))
+        self.authorized_snapshot(
+            operator,
+            self.db_pool_snapshot(&metrics, &historical, &query),
+        )
+        .await
     }
 
     pub async fn request_context_cache(
@@ -575,11 +599,11 @@ impl OpsService {
             .prometheus_provider()
             .summary_for_window(query.window.as_str())
             .await;
-        Ok(object(request_context_cache_snapshot(
-            &metrics,
-            &historical,
-            &query,
-        )))
+        self.authorized_snapshot(
+            operator,
+            request_context_cache_snapshot(&metrics, &historical, &query),
+        )
+        .await
     }
 
     pub async fn payload(
@@ -593,10 +617,14 @@ impl OpsService {
             .prometheus_provider()
             .summary_for_window(query.window.as_str())
             .await;
-        Ok(object(OpsPayloadSnapshot {
-            routes: payload_snapshot(&metrics, &historical, &query),
-            source: historical_or_fallback_source(&query, &historical),
-        }))
+        self.authorized_snapshot(
+            operator,
+            OpsPayloadSnapshot {
+                routes: payload_snapshot(&metrics, &historical, &query),
+                source: historical_or_fallback_source(&query, &historical),
+            },
+        )
+        .await
     }
 
     pub async fn rum(
@@ -610,7 +638,8 @@ impl OpsService {
             .prometheus_provider()
             .summary_for_window(query.window.as_str())
             .await;
-        Ok(object(self.rum_snapshot(&metrics, &historical, &query)))
+        self.authorized_snapshot(operator, self.rum_snapshot(&metrics, &historical, &query))
+            .await
     }
 
     pub async fn slow_query_fingerprints(
@@ -620,10 +649,12 @@ impl OpsService {
     ) -> Result<ObjectResponse<OpsSlowQueryFingerprintSnapshot>, ApiError> {
         self.require_ops_access(operator)?;
         let metrics = hms_observability::metrics_snapshot();
-        Ok(object(
+        self.authorized_snapshot(
+            operator,
             self.slow_query_fingerprints_snapshot(&metrics, &query)
                 .await,
-        ))
+        )
+        .await
     }
 
     async fn slow_query_fingerprints_snapshot(
@@ -652,20 +683,29 @@ impl OpsService {
             .summary_for_window(query.window.as_str())
             .await;
         if historical.available {
-            return Ok(object(OpsServiceErrorsSnapshot {
-                errors: service_errors_from_prometheus(&historical, &query),
-                source: historical_source(&historical),
-            }));
+            return self
+                .authorized_snapshot(
+                    operator,
+                    OpsServiceErrorsSnapshot {
+                        errors: service_errors_from_prometheus(&historical, &query),
+                        source: historical_source(&historical),
+                    },
+                )
+                .await;
         }
 
-        Ok(object(OpsServiceErrorsSnapshot {
-            errors: Vec::new(),
-            source: unavailable_source(
-                &query,
-                "service_errors",
-                "No service error adapter is registered yet.",
-            ),
-        }))
+        self.authorized_snapshot(
+            operator,
+            OpsServiceErrorsSnapshot {
+                errors: Vec::new(),
+                source: unavailable_source(
+                    &query,
+                    "service_errors",
+                    "No service error adapter is registered yet.",
+                ),
+            },
+        )
+        .await
     }
 
     pub async fn deploys(
@@ -674,10 +714,14 @@ impl OpsService {
         query: OpsQueryParams,
     ) -> Result<ObjectResponse<OpsDeploysSnapshot>, ApiError> {
         self.require_ops_access(operator)?;
-        Ok(object(OpsDeploysSnapshot {
-            deploys: vec![current_deploy_summary(&self.state)],
-            source: snapshot_source(&query, true, vec![runtime_config_note()]),
-        }))
+        self.authorized_snapshot(
+            operator,
+            OpsDeploysSnapshot {
+                deploys: vec![current_deploy_summary(&self.state)],
+                source: snapshot_source(&query, true, vec![runtime_config_note()]),
+            },
+        )
+        .await
     }
 
     pub async fn edge_status(
@@ -686,14 +730,39 @@ impl OpsService {
         query: OpsQueryParams,
     ) -> Result<ObjectResponse<OpsEdgeStatusSnapshot>, ApiError> {
         self.require_ops_access(operator)?;
-        Ok(object(OpsEdgeStatusSnapshot {
-            checks: vec![OpsEdgeStatusSummary {
-                component: "cloudflare_access".to_owned(),
-                status: cloudflare_access_status(&self.state).status,
-                checked_at: Some(Utc::now()),
-            }],
-            source: snapshot_source(&query, true, vec![runtime_config_note()]),
-        }))
+        self.authorized_snapshot(
+            operator,
+            OpsEdgeStatusSnapshot {
+                checks: vec![OpsEdgeStatusSummary {
+                    component: "cloudflare_access".to_owned(),
+                    status: cloudflare_access_status(&self.state).status,
+                    checked_at: Some(Utc::now()),
+                }],
+                source: snapshot_source(&query, true, vec![runtime_config_note()]),
+            },
+        )
+        .await
+    }
+
+    // Collect external metrics first. Only the final publication check owns
+    // database identity/proof locks, so provider latency cannot pin them.
+    async fn authorized_snapshot<T>(
+        &self,
+        operator: &OpsOperator,
+        snapshot: T,
+    ) -> Result<ObjectResponse<T>, ApiError> {
+        if let OpsOperator::Hms(ctx) = operator {
+            let actor = super::auth_factor::privileged_actor(ctx)?;
+            hms_db::auth::assurance::confirm_family_privileged(
+                self.state.db_pool(),
+                actor,
+                hms_domain::deployment::PermissionCode::SystemOpsView,
+                hms_domain::deployment::FeatureKey::Admin,
+            )
+            .await
+            .map_err(super::auth_factor::error)?;
+        }
+        Ok(object(snapshot))
     }
 
     fn require_ops_access(&self, operator: &OpsOperator) -> Result<(), ApiError> {

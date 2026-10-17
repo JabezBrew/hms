@@ -957,7 +957,49 @@ pub async fn verify_result(
     result_id: Uuid,
     actor_user_id: Uuid,
 ) -> anyhow::Result<Option<LabResultListItem>> {
+    verify_result_inner(pool, facility_id, result_id, actor_user_id, None).await
+}
+
+pub async fn verify_result_authorized(
+    pool: &PgPool,
+    facility_id: Uuid,
+    result_id: Uuid,
+    actor_user_id: Uuid,
+    authorization: crate::auth::WebAuthnActor,
+) -> anyhow::Result<Option<LabResultListItem>> {
+    verify_result_inner(
+        pool,
+        facility_id,
+        result_id,
+        actor_user_id,
+        Some(authorization),
+    )
+    .await
+}
+
+async fn verify_result_inner(
+    pool: &PgPool,
+    facility_id: Uuid,
+    result_id: Uuid,
+    actor_user_id: Uuid,
+    authorization: Option<crate::auth::WebAuthnActor>,
+) -> anyhow::Result<Option<LabResultListItem>> {
     let mut transaction = pool.begin().await?;
+    let privileged_deadline = if let Some(mut actor) = authorization {
+        Some(
+            crate::auth::assurance::require_family_privileged_tx(
+                &mut transaction,
+                &mut actor,
+                facility_id,
+                actor_user_id,
+                hms_domain::deployment::PermissionCode::LaboratoryResultVerify,
+                hms_domain::deployment::FeatureKey::Laboratory,
+            )
+            .await?,
+        )
+    } else {
+        None
+    };
     let order_id = sqlx::query_scalar::<_, Uuid>(
         r#"
         UPDATE lab_results
@@ -965,7 +1007,7 @@ pub async fn verify_result(
             verified_by_user_id = $2,
             verified_at = now(),
             updated_at = now()
-        WHERE facility_id = $3 AND id = $4
+        WHERE facility_id = $3 AND id = $4 AND verified_at IS NULL
         RETURNING order_id
         "#,
     )
@@ -992,6 +1034,13 @@ pub async fn verify_result(
         .await?;
     }
 
+    if order_id.is_some() {
+        sqlx::query("INSERT INTO audit_events(id,facility_id,actor_user_id,event_type,resource_type,resource_id,metadata) VALUES(gen_random_uuid(),$1,$2,'laboratory.result.verified','lab_result',$3,'{}'::jsonb)")
+        .bind(facility_id).bind(actor_user_id).bind(result_id).execute(&mut *transaction).await?;
+    }
+    if let Some(end) = privileged_deadline {
+        crate::auth::assurance::check_privileged_deadline_tx(&mut transaction, end).await?;
+    }
     transaction.commit().await?;
     fetch_result_by_id(pool, facility_id, result_id).await
 }
@@ -1003,11 +1052,56 @@ pub async fn verify_results(
     result_ids: &[Uuid],
     actor_user_id: Uuid,
 ) -> anyhow::Result<i64> {
+    verify_results_inner(pool, facility_id, order_id, result_ids, actor_user_id, None).await
+}
+
+pub async fn verify_results_authorized(
+    pool: &PgPool,
+    facility_id: Uuid,
+    order_id: Option<Uuid>,
+    result_ids: &[Uuid],
+    actor_user_id: Uuid,
+    authorization: crate::auth::WebAuthnActor,
+) -> anyhow::Result<i64> {
+    verify_results_inner(
+        pool,
+        facility_id,
+        order_id,
+        result_ids,
+        actor_user_id,
+        Some(authorization),
+    )
+    .await
+}
+
+async fn verify_results_inner(
+    pool: &PgPool,
+    facility_id: Uuid,
+    order_id: Option<Uuid>,
+    result_ids: &[Uuid],
+    actor_user_id: Uuid,
+    authorization: Option<crate::auth::WebAuthnActor>,
+) -> anyhow::Result<i64> {
     if order_id.is_none() && result_ids.is_empty() {
         anyhow::bail!("bulk verification requires an order id or result ids");
     }
 
     let mut transaction = pool.begin().await?;
+    let privileged_deadline = if let Some(mut actor) = authorization {
+        Some(
+            crate::auth::assurance::require_family_privileged_tx(
+                &mut transaction,
+                &mut actor,
+                facility_id,
+                actor_user_id,
+                hms_domain::deployment::PermissionCode::LaboratoryResultVerify,
+                hms_domain::deployment::FeatureKey::Laboratory,
+            )
+            .await?,
+        )
+    } else {
+        None
+    };
     let order_ids = if let Some(order_id) = order_id {
         sqlx::query_scalar::<_, Uuid>(
             r#"
@@ -1069,6 +1163,13 @@ pub async fn verify_results(
         .await?;
     }
 
+    if !order_ids.is_empty() {
+        sqlx::query("INSERT INTO audit_events(id,facility_id,actor_user_id,event_type,resource_type,metadata) VALUES(gen_random_uuid(),$1,$2,'laboratory.results.verified','lab_result',jsonb_build_object('count',$3::bigint))")
+            .bind(facility_id).bind(actor_user_id).bind(order_ids.len() as i64).execute(&mut *transaction).await?;
+    }
+    if let Some(end) = privileged_deadline {
+        crate::auth::assurance::check_privileged_deadline_tx(&mut transaction, end).await?;
+    }
     transaction.commit().await?;
     Ok(order_ids.len() as i64)
 }

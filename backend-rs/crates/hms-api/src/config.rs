@@ -90,6 +90,7 @@ pub struct Config {
     pub redis_addr: Option<String>,
     pub facility_code: String,
     pub jwt_secret: String,
+    pub webauthn: hms_auth::WebAuthnConfig,
     pub access_token_ttl: Duration,
     pub refresh_token_ttl: Duration,
     pub session_idle_timeout: Duration,
@@ -227,6 +228,7 @@ impl Config {
             .collect();
         let trusted_proxy_cidrs=hms_domain::network::NetworkRanges::parse(&proxy_ranges,true).map_err(|_|anyhow::anyhow!("HMS_TRUSTED_PROXY_CIDRS must contain at most 64 valid, non-universal explicit CIDRs"))?;
 
+        let webauthn = webauthn_from_env(&environment)?;
         Ok(Self {
             environment,
             listen_addr,
@@ -234,6 +236,7 @@ impl Config {
             database_max_connections,
             redis_addr,
             facility_code,
+            webauthn,
             jwt_secret,
             access_token_ttl: Duration::from_secs(10 * 60),
             refresh_token_ttl: Duration::from_secs(12 * 60 * 60),
@@ -264,6 +267,7 @@ impl Config {
             redis_addr: None,
             facility_code: "HMS".to_owned(),
             jwt_secret: "test-only-hms-v2-jwt-secret".to_owned(),
+            webauthn: hms_auth::WebAuthnConfig::localhost_for_tests(),
             access_token_ttl: Duration::from_secs(10 * 60),
             refresh_token_ttl: Duration::from_secs(12 * 60 * 60),
             session_idle_timeout: Duration::from_secs(30 * 60),
@@ -480,5 +484,99 @@ fn parse_deployment_profile(value: &str) -> anyhow::Result<DeploymentProfile> {
         "teaching_hospital" => Ok(DeploymentProfile::TeachingHospital),
         "hospital_network" => Ok(DeploymentProfile::HospitalNetwork),
         _ => bail!("HMS_DEPLOYMENT_PROFILE must be a supported deployment profile"),
+    }
+}
+
+fn webauthn_from_env(environment: &str) -> anyhow::Result<hms_auth::WebAuthnConfig> {
+    let dev = matches!(environment, "development" | "test");
+    let rp = env::var("HMS_WEBAUTHN_RP_ID")
+        .ok()
+        .or_else(|| dev.then(|| "localhost".to_owned()))
+        .context("HMS_WEBAUTHN_RP_ID is required outside development and tests")?;
+    let origin = env::var("HMS_WEBAUTHN_RP_ORIGIN")
+        .ok()
+        .or_else(|| dev.then(|| "http://localhost:8080".to_owned()))
+        .context("HMS_WEBAUTHN_RP_ORIGIN is required outside development and tests")?;
+    validate_webauthn_config(
+        environment,
+        rp,
+        origin,
+        env::var("HMS_WEBAUTHN_RP_NAME").unwrap_or_else(|_| "HMS".to_owned()),
+    )
+}
+fn validate_webauthn_config(
+    environment: &str,
+    rp: String,
+    origin: String,
+    name: String,
+) -> anyhow::Result<hms_auth::WebAuthnConfig> {
+    let dev = matches!(environment, "development" | "test");
+    let url = reqwest::Url::parse(&origin)
+        .map_err(|_| anyhow::anyhow!("HMS_WEBAUTHN_RP_ORIGIN must be an origin"))?;
+    let host = url
+        .host_str()
+        .context("HMS_WEBAUTHN_RP_ORIGIN must have a host")?;
+    if !url.username().is_empty()
+        || url.password().is_some()
+        || url.query().is_some()
+        || url.fragment().is_some()
+        || url.path() != "/"
+        || (!dev && url.scheme() != "https")
+        || !matches!(url.scheme(), "http" | "https")
+        || rp.is_empty()
+        || rp.contains(['/', ':', '@', ' '])
+        || !(host == rp || host.ends_with(&format!(".{rp}")))
+    {
+        bail!("WebAuthn requires a matching explicit RP ID and trusted origin")
+    }
+    let config = hms_auth::WebAuthnConfig {
+        rp_id: rp,
+        rp_origin: origin,
+        rp_name: name,
+        challenge_ttl: chrono::Duration::minutes(5),
+    };
+    if !hms_auth::webauthn_config_is_valid(&config) {
+        bail!("WebAuthn RP configuration must be valid")
+    }
+    Ok(config)
+}
+
+#[cfg(test)]
+mod webauthn_config_tests {
+    use super::*;
+    #[test]
+    fn production_requires_exact_trusted_origin_and_compatible_rp() {
+        for (rp, origin) in [
+            ("hms.example", "http://hms.example"),
+            ("other.example", "https://hms.example"),
+            ("hms.example", "https://user:secret@hms.example"),
+            ("hms.example", "https://hms.example/path"),
+            ("hms.example", "https://hms.example/?secret=value"),
+            ("hms.example", "https://hms.example/#fragment"),
+            ("", "https://hms.example"),
+        ] {
+            assert!(validate_webauthn_config(
+                "production",
+                rp.to_owned(),
+                origin.to_owned(),
+                "HMS".to_owned()
+            )
+            .is_err());
+        }
+        let valid = validate_webauthn_config(
+            "production",
+            "hms.example".to_owned(),
+            "https://app.hms.example".to_owned(),
+            "HMS".to_owned(),
+        )
+        .unwrap();
+        assert_eq!(valid.rp_id, "hms.example");
+        assert!(validate_webauthn_config(
+            "test",
+            "localhost".to_owned(),
+            "http://localhost:8080".to_owned(),
+            "HMS".to_owned()
+        )
+        .is_ok());
     }
 }

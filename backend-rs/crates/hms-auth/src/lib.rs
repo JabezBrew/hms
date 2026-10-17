@@ -47,7 +47,12 @@ pub fn issue_access_token(
         active_profile,
         permission_version,
         session_version,
-        auth_time: usize::try_from(authenticated_at.timestamp()).ok(),
+        // The durable proof uses the database clock. A database clock slightly
+        // ahead of the signer must not create an invalid future JWT claim.
+        // Clamping is conservative and cannot renew the actual proof.
+        auth_time: usize::try_from(authenticated_at.timestamp())
+            .ok()
+            .map(|at| at.min(now)),
         iat: now,
         exp: now + ttl.as_secs() as usize,
     };
@@ -336,9 +341,28 @@ fn decode_passkeys(
         .map(|stored| {
             let passkey = serde_json::from_value::<Passkey>(stored.passkey.clone())
                 .map_err(|_| WebAuthnFlowError::InvalidState)?;
+            if credential_id_from_credential(passkey.cred_id())? != stored.credential_id {
+                return Err(WebAuthnFlowError::InvalidState);
+            }
             Ok((stored.credential_id.clone(), passkey))
         })
         .collect()
+}
+
+/// Structural validity is NOT usability or identity proof; only a real UV
+/// assertion can establish exact-session factor assurance.
+pub fn passkey_record_is_structurally_valid(
+    credential_id: &str,
+    passkey: &serde_json::Value,
+) -> bool {
+    decode_passkeys(&[StoredPasskey {
+        credential_id: credential_id.to_owned(),
+        passkey: passkey.clone(),
+    }])
+    .is_ok()
+}
+pub fn webauthn_config_is_valid(config: &WebAuthnConfig) -> bool {
+    webauthn(config).is_ok()
 }
 
 fn credential_id_from_credential(
@@ -385,6 +409,24 @@ mod tests {
         assert!(claims
             .auth_time
             .is_some_and(|auth_time| auth_time + 1100 < claims.iat));
+    }
+
+    #[test]
+    fn database_clock_ahead_cannot_produce_a_future_authentication_claim() {
+        let token = issue_access_token(
+            "test-only-auth-secret",
+            Uuid::new_v4(),
+            Uuid::new_v4(),
+            Uuid::new_v4(),
+            "hospital".to_owned(),
+            1,
+            1,
+            Utc::now() + chrono::Duration::seconds(2),
+            Duration::from_secs(300),
+        )
+        .unwrap();
+        let claims = verify_access_token("test-only-auth-secret", &token).unwrap();
+        assert_eq!(claims.auth_time, Some(claims.iat));
     }
 
     #[test]

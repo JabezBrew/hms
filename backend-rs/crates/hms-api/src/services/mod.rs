@@ -1,6 +1,7 @@
 pub mod admin;
 pub mod admin_access;
 pub mod appointment_series;
+pub mod auth_factor;
 pub mod auth_webauthn;
 pub mod billing;
 pub mod care;

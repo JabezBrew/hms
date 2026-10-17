@@ -39,7 +39,7 @@ function inferUserTypeFromV2Permissions(permissions = []) {
   return 'staff';
 }
 
-function adaptV2AuthTokenResponse(response) {
+export function adaptV2AuthTokenResponse(response) {
   const token = response?.data;
   const user = token?.user;
   if (!token?.access_token || !user) {
@@ -161,15 +161,15 @@ export const authApi = {
         if (!v2FacilityCode) {
           throw new Error('Facility code is required for Rust V2 login');
         }
-        const data = await v2AuthRequest('/api/v2/auth/login', {
-          method: 'POST',
-          body: {
+        const { factorApi } = await import('@/features/auth/api');
+        const data = await factorApi.login({
             email,
             password,
             facility_code: v2FacilityCode,
-          },
+          }, {
           signal: loginOptions.signal,
         });
+        if (data.status !== 'authenticated') return data;
         return adaptV2AuthTokenResponse({ data });
       }
 
@@ -189,7 +189,7 @@ export const authApi = {
     } catch (error) {
       rethrowAbortError(error);
       if (isRustV2ApiMode()) {
-        throw new Error(handleV2ApiError(error, 'Login failed'));
+        throw error;
       }
       throw new Error(handleApiError(error, 'Login failed'));
     }
@@ -488,7 +488,7 @@ export const authApi = {
     } catch (error) {
       rethrowAbortError(error);
       if (isRustV2ApiMode()) {
-        throw new Error(handleV2ApiError(error, 'Failed to load MFA status'));
+        throw error;
       }
       throw new Error(handleApiError(error, 'Failed to load MFA status'));
     }
@@ -502,7 +502,7 @@ export const authApi = {
       return await apiClient.post('/auth/mfa/totp/start/', { mfa_session: mfaSession });
     } catch (error) {
       if (isRustV2ApiMode()) {
-        throw new Error(handleV2ApiError(error, 'Failed to start TOTP setup'));
+        throw error;
       }
       throw new Error(handleApiError(error, 'Failed to start TOTP setup'));
     }
@@ -516,7 +516,7 @@ export const authApi = {
       return await apiClient.post('/auth/mfa/totp/confirm/', { code, mfa_session: mfaSession });
     } catch (error) {
       if (isRustV2ApiMode()) {
-        throw new Error(handleV2ApiError(error, 'Failed to confirm TOTP'));
+        throw error;
       }
       throw new Error(handleApiError(error, 'Failed to confirm TOTP'));
     }
@@ -530,7 +530,7 @@ export const authApi = {
       return await apiClient.post('/auth/mfa/totp/verify/', { code, mfa_session: mfaSession });
     } catch (error) {
       if (isRustV2ApiMode()) {
-        throw new Error(handleV2ApiError(error, 'Failed to verify TOTP'));
+        throw error;
       }
       throw new Error(handleApiError(error, 'Failed to verify TOTP'));
     }
@@ -551,7 +551,7 @@ export const authApi = {
     } catch (error) {
       rethrowAbortError(error);
       if (isRustV2ApiMode()) {
-        throw Object.assign(new Error(handleV2ApiError(error, 'Failed to generate recovery codes')), { status: error?.status });
+        throw error;
       }
       throw new Error(handleApiError(error, 'Failed to generate recovery codes'));
     }
@@ -565,7 +565,7 @@ export const authApi = {
       return await apiClient.post('/auth/mfa/recovery/verify/', { code, mfa_session: mfaSession });
     } catch (error) {
       if (isRustV2ApiMode()) {
-        throw new Error(handleV2ApiError(error, 'Failed to verify recovery code'));
+        throw error;
       }
       throw new Error(handleApiError(error, 'Failed to verify recovery code'));
     }
@@ -584,7 +584,7 @@ export const authApi = {
     } catch (error) {
       rethrowAbortError(error);
       if (isRustV2ApiMode()) {
-        throw new Error(handleV2ApiError(error, 'Failed to start WebAuthn registration'));
+        throw error;
       }
       throw new Error(handleApiError(error, 'Failed to start WebAuthn registration'));
     }
@@ -609,7 +609,7 @@ export const authApi = {
     } catch (error) {
       rethrowAbortError(error);
       if (isRustV2ApiMode()) {
-        throw new Error(handleV2ApiError(error, 'Failed to verify WebAuthn registration'));
+        throw error;
       }
       throw new Error(handleApiError(error, 'Failed to verify WebAuthn registration'));
     }
@@ -628,7 +628,7 @@ export const authApi = {
     } catch (error) {
       rethrowAbortError(error);
       if (isRustV2ApiMode()) {
-        throw new Error(handleV2ApiError(error, 'Failed to start WebAuthn authentication'));
+        throw error;
       }
       throw new Error(handleApiError(error, 'Failed to start WebAuthn authentication'));
     }
@@ -653,7 +653,7 @@ export const authApi = {
     } catch (error) {
       rethrowAbortError(error);
       if (isRustV2ApiMode()) {
-        throw new Error(handleV2ApiError(error, 'Failed to verify WebAuthn authentication'));
+        throw error;
       }
       throw new Error(handleApiError(error, 'Failed to verify WebAuthn authentication'));
     }

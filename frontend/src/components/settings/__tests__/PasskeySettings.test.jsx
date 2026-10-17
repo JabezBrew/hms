@@ -1,249 +1,44 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-
 import MFAStatus from '../MFAStatus';
-import { useMfaStatus } from '@/features/settings/hooks';
-import { authApi } from '@/shared/api/auth';
+import { AuthContext } from '@/lib/auth/AuthContext';
+import { __resetV2ApiClientForTests, configureV2ApiClient } from '@/lib/api/v2/session';
+import { challengeId, credential, failure, json, keyId, options, token } from '@/features/auth/__tests__/fixtures';
 
-vi.mock('@/features/settings/hooks', () => ({
-  useMfaStatus: vi.fn(),
-  useMfaTotpStart: vi.fn(),
-  useMfaTotpConfirm: vi.fn(),
-}));
-vi.mock('@/lib/api/v2/runtime', () => ({ isRustV2ApiMode: () => true }));
-vi.mock('@/shared/api/auth', () => ({
-  authApi: {
-    mfaWebAuthnRegistrationOptions: vi.fn(),
-    mfaWebAuthnRegistrationVerify: vi.fn(),
-    mfaWebAuthnAuthOptions: vi.fn(),
-    mfaWebAuthnAuthVerify: vi.fn(),
-    mfaRecoveryGenerate: vi.fn(),
-  },
-}));
-
-const registrationOptions = {
-  challenge: 'AQID',
-  mfa_session: 'registration-challenge',
-  rp: { id: 'localhost', name: 'HMS' },
-  user: { id: 'BAUG', name: 'synthetic@example.com', displayName: 'Synthetic user' },
-  pubKeyCredParams: [{ type: 'public-key', alg: -7 }],
-};
-
-function credential() {
-  return {
-    id: 'credential-id',
-    type: 'public-key',
-    rawId: new Uint8Array([1, 2, 3]).buffer,
-    response: {
-      clientDataJSON: new Uint8Array([4, 5, 6]).buffer,
-      attestationObject: new Uint8Array([7, 8, 9]).buffer,
-      getTransports: () => ['internal'],
-    },
-    getClientExtensionResults: () => ({}),
-  };
-}
-
+let runtime; let client; let handler; let proof; let reauthenticate; let create; let copy; let currentUser;
+const row = { id: keyId, label: 'Synthetic key', created_at: '2026-10-01T00:00:00Z', last_used_at: null, disabled_at: null };
+const keyPage = (rows = [row], page = { has_next: false, next_cursor: null }) => new Response(JSON.stringify({ data: rows, page }), { headers: { 'content-type': 'application/json' } });
+function User() { const raw = token('passkey').user; return { id: raw.id, email: raw.email, facilityCode: raw.facility_code, adminAccess: { capabilities: raw.permissions }, accessContext: { ...raw } }; }
+function Wrap({ user = currentUser }) { return <AuthContext.Provider value={{ user, reauthenticate }}><QueryClientProvider client={client}><MFAStatus /></QueryClientProvider></AuthContext.Provider>; }
+const status = () => ({ assurance: proof, password_verified_at: new Date(Date.now() - 1000).toISOString(), password_fresh_until: new Date(Date.now() + 899000).toISOString() });
 const originalCredentials = Object.getOwnPropertyDescriptor(navigator, 'credentials');
 const originalClipboard = Object.getOwnPropertyDescriptor(navigator, 'clipboard');
-let createCredential;
-let getCredential;
-let copy;
-let refetch;
-
-function renderSettings(status = {}, query = {}) {
-  useMfaStatus.mockReturnValue({
-    data: { totp_enrolled: false, webauthn_enrolled: false, recovery_codes_remaining: 0, passkey_required: true, ...status },
-    isLoading: false,
-    isError: false,
-    refetch,
-    ...query,
-  });
-  return render(<MFAStatus />);
-}
-
 beforeEach(() => {
-  vi.clearAllMocks();
-  vi.stubGlobal('PublicKeyCredential', function PublicKeyCredential() {});
-  vi.stubGlobal('isSecureContext', true);
-  createCredential = vi.fn().mockResolvedValue(credential());
-  getCredential = vi.fn().mockResolvedValue(credential());
-  copy = vi.fn().mockResolvedValue(undefined);
-  Object.defineProperty(navigator, 'credentials', { configurable: true, value: { create: createCredential, get: getCredential } });
-  Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: copy } });
-  refetch = vi.fn().mockResolvedValue({ data: {} });
-  authApi.mfaWebAuthnRegistrationOptions.mockResolvedValue(registrationOptions);
-  authApi.mfaWebAuthnRegistrationVerify.mockResolvedValue({ verified: true });
-  authApi.mfaWebAuthnAuthOptions.mockResolvedValue({ challenge: 'AQID', challenge_id: 'authentication-challenge', allowCredentials: [{ id: 'BAUG', type: 'public-key' }] });
-  authApi.mfaWebAuthnAuthVerify.mockResolvedValue({ verified: true });
-  authApi.mfaRecoveryGenerate.mockResolvedValue({ codes: ['SYNTHETIC-CODE-ONE', 'SYNTHETIC-CODE-TWO'] });
+  runtime = window.__HMS_RUNTIME_CONFIG__; window.__HMS_RUNTIME_CONFIG__ = { apiMode: 'rust-v2', v2ApiBaseUrl: 'http://localhost/api/v2' }; __resetV2ApiClientForTests(); configureV2ApiClient({ getAccessToken: () => 'synthetic-access', getFacilityCode: () => 'HMS', canRefreshSession: () => false });
+  client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: 2 } } }); currentUser = User(); proof = token('passkey').user.auth_security.session_assurance; reauthenticate = vi.fn().mockResolvedValue(currentUser); create = vi.fn().mockResolvedValue({ ...credential(), response: { ...credential().response, attestationObject: new Uint8Array([4]).buffer } }); copy = vi.fn().mockResolvedValue(undefined);
+  vi.stubGlobal('PublicKeyCredential', class {}); Object.defineProperty(navigator, 'credentials', { configurable: true, value: { create, get: vi.fn().mockResolvedValue(credential()) } }); Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: copy } });
+  handler = async (path) => path.endsWith('/auth/assurance') ? json(status()) : path.endsWith('/auth/mfa/passkeys') ? keyPage() : path.endsWith('/register/options') ? json({ ...options(), user: { id: 'AQI', name: 'synthetic@example.test', displayName: 'Synthetic' }, rp: { id: 'localhost', name: 'Synthetic' }, pubKeyCredParams: [] }) : path.endsWith('/register/verify') ? json({ verified: true }) : path.endsWith('/recovery-codes') ? json({ codes: ['SYNTHETIC-CODE-ONE', 'SYNTHETIC-CODE-TWO'] }) : json(row);
+  vi.stubGlobal('fetch', vi.fn((url, request) => handler(new URL(url).pathname, request, new URL(url).searchParams)));
 });
+afterEach(() => { cleanup(); client.clear(); __resetV2ApiClientForTests(); window.__HMS_RUNTIME_CONFIG__ = runtime; vi.unstubAllGlobals(); if (originalCredentials) Object.defineProperty(navigator, 'credentials', originalCredentials); else delete navigator.credentials; if (originalClipboard) Object.defineProperty(navigator, 'clipboard', originalClipboard); else delete navigator.clipboard; vi.useRealTimers(); });
+async function fresh() { render(<Wrap />); await screen.findByDisplayValue('Synthetic key'); await waitFor(() => expect(screen.getByText('Add passkey')).toBeEnabled()); }
+async function replace() { fireEvent.change(screen.getByLabelText('Current password (when confirmation is required)'), { target: { value: 'Synthetic current password' } }); fireEvent.click(screen.getByRole('button', { name: 'Replace recovery codes' })); fireEvent.click(screen.getByRole('button', { name: 'Replace codes' })); }
 
-afterEach(() => {
-  vi.unstubAllGlobals();
-  if (originalCredentials) Object.defineProperty(navigator, 'credentials', originalCredentials);
-  else delete navigator.credentials;
-  if (originalClipboard) Object.defineProperty(navigator, 'clipboard', originalClipboard);
-  else delete navigator.clipboard;
-});
+describe('actual Rust current-factor security management', () => {
+  it('separates recovery assurance from enrolled keys and offers no TOTP or password-only key setup', async () => { proof = token('recovery').user.auth_security.session_assurance; render(<Wrap />); await screen.findByText('Signed in using recovery. Passkey-required changes remain unavailable.'); expect(screen.getByText('Add passkey')).toBeDisabled(); expect(screen.queryByText(/Set Up App/)).not.toBeInTheDocument(); expect(screen.getByText(/First-key setup uses an identity-checked operator token/)).toBeInTheDocument(); });
+  it('uses current-session assertion and explicit password confirmation without a new login', async () => { await fresh(); fireEvent.change(screen.getByLabelText('Current password (when confirmation is required)'), { target: { value: 'Synthetic password ' } }); fireEvent.click(screen.getByText('Verify an existing passkey')); await waitFor(() => expect(reauthenticate).toHaveBeenCalledWith(currentUser.email, 'Synthetic password ', 'HMS', { signal: expect.any(AbortSignal) })); expect(screen.getByLabelText('Current password (when confirmation is required)')).toHaveValue(''); expect(fetch.mock.calls.some(([url]) => url.endsWith('/auth/login'))).toBe(false); });
+  it('registers against the exact challenge only after current fresh proof', async () => { await fresh(); fireEvent.click(screen.getByText('Add passkey')); await screen.findByText('The security change was confirmed.'); const body = JSON.parse(fetch.mock.calls.find(([url]) => url.endsWith('/register/verify'))[1].body); expect(body).toMatchObject({ mfa_session: challengeId, credential: { id: 'synthetic-browser-credential' } }); expect(create).toHaveBeenCalledTimes(1); });
+  it('does not claim registration from a malformed verified response', async () => { const base = handler; handler = async (path, request) => path.endsWith('/register/verify') ? json({ verified: false }) : base(path, request); await fresh(); fireEvent.click(screen.getByText('Add passkey')); await screen.findByText(/security change could not be confirmed and may already be saved/); expect(screen.queryByText('The security change was confirmed.')).not.toBeInTheDocument(); expect(screen.getByText('Add passkey')).toBeDisabled(); });
+  it('reports browser cancellation without claiming verification or silently retrying', async () => { create.mockRejectedValue(new DOMException('Synthetic cancellation', 'NotAllowedError')); await fresh(); fireEvent.click(screen.getByText('Add passkey')); await screen.findByText(/cancelled or not approved/); expect(fetch.mock.calls.some(([url]) => url.endsWith('/register/verify'))).toBe(false); expect(create).toHaveBeenCalledTimes(1); });
+  it('aborts a pending ceremony on leaving the security view', async () => { let finish; create.mockImplementation(() => new Promise((resolve) => { finish = resolve; })); const view = render(<Wrap />); await screen.findByDisplayValue('Synthetic key'); fireEvent.click(screen.getByText('Add passkey')); await waitFor(() => expect(finish).toBeTypeOf('function')); const signal = create.mock.calls[0][0].signal; view.unmount(); expect(signal.aborted).toBe(true); await act(async () => finish(credential())); expect(fetch.mock.calls.some(([url]) => url.endsWith('/register/verify'))).toBe(false); });
+  it('renames the selected key with exact metadata and explicit last-key disable rejection', async () => { let renamed = false; const base = handler; handler = async (path, request) => { if (path.endsWith(`/${keyId}`) && request.method === 'PATCH') { renamed = true; return json({ ...row, label: 'Reviewed synthetic key' }); } if (path.endsWith('/disable')) return failure('last_usable_passkey'); return base(path, request); }; await fresh(); fireEvent.change(screen.getByLabelText('Passkey name'), { target: { value: 'Reviewed synthetic key' } }); fireEvent.click(screen.getByText('Save name')); await waitFor(() => expect(renamed).toBe(true)); await waitFor(() => expect(screen.getByText('Disable passkey')).toBeEnabled()); fireEvent.click(screen.getByText('Disable passkey')); fireEvent.click(screen.getAllByText('Disable passkey').at(-1)); await screen.findByText('Synthetic operation denied.'); expect(JSON.parse(fetch.mock.calls.find(([, request]) => request.method === 'PATCH')[1].body)).toEqual({ label: 'Reviewed synthetic key' }); });
+  it('shows recovery codes once, clears password, and supports deliberate copy/hide/clear', async () => { await fresh(); await replace(); await screen.findByText('SYNTHETIC-CODE-ONE'); expect(screen.getByLabelText('Current password (when confirmation is required)')).toHaveValue(''); fireEvent.click(screen.getByText('Copy codes')); await waitFor(() => expect(copy).toHaveBeenCalledWith('SYNTHETIC-CODE-ONE\nSYNTHETIC-CODE-TWO')); fireEvent.click(screen.getByText('Hide codes')); expect(screen.queryByText('SYNTHETIC-CODE-ONE')).not.toBeInTheDocument(); fireEvent.click(screen.getByText('Show codes')); fireEvent.click(screen.getByText('Done')); expect(screen.queryByLabelText('New recovery codes')).not.toBeInTheDocument(); expect(JSON.stringify(localStorage)).not.toContain('SYNTHETIC-CODE'); });
+  it('cancels recovery replacement before any write', async () => { await fresh(); fireEvent.change(screen.getByLabelText('Current password (when confirmation is required)'), { target: { value: 'Synthetic password' } }); fireEvent.click(screen.getByText('Replace recovery codes')); fireEvent.click(screen.getByRole('button', { name: 'Cancel' })); expect(fetch.mock.calls.some(([url]) => url.endsWith('/recovery-codes'))).toBe(false); });
+  it('preserves returned one-time codes on failed refresh and denies another mutation', async () => { let saved = false; const base = handler; handler = async (path, request) => { if (path.endsWith('/recovery-codes')) { saved = true; return json({ codes: ['SYNTHETIC-ONLY-RETURN'] }); } if (saved) return failure('status_unavailable', 503); return base(path, request); }; await fresh(); await replace(); await screen.findByText('SYNTHETIC-ONLY-RETURN'); await waitFor(() => expect(screen.getByText('Add passkey')).toBeDisabled()); expect(screen.getByText('SYNTHETIC-ONLY-RETURN')).toBeInTheDocument(); });
+  it('does not retry lost replacement and warns that previous codes may be invalid', async () => { const base = handler; handler = async (path, request) => { if (path.endsWith('/recovery-codes')) throw new TypeError('Synthetic response lost'); return base(path, request); }; await fresh(); await replace(); await screen.findByText(/Old recovery codes may already be invalid/); expect(fetch.mock.calls.filter(([url]) => url.endsWith('/recovery-codes'))).toHaveLength(1); expect(screen.getByText('Add passkey')).toBeDisabled(); });
+  it('keeps an explicit uncertain409 replacement locked rather than presenting a definite rejection', async () => { const base = handler; handler = async (path, request) => path.endsWith('/recovery-codes') ? failure('factor_write_unconfirmed', 409) : base(path, request); await fresh(); await replace(); await screen.findByText(/Old recovery codes may already be invalid/); expect(fetch.mock.calls.filter(([url]) => url.endsWith('/recovery-codes'))).toHaveLength(1); expect(screen.getByText('Add passkey')).toBeDisabled(); });
+  it('removes copied one-time codes immediately when the current account changes', async () => { const view = render(<Wrap />); await screen.findByDisplayValue('Synthetic key'); await replace(); await screen.findByText('SYNTHETIC-CODE-ONE'); view.rerender(<Wrap user={{ ...currentUser, id: '99999999-0000-4000-8000-000000000099' }} />); expect(screen.queryByText('SYNTHETIC-CODE-ONE')).not.toBeInTheDocument(); });
+  it('removes fresh-factor affordances at the exact local expiry without a new response', async () => { vi.useFakeTimers({ shouldAdvanceTime: true }); proof = { ...proof, expires_at: new Date(Date.now() + 1000).toISOString() }; await fresh(); await act(async () => vi.advanceTimersByTimeAsync(1000)); expect(screen.getByText('Add passkey')).toBeDisabled(); expect(screen.queryByText('A passkey verified this sign-in recently.')).not.toBeInTheDocument(); });
 
-describe('Rust account security settings', () => {
-  it('shows actual enrollment policy without claiming a second-factor sign-in session', () => {
-    renderSettings();
-    expect(screen.getByText('Passkey enrollment required')).toBeInTheDocument();
-    expect(screen.getByText(/does not verify this sign-in session/)).toBeInTheDocument();
-    expect(screen.queryByText('MFA Enabled')).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /Set Up App/i })).not.toBeInTheDocument();
-    expect(screen.getByText(/Code-based account recovery is not available/)).toBeInTheDocument();
-  });
-
-  it('registers a browser credential with the server challenge and refreshes status', async () => {
-    renderSettings();
-    fireEvent.click(screen.getByRole('button', { name: 'Set up passkey' }));
-    await screen.findByText('Passkey registered.');
-    expect(createCredential).toHaveBeenCalledWith({
-      publicKey: expect.objectContaining({ challenge: expect.any(ArrayBuffer), user: expect.objectContaining({ id: expect.any(ArrayBuffer) }) }),
-      signal: expect.any(AbortSignal),
-    });
-    expect(authApi.mfaWebAuthnRegistrationVerify).toHaveBeenCalledWith(
-      expect.objectContaining({ id: 'credential-id', type: 'public-key', rawId: 'AQID', response: expect.objectContaining({ clientDataJSON: 'BAUG', attestationObject: 'BwgJ', transports: ['internal'] }) }),
-      'registration-challenge',
-      { signal: expect.any(AbortSignal) },
-    );
-    expect(refetch).toHaveBeenCalledTimes(1);
-  });
-
-  it('tests an enrolled passkey without claiming to refresh authentication', async () => {
-    renderSettings({ webauthn_enrolled: true });
-    fireEvent.click(screen.getByRole('button', { name: 'Test passkey' }));
-    await screen.findByText('Passkey verified. Your sign-in session has not changed.');
-    expect(getCredential).toHaveBeenCalledWith({ publicKey: expect.objectContaining({ challenge: expect.any(ArrayBuffer), allowCredentials: [expect.objectContaining({ id: expect.any(ArrayBuffer) })] }), signal: expect.any(AbortSignal) });
-    expect(authApi.mfaWebAuthnAuthVerify).toHaveBeenCalledWith(expect.objectContaining({ id: 'credential-id' }), 'authentication-challenge', { signal: expect.any(AbortSignal) });
-  });
-
-  it.each(['null', 'not-allowed'])('handles %s browser cancellation without verifying or reporting success', async (mode) => {
-    if (mode === 'null') createCredential.mockResolvedValueOnce(null);
-    else createCredential.mockRejectedValueOnce(new DOMException('Cancelled', 'NotAllowedError'));
-    renderSettings();
-    fireEvent.click(screen.getByRole('button', { name: 'Set up passkey' }));
-    await screen.findByText(/Passkey request cancelled/);
-    expect(authApi.mfaWebAuthnRegistrationVerify).not.toHaveBeenCalled();
-    expect(screen.queryByText('Passkey registered.')).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Set up passkey' })).toBeEnabled();
-  });
-
-  it('reports denied verification and does not fabricate enrollment', async () => {
-    authApi.mfaWebAuthnRegistrationVerify.mockRejectedValueOnce(new Error('Passkey registration is not permitted.'));
-    renderSettings();
-    fireEvent.click(screen.getByRole('button', { name: 'Set up passkey' }));
-    expect(await screen.findByRole('alert')).toHaveTextContent('Passkey registration is not permitted.');
-    expect(screen.getByText('Not enrolled')).toBeInTheDocument();
-    expect(refetch).not.toHaveBeenCalled();
-  });
-
-  it('requires confirmed server verification before reporting success', async () => {
-    authApi.mfaWebAuthnRegistrationVerify.mockResolvedValueOnce({ verified: false });
-    renderSettings();
-    fireEvent.click(screen.getByRole('button', { name: 'Set up passkey' }));
-    expect(await screen.findByRole('alert')).toHaveTextContent('Passkey verification was not confirmed.');
-    expect(refetch).not.toHaveBeenCalled();
-  });
-
-  it('prevents duplicate ceremonies and cancels pending work when leaving settings', async () => {
-    authApi.mfaWebAuthnRegistrationOptions.mockImplementationOnce(() => new Promise(() => {}));
-    const view = renderSettings();
-    const button = screen.getByRole('button', { name: 'Set up passkey' });
-    fireEvent.click(button);
-    fireEvent.click(button);
-    expect(authApi.mfaWebAuthnRegistrationOptions).toHaveBeenCalledTimes(1);
-    const signal = authApi.mfaWebAuthnRegistrationOptions.mock.calls[0][1].signal;
-    view.unmount();
-    expect(signal.aborted).toBe(true);
-  });
-
-  it('keeps registration disabled on an unsupported device', () => {
-    vi.stubGlobal('PublicKeyCredential', undefined);
-    renderSettings();
-    expect(screen.getByRole('button', { name: 'Set up passkey' })).toBeDisabled();
-    expect(screen.getByText(/Use a browser and secure site address/)).toBeInTheDocument();
-  });
-
-  it('generates codes using the current password, clears it, and supports copy/hide/clear', async () => {
-    renderSettings({ webauthn_enrolled: true });
-    fireEvent.change(screen.getByLabelText('Current password'), { target: { value: 'Synthetic password ' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Generate recovery codes' }));
-    await screen.findByRole('list', { name: 'New recovery codes' });
-    expect(authApi.mfaRecoveryGenerate).toHaveBeenCalledWith({ currentPassword: 'Synthetic password ', signal: expect.any(AbortSignal) });
-    await waitFor(() => expect(screen.getByLabelText('Current password')).toHaveValue(''));
-    fireEvent.click(screen.getByRole('button', { name: 'Copy codes' }));
-    await screen.findByRole('button', { name: 'Copied' });
-    expect(copy).toHaveBeenCalledWith('SYNTHETIC-CODE-ONE\nSYNTHETIC-CODE-TWO');
-    fireEvent.click(screen.getByRole('button', { name: 'Hide codes' }));
-    expect(screen.queryByRole('list', { name: 'New recovery codes' })).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Show codes' }));
-    expect(screen.getByRole('list', { name: 'New recovery codes' })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Done' }));
-    expect(screen.queryByText('SYNTHETIC-CODE-ONE')).not.toBeInTheDocument();
-  });
-
-  it('requires confirmation before replacing unused codes and honors cancel', async () => {
-    renderSettings({ webauthn_enrolled: true, recovery_codes_remaining: 2 });
-    fireEvent.change(screen.getByLabelText('Current password'), { target: { value: 'Synthetic password' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Replace recovery codes' }));
-    expect(await screen.findByRole('dialog', { name: 'Replace recovery codes?' })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
-    expect(authApi.mfaRecoveryGenerate).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole('button', { name: 'Replace recovery codes' }));
-    fireEvent.click(await screen.findByRole('button', { name: 'Replace codes' }));
-    await screen.findByRole('list', { name: 'New recovery codes' });
-    expect(authApi.mfaRecoveryGenerate).toHaveBeenCalledTimes(1);
-  });
-
-  it('clears a denied recovery password and never reports generated codes', async () => {
-    authApi.mfaRecoveryGenerate.mockRejectedValueOnce(Object.assign(new Error('Current password is required to regenerate recovery codes.'), { status: 403 }));
-    renderSettings({ webauthn_enrolled: true });
-    fireEvent.change(screen.getByLabelText('Current password'), { target: { value: 'incorrect' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Generate recovery codes' }));
-    expect(await screen.findByRole('alert')).toHaveTextContent('Current password is required');
-    expect(screen.getByLabelText('Current password')).toHaveValue('');
-    expect(screen.queryByRole('list', { name: 'New recovery codes' })).not.toBeInTheDocument();
-  });
-
-  it('keeps returned one-time codes accessible when status refresh fails and gates further mutations', async () => {
-    refetch.mockResolvedValueOnce({ isError: true, error: new Error('Unavailable') });
-    const view = renderSettings({ webauthn_enrolled: true });
-    fireEvent.change(screen.getByLabelText('Current password'), { target: { value: 'Synthetic password' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Generate recovery codes' }));
-    await screen.findByText('Security status needs refreshing');
-    useMfaStatus.mockReturnValue({ data: { webauthn_enrolled: true, recovery_codes_remaining: 0 }, isLoading: false, isError: true, refetch });
-    view.rerender(<MFAStatus />);
-    expect(screen.getByRole('list', { name: 'New recovery codes' })).toHaveTextContent('SYNTHETIC-CODE-ONE');
-    expect(screen.getByLabelText('Current password')).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Add passkey' })).toBeDisabled();
-    fireEvent.click(screen.getByRole('button', { name: 'Copy codes' }));
-    await screen.findByRole('button', { name: 'Copied' });
-    expect(authApi.mfaRecoveryGenerate).toHaveBeenCalledTimes(1);
-  });
-
-  it.each(['lost response', 'missing codes'])('requires a status refresh after an unconfirmed recovery replacement: %s', async (mode) => {
-    if (mode === 'lost response') authApi.mfaRecoveryGenerate.mockRejectedValueOnce(new Error('Network unavailable'));
-    else authApi.mfaRecoveryGenerate.mockResolvedValueOnce({ codes: [] });
-    renderSettings({ webauthn_enrolled: true });
-    fireEvent.change(screen.getByLabelText('Current password'), { target: { value: 'Synthetic password' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Generate recovery codes' }));
-    await screen.findByText(/Existing codes may already be invalid/);
-    expect(screen.getByRole('button', { name: 'Generate recovery codes' })).toBeDisabled();
-    expect(screen.queryByRole('list', { name: 'New recovery codes' })).not.toBeInTheDocument();
-    expect(refetch).not.toHaveBeenCalled();
-    expect(authApi.mfaRecoveryGenerate).toHaveBeenCalledTimes(1);
-    fireEvent.click(screen.getByRole('button', { name: 'Refresh security status' }));
-    await waitFor(() => expect(screen.getByLabelText('Current password')).toBeEnabled());
-    expect(authApi.mfaRecoveryGenerate).toHaveBeenCalledTimes(1);
-  });
-
-  it('offers a retry after a status error without claiming no key exists', async () => {
-    renderSettings({}, { isError: true, data: undefined });
-    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
-    await waitFor(() => expect(refetch).toHaveBeenCalledTimes(1));
-    expect(screen.queryByText('No passkey enrolled')).not.toBeInTheDocument();
-  });
 });

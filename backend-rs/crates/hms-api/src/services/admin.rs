@@ -286,7 +286,7 @@ impl AdminService {
         validate_text(&payload.title, MAX_NAME_LEN, "title")?;
         validate_text(&payload.description, MAX_TEXT_LEN, "description")?;
         ensure_supported_permissions(&self.state, &payload.permission_codes).await?;
-        let template = hms_db::admin::create_position_template(
+        let template = hms_db::admin::create_position_template_authorized(
             self.pool(),
             NewPositionTemplate {
                 facility_id: self.facility_id(),
@@ -297,9 +297,16 @@ impl AdminService {
                 description: payload.description,
                 permission_codes: payload.permission_codes,
             },
+            super::auth_factor::privileged_actor(ctx)?,
         )
         .await
-        .map_err(|_| {
+        .map_err(|error| {
+            if error
+                .downcast_ref::<hms_db::auth::assurance::FactorError>()
+                .is_some()
+            {
+                return super::auth_factor::error(error);
+            }
             ApiError::conflict(
                 "position_template_create_failed",
                 "Position template could not be saved.",
@@ -343,7 +350,7 @@ impl AdminService {
         )?;
         validate_code(&payload.code)?;
         validate_text(&payload.title, MAX_NAME_LEN, "title")?;
-        let position = hms_db::admin::create_position(
+        let position = hms_db::admin::create_position_authorized(
             self.pool(),
             NewPosition {
                 facility_id: self.facility_id(),
@@ -354,9 +361,16 @@ impl AdminService {
                 org_unit_id: payload.org_unit_id,
                 template_id: payload.template_id,
             },
+            super::auth_factor::privileged_actor(ctx)?,
         )
         .await
-        .map_err(|_| {
+        .map_err(|error| {
+            if error
+                .downcast_ref::<hms_db::auth::assurance::FactorError>()
+                .is_some()
+            {
+                return super::auth_factor::error(error);
+            }
             ApiError::conflict("position_create_failed", "Position could not be saved.")
         })?;
         Ok(object(position))
@@ -418,7 +432,7 @@ impl AdminService {
         let target_user_id = payload.user_id;
         self.state
             .invalidate_auth_cache_for_user(facility_id, target_user_id);
-        let appointment = hms_db::admin::create_authority_appointment(
+        let appointment = hms_db::admin::create_authority_appointment_authorized(
             self.pool(),
             NewAuthorityAppointment {
                 facility_id,
@@ -430,9 +444,16 @@ impl AdminService {
                 ends_at: payload.ends_at,
             },
             Some(ctx.request_id.clone()),
+            super::auth_factor::privileged_actor(ctx)?,
         )
         .await
-        .map_err(|_| {
+        .map_err(|error| {
+            if error
+                .downcast_ref::<hms_db::auth::assurance::FactorError>()
+                .is_some()
+            {
+                return super::auth_factor::error(error);
+            }
             ApiError::conflict(
                 "authority_appointment_create_failed",
                 "Authority appointment could not be saved.",
@@ -487,7 +508,7 @@ impl AdminService {
         let grantee_user_id = payload.grantee_user_id;
         self.state
             .invalidate_auth_cache_for_user(facility_id, grantee_user_id);
-        let assignment = hms_db::admin::create_permission_assignment(
+        let assignment = hms_db::admin::create_permission_assignment_authorized(
             self.pool(),
             NewPermissionAssignment {
                 facility_id,
@@ -501,9 +522,16 @@ impl AdminService {
                 reason_code: payload.reason_code,
             },
             Some(ctx.request_id.clone()),
+            super::auth_factor::privileged_actor(ctx)?,
         )
         .await
-        .map_err(|_| {
+        .map_err(|error| {
+            if error
+                .downcast_ref::<hms_db::auth::assurance::FactorError>()
+                .is_some()
+            {
+                return super::auth_factor::error(error);
+            }
             ApiError::conflict(
                 "permission_assignment_create_failed",
                 "Permission assignment could not be saved.",
@@ -550,16 +578,23 @@ impl AdminService {
         )?;
         let facility_id = self.facility_id();
         self.state.invalidate_auth_cache_for_facility(facility_id);
-        let entitlement = hms_db::admin::update_feature_entitlement(
+        let entitlement = hms_db::admin::update_feature_entitlement_authorized(
             self.pool(),
             facility_id,
             key,
             payload.enabled,
             ctx.user_id,
             Some(ctx.request_id.clone()),
+            super::auth_factor::privileged_actor(ctx)?,
         )
         .await
-        .map_err(|_| {
+        .map_err(|error| {
+            if error
+                .downcast_ref::<hms_db::auth::assurance::FactorError>()
+                .is_some()
+            {
+                return super::auth_factor::error(error);
+            }
             ApiError::conflict(
                 "feature_entitlement_update_failed",
                 "Feature entitlement could not be updated.",
@@ -582,15 +617,22 @@ impl AdminService {
         )?;
         let facility_id = self.facility_id();
         self.state.invalidate_auth_cache_for_facility(facility_id);
-        let entitlement = hms_db::admin::delete_feature_entitlement(
+        let entitlement = hms_db::admin::delete_feature_entitlement_authorized(
             self.pool(),
             facility_id,
             key,
             ctx.user_id,
             Some(ctx.request_id.clone()),
+            super::auth_factor::privileged_actor(ctx)?,
         )
         .await
-        .map_err(|_| {
+        .map_err(|error| {
+            if error
+                .downcast_ref::<hms_db::auth::assurance::FactorError>()
+                .is_some()
+            {
+                return super::auth_factor::error(error);
+            }
             ApiError::conflict(
                 "feature_entitlement_delete_failed",
                 "Feature entitlement override could not be removed.",
@@ -701,7 +743,7 @@ impl AdminService {
         let setup_token = generate_secret_token();
         let setup_token_hash = hash_refresh_token(&setup_token);
         let setup_token_expires_at = Utc::now() + Duration::minutes(30);
-        let staff = hms_db::admin::create_staff_account(
+        let staff = hms_db::admin::create_staff_account_authorized(
             self.pool(),
             NewStaffAccount {
                 facility_id: self.facility_id(),
@@ -717,9 +759,16 @@ impl AdminService {
                 practitioner_profile: payload.practitioner_profile.map(practitioner_profile),
             },
             Some(ctx.request_id.clone()),
+            super::auth_factor::privileged_actor(ctx)?,
         )
         .await
-        .map_err(|_| {
+        .map_err(|error| {
+            if error
+                .downcast_ref::<hms_db::auth::assurance::FactorError>()
+                .is_some()
+            {
+                return super::auth_factor::error(error);
+            }
             ApiError::conflict("staff_create_failed", "Staff account could not be saved.")
         })?;
         if let Err(error) = self
@@ -798,15 +847,22 @@ impl AdminService {
         let setup_token = generate_secret_token();
         let setup_token_hash = hash_refresh_token(&setup_token);
         let setup_token_expires_at = Utc::now() + Duration::minutes(30);
-        let staff = hms_db::admin::prepare_staff_password_reset_delivery(
+        let staff = hms_db::admin::prepare_staff_password_reset_delivery_authorized(
             self.pool(),
             self.facility_id(),
             id,
             setup_token_hash.clone(),
             setup_token_expires_at,
+            super::auth_factor::privileged_actor(ctx)?,
         )
         .await
-        .map_err(|_| {
+        .map_err(|error| {
+            if error
+                .downcast_ref::<hms_db::auth::assurance::FactorError>()
+                .is_some()
+            {
+                return super::auth_factor::error(error);
+            }
             ApiError::conflict(
                 "staff_reset_failed",
                 "Staff password reset could not be forced.",
@@ -831,16 +887,23 @@ impl AdminService {
             .await;
             return Err(error);
         }
-        let staff = hms_db::admin::finalize_staff_password_reset(
+        let staff = hms_db::admin::finalize_staff_password_reset_authorized(
             self.pool(),
             self.facility_id(),
             id,
             ctx.user_id,
             Some(ctx.request_id.clone()),
             &setup_token_hash,
+            super::auth_factor::privileged_actor(ctx)?,
         )
         .await
-        .map_err(|_| {
+        .map_err(|error| {
+            if error
+                .downcast_ref::<hms_db::auth::assurance::FactorError>()
+                .is_some()
+            {
+                return super::auth_factor::error(error);
+            }
             ApiError::conflict(
                 "staff_reset_failed",
                 "Staff password reset could not be forced.",
@@ -863,15 +926,22 @@ impl AdminService {
         id: Uuid,
     ) -> Result<ObjectResponse<StaffListItem>, ApiError> {
         require_high_risk_admin_access(ctx, self.facility_id(), PermissionCode::AdminStaffManage)?;
-        let staff = hms_db::admin::deactivate_staff_account(
+        let staff = hms_db::admin::deactivate_staff_account_authorized(
             self.pool(),
             self.facility_id(),
             id,
             ctx.user_id,
             Some(ctx.request_id.clone()),
+            super::auth_factor::privileged_actor(ctx)?,
         )
         .await
-        .map_err(|_| {
+        .map_err(|error| {
+            if error
+                .downcast_ref::<hms_db::auth::assurance::FactorError>()
+                .is_some()
+            {
+                return super::auth_factor::error(error);
+            }
             ApiError::conflict(
                 "staff_deactivate_failed",
                 "Staff account could not be deactivated.",
@@ -889,15 +959,22 @@ impl AdminService {
         id: Uuid,
     ) -> Result<ObjectResponse<StaffListItem>, ApiError> {
         require_high_risk_admin_access(ctx, self.facility_id(), PermissionCode::AdminStaffManage)?;
-        let staff = hms_db::admin::reactivate_staff_account(
+        let staff = hms_db::admin::reactivate_staff_account_authorized(
             self.pool(),
             self.facility_id(),
             id,
             ctx.user_id,
             Some(ctx.request_id.clone()),
+            super::auth_factor::privileged_actor(ctx)?,
         )
         .await
-        .map_err(|_| {
+        .map_err(|error| {
+            if error
+                .downcast_ref::<hms_db::auth::assurance::FactorError>()
+                .is_some()
+            {
+                return super::auth_factor::error(error);
+            }
             ApiError::conflict(
                 "staff_reactivate_failed",
                 "Staff account could not be reactivated.",
@@ -1077,7 +1154,7 @@ impl AdminService {
         let delegate_user_id = payload.delegate_user_id;
         self.state
             .invalidate_auth_cache_for_user(facility_id, delegate_user_id);
-        let delegation = hms_db::admin::create_delegation(
+        let delegation = hms_db::admin::create_delegation_authorized(
             self.pool(),
             NewDelegation {
                 facility_id,
@@ -1090,9 +1167,16 @@ impl AdminService {
                 reason: payload.reason,
             },
             Some(ctx.request_id.clone()),
+            super::auth_factor::privileged_actor(ctx)?,
         )
         .await
-        .map_err(|_| {
+        .map_err(|error| {
+            if error
+                .downcast_ref::<hms_db::auth::assurance::FactorError>()
+                .is_some()
+            {
+                return super::auth_factor::error(error);
+            }
             ApiError::conflict("delegation_create_failed", "Delegation could not be saved.")
         })?;
         self.state

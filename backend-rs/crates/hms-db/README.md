@@ -16,6 +16,7 @@ interfaces for workflow projections; handlers should not run SQL directly.
 | --- | --- |
 | `admin.rs` | organization, authority, permissions, staff/practitioners |
 | `auth.rs` | auth/session persistence |
+| `auth/assurance.rs` | bounded restricted grants, verified exact-session factor proof, key/recovery management, immutable operator retirement and ephemeral cleanup |
 | `billing.rs` | billing, receipts, cash sessions, NHIS |
 | `care.rs` | appointments, clinics, visits, triage, encounters |
 | `clinical.rs` | clinical notes, problems, allergies, prescriptions, charts |

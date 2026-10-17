@@ -771,10 +771,10 @@ async fn manual_dispense_rejects_controlled_type_even_when_legacy_flag_is_false_
     )
     .await
     .unwrap_err();
-    assert_eq!(
-        error.to_string(),
-        "controlled items require controlled-substance register workflow"
-    );
+    assert!(matches!(
+        error.downcast_ref::<hms_db::inventory::GenericStockWriteError>(),
+        Some(hms_db::inventory::GenericStockWriteError::ControlledItem)
+    ));
     assert_eq!(f.total().await, 100);
     let rows:(i64,i64)=sqlx::query_as("SELECT (SELECT count(*) FROM pharmacy_dispenses WHERE item_id=$1),(SELECT count(*) FROM stock_movements WHERE item_id=$1)").bind(f.item).fetch_one(f.db.pool()).await.unwrap();
     assert_eq!(rows, (0, 0));

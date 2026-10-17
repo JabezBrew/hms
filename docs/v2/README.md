@@ -19,6 +19,10 @@ Scope: Rust V2 backend architecture, seed behavior, cutover scope, and productio
 | `2026-10-15-phase-two-b-verification.md` | scoped fluid/emergency access, NHIS UI, reset lifecycle and exact-source acceptance. |
 | `2026-10-16-phase-eight-verification.md` | explicit scheduled stock units, inpatient narrative handover, clinical visibility and scoped notifications; frozen acceptance evidence. |
 | `2026-10-16-phase-eleven-verification.md` | admission follow-up checklist, canonical case-close retirement, session-bound cryptographic ceremonies and exact-source acceptance. |
+| `2026-10-17-phase-twelve-verification.md` | verified factor login/recovery, exact-session privileged proof, credential lifecycle, controlled-stock integrity and current acceptance state. |
+| `2026-10-17-authentication-policy.md` | password/factor separation, restricted first setup, recovery limits, privileged permission families and workflow continuity. |
+| `2026-10-17-session-factor-assurance-scope.md` | durable session assurance, key lifecycle, operator trust, bounded cleanup and migration022 compatibility. |
+| `2026-10-17-privileged-workflow-factor-scope.md` | selected privileged clinical writers, current permission/feature checks, typed denials and transactional proof. |
 | `2026-10-16-admission-advisory-scope.md` | eight nonblocking case tasks, immutable terminal evidence, current ward/clinical authority and operational closure boundaries. |
 | `2026-10-16-webauthn-ceremony-scope.md` | genuine cryptographic regression fixtures, exact-session challenge binding and post-wait clock/atomicity proof; excludes enforced login MFA. |
 | `2026-10-16-phase-ten-verification.md` | atomic ward-round draft/commit and clinical artifact evidence, fluid live authority and selected-admission workspace; exact-source acceptance. |

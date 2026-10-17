@@ -16,6 +16,22 @@ const DEFAULT_LIMIT: u8 = 25;
 const MAX_LIMIT: u8 = 100;
 const MAX_TEXT_LEN: usize = 120;
 
+pub(super) fn generic_stock_write_error(error: &anyhow::Error) -> Option<ApiError> {
+    error.downcast_ref::<hms_db::inventory::GenericStockWriteError>().map(|error|match error {
+        hms_db::inventory::GenericStockWriteError::ControlledItem=>ApiError::conflict(
+            "controlled_stock_workflow_required",
+            "This stock action does not support controlled items. Use the dedicated controlled-substance workflow.",
+        ),
+        hms_db::inventory::GenericStockWriteError::TooManySupplyLines=>supply_line_limit_error(),
+    })
+}
+pub(super) fn supply_line_limit_error() -> ApiError {
+    ApiError::bad_request(
+        "supply_request_line_limit_exceeded",
+        "Use at most 100 supply lines in one request.",
+    )
+}
+
 pub(super) async fn load_patient_for_access(
     state: &AppState,
     ctx: &hms_access::RequestContext,

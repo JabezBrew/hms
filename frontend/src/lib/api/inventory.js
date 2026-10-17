@@ -2598,7 +2598,7 @@ export const inventoryApi = {
         throw error;
       }
       if (isRustV2ApiMode()) {
-        throw new Error(handleV2ApiError(error, 'Failed to dispense controlled substance'));
+        throw error;
       }
       throw new Error(handleApiError(error, 'Failed to dispense controlled substance'));
     }
@@ -2614,19 +2614,23 @@ export const inventoryApi = {
    * @param {string} data.witness - Witness user ID (required)
    * @returns {Promise<Object>} Created entry
    */
-  recordControlledWastage: async (data) => {
+  recordControlledWastage: async (data, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
         const response = await v2Api.postControlledSubstanceRegister(
           buildV2ControlledMovementPayload(data, 'adjustment', -1),
+          { signal: options.signal || data?.signal },
         );
         return v2Object(response);
       }
 
       return await apiClient.post('/inventory/controlled/wastage/', data);
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
       if (isRustV2ApiMode()) {
-        throw new Error(handleV2ApiError(error, 'Failed to record wastage'));
+        throw error;
       }
       throw new Error(handleApiError(error, 'Failed to record wastage'));
     }
@@ -2659,7 +2663,7 @@ export const inventoryApi = {
         throw error;
       }
       if (isRustV2ApiMode()) {
-        throw new Error(handleV2ApiError(error, 'Failed to record count'));
+        throw error;
       }
       throw new Error(handleApiError(error, 'Failed to record count'));
     }

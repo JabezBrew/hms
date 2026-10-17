@@ -1601,8 +1601,107 @@
         ],
         "type": "object"
       },
+      "AuthLoginResponse": {
+        "oneOf": [
+          {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AuthTokenResponse"
+              },
+              {
+                "properties": {
+                  "status": {
+                    "enum": [
+                      "authenticated"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "status"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          {
+            "properties": {
+              "expires_at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "login_grant": {
+                "type": "string"
+              },
+              "methods": {
+                "$ref": "#/components/schemas/FactorMethods"
+              },
+              "reason": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "status": {
+                "enum": [
+                  "factor_required"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "login_grant",
+              "expires_at",
+              "methods",
+              "status"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "expires_at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "login_grant": {
+                "type": "string"
+              },
+              "methods": {
+                "$ref": "#/components/schemas/FactorMethods"
+              },
+              "reason": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "status": {
+                "enum": [
+                  "setup_required"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "login_grant",
+              "expires_at",
+              "methods",
+              "status"
+            ],
+            "type": "object"
+          }
+        ]
+      },
       "AuthSecurityState": {
         "properties": {
+          "assurance_version": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "factor_version": {
+            "format": "int64",
+            "type": "integer"
+          },
           "passkey_enrolled": {
             "type": "boolean"
           },
@@ -1618,6 +1717,9 @@
           "recovery_codes_remaining": {
             "format": "int64",
             "type": "integer"
+          },
+          "session_assurance": {
+            "$ref": "#/components/schemas/SessionAssurance"
           }
         },
         "required": [
@@ -7485,6 +7587,7 @@
             "items": {
               "$ref": "#/components/schemas/SupplyDispenseLineRequest"
             },
+            "maxItems": 100,
             "type": "array"
           }
         },
@@ -7580,6 +7683,10 @@
           "visit",
           "triage"
         ],
+        "type": "object"
+      },
+      "EmptyFactorDecision": {
+        "additionalProperties": false,
         "type": "object"
       },
       "EncounterListGetQuery": {
@@ -7791,6 +7898,49 @@
         },
         "required": [
           "ended_count"
+        ],
+        "type": "object"
+      },
+      "FactorAssuranceStatus": {
+        "properties": {
+          "assurance": {
+            "$ref": "#/components/schemas/SessionAssurance"
+          },
+          "password_fresh_until": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "password_verified_at": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "assurance",
+          "password_verified_at",
+          "password_fresh_until"
+        ],
+        "type": "object"
+      },
+      "FactorMethod": {
+        "enum": [
+          "passkey",
+          "recovery"
+        ],
+        "type": "string"
+      },
+      "FactorMethods": {
+        "properties": {
+          "passkey": {
+            "type": "boolean"
+          },
+          "recovery_code": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "passkey",
+          "recovery_code"
         ],
         "type": "object"
       },
@@ -14999,6 +15149,60 @@
         ],
         "type": "object"
       },
+      "ListResponse_PasskeyMetadata": {
+        "properties": {
+          "data": {
+            "items": {
+              "properties": {
+                "created_at": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "disabled_at": {
+                  "format": "date-time",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "label": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "last_used_at": {
+                  "format": "date-time",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "id",
+                "created_at"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "meta": {},
+          "page": {
+            "$ref": "#/components/schemas/PageInfo"
+          }
+        },
+        "required": [
+          "data",
+          "page",
+          "meta"
+        ],
+        "type": "object"
+      },
       "ListResponse_PatientChronicleTimelineEntry": {
         "properties": {
           "data": {
@@ -19017,7 +19221,55 @@
         ],
         "type": "object"
       },
+      "LoginFactorOptionsRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "login_grant": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "login_grant"
+        ],
+        "type": "object"
+      },
+      "LoginFactorVerifyRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "challenge_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "credential": {},
+          "login_grant": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "login_grant",
+          "challenge_id",
+          "credential"
+        ],
+        "type": "object"
+      },
+      "LoginRecoveryRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "login_grant": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "login_grant",
+          "code"
+        ],
+        "type": "object"
+      },
       "LoginRequest": {
+        "additionalProperties": false,
         "properties": {
           "email": {
             "type": "string"
@@ -19033,6 +19285,22 @@
           "email",
           "password",
           "facility_code"
+        ],
+        "type": "object"
+      },
+      "LoginSetupOptionsRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "bootstrap_token": {
+            "type": "string"
+          },
+          "login_grant": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "login_grant",
+          "bootstrap_token"
         ],
         "type": "object"
       },
@@ -21426,6 +21694,107 @@
         ],
         "type": "object"
       },
+      "ObjectResponse_AuthLoginResponse": {
+        "properties": {
+          "data": {
+            "oneOf": [
+              {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/AuthTokenResponse"
+                  },
+                  {
+                    "properties": {
+                      "status": {
+                        "enum": [
+                          "authenticated"
+                        ],
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "status"
+                    ],
+                    "type": "object"
+                  }
+                ]
+              },
+              {
+                "properties": {
+                  "expires_at": {
+                    "format": "date-time",
+                    "type": "string"
+                  },
+                  "login_grant": {
+                    "type": "string"
+                  },
+                  "methods": {
+                    "$ref": "#/components/schemas/FactorMethods"
+                  },
+                  "reason": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "status": {
+                    "enum": [
+                      "factor_required"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "login_grant",
+                  "expires_at",
+                  "methods",
+                  "status"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "expires_at": {
+                    "format": "date-time",
+                    "type": "string"
+                  },
+                  "login_grant": {
+                    "type": "string"
+                  },
+                  "methods": {
+                    "$ref": "#/components/schemas/FactorMethods"
+                  },
+                  "reason": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "status": {
+                    "enum": [
+                      "setup_required"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "login_grant",
+                  "expires_at",
+                  "methods",
+                  "status"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "meta": {}
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "type": "object"
+      },
       "ObjectResponse_AuthSessionListResponse": {
         "properties": {
           "data": {
@@ -23627,6 +23996,37 @@
             },
             "required": [
               "ended_count"
+            ],
+            "type": "object"
+          },
+          "meta": {}
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "type": "object"
+      },
+      "ObjectResponse_FactorAssuranceStatus": {
+        "properties": {
+          "data": {
+            "properties": {
+              "assurance": {
+                "$ref": "#/components/schemas/SessionAssurance"
+              },
+              "password_fresh_until": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "password_verified_at": {
+                "format": "date-time",
+                "type": "string"
+              }
+            },
+            "required": [
+              "assurance",
+              "password_verified_at",
+              "password_fresh_until"
             ],
             "type": "object"
           },
@@ -26693,6 +27093,53 @@
             "required": [
               "patient_id",
               "visit"
+            ],
+            "type": "object"
+          },
+          "meta": {}
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "type": "object"
+      },
+      "ObjectResponse_PasskeyMetadata": {
+        "properties": {
+          "data": {
+            "properties": {
+              "created_at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "disabled_at": {
+                "format": "date-time",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "label": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "last_used_at": {
+                "format": "date-time",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "created_at"
             ],
             "type": "object"
           },
@@ -31894,6 +32341,43 @@
         ],
         "type": "object"
       },
+      "PasskeyMetadata": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "disabled_at": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "label": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "last_used_at": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "created_at"
+        ],
+        "type": "object"
+      },
       "PasswordResetCompleteRequest": {
         "properties": {
           "new_password": {
@@ -36578,6 +37062,18 @@
         },
         "type": "object"
       },
+      "RenamePasskeyRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "label": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "label"
+        ],
+        "type": "object"
+      },
       "RequestPrnDoseRequest": {
         "additionalProperties": false,
         "description": "One source-linked, explicitly indicated PRN dose, using a stable retry key.",
@@ -37372,6 +37868,42 @@
         ],
         "type": "object"
       },
+      "SessionAssurance": {
+        "properties": {
+          "credential_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "expires_at": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "method": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/FactorMethod"
+              }
+            ]
+          },
+          "verified_at": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
       "Sex": {
         "enum": [
           "female",
@@ -37980,6 +38512,33 @@
         },
         "required": [
           "category"
+        ],
+        "type": "object"
+      },
+      "StepUpOptionsRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "current_password": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "StepUpVerifyRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "challenge_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "credential": {}
+        },
+        "required": [
+          "challenge_id",
+          "credential"
         ],
         "type": "object"
       },
@@ -45748,6 +46307,191 @@
         ]
       }
     },
+    "/api/v2/auth/assurance": {
+      "get": {
+        "operationId": "getAuthAssurance",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_FactorAssuranceStatus"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v2/auth/assurance/options": {
+      "post": {
+        "operationId": "postAuthAssuranceOptions",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StepUpOptionsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_Value"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v2/auth/assurance/verify": {
+      "post": {
+        "operationId": "postAuthAssuranceVerify",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StepUpVerifyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_AuthLoginResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "auth"
+        ]
+      }
+    },
     "/api/v2/auth/login": {
       "post": {
         "operationId": "postAuthLogin",
@@ -45766,11 +46510,11 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ObjectResponse_AuthTokenResponse"
+                  "$ref": "#/components/schemas/ObjectResponse_AuthLoginResponse"
                 }
               }
             },
-            "description": "Login succeeded"
+            "description": "Authenticated or restricted factor/setup grant"
           },
           "401": {
             "content": {
@@ -45781,6 +46525,326 @@
               }
             },
             "description": "Login failed"
+          }
+        },
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v2/auth/login/passkey/options": {
+      "post": {
+        "operationId": "postAuthLoginPasskeyOptions",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginFactorOptionsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_Value"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v2/auth/login/passkey/verify": {
+      "post": {
+        "operationId": "postAuthLoginPasskeyVerify",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginFactorVerifyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_AuthLoginResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v2/auth/login/recovery": {
+      "post": {
+        "operationId": "postAuthLoginRecovery",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginRecoveryRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_AuthLoginResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v2/auth/login/setup/options": {
+      "post": {
+        "operationId": "postAuthLoginSetupOptions",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginSetupOptionsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_Value"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v2/auth/login/setup/verify": {
+      "post": {
+        "operationId": "postAuthLoginSetupVerify",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginFactorVerifyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_AuthLoginResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
           }
         },
         "tags": [
@@ -45905,6 +46969,281 @@
               }
             },
             "description": "User not found"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v2/auth/mfa/passkeys": {
+      "get": {
+        "operationId": "getAuthPasskeys",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "cursor",
+            "required": true,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "path",
+            "name": "limit",
+            "required": true,
+            "schema": {
+              "format": "int32",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListResponse_PasskeyMetadata"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v2/auth/mfa/passkeys/{id}": {
+      "patch": {
+        "operationId": "patchAuthPasskey",
+        "parameters": [
+          {
+            "description": "Own key",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RenamePasskeyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_PasskeyMetadata"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v2/auth/mfa/passkeys/{id}/disable": {
+      "post": {
+        "operationId": "postAuthPasskeyDisable",
+        "parameters": [
+          {
+            "description": "Own key",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmptyFactorDecision"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_PasskeyMetadata"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
           }
         },
         "security": [
@@ -46640,6 +47979,76 @@
             "bearerAuth": []
           }
         ],
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v2/auth/setup/start": {
+      "post": {
+        "operationId": "postAuthSetupStart",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_AuthLoginResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
         "tags": [
           "auth"
         ]

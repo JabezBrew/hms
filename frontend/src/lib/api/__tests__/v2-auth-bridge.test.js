@@ -30,6 +30,7 @@ describe('Rust V2 auth bridge', () => {
       new Response(
         JSON.stringify({
           data: {
+            status: 'authenticated',
             access_token: 'access-token-123',
             token_type: 'Bearer',
             expires_in_seconds: 600,
@@ -106,6 +107,7 @@ describe('Rust V2 auth bridge', () => {
       new Response(
         JSON.stringify({
           data: {
+            status: 'authenticated',
             access_token: 'access-token-123',
             token_type: 'Bearer',
             expires_in_seconds: 600,

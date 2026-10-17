@@ -290,16 +290,23 @@ impl FinancialWorkflowService {
         common::require_billing_high_risk_access(ctx, self.facility_id())?;
         let _reason = common::normalize_text(payload.approval.reason, "reason")?;
         common::require_invoice_patient_access(&self.state, ctx, id).await?;
-        let invoice = hms_db::billing::finalize_invoice(
+        let invoice = hms_db::billing::finalize_invoice_authorized(
             self.pool(),
             self.facility_id(),
             id,
             ctx.user_id,
             payload.approval.supervisor_user_id,
             Utc::now(),
+            crate::services::auth_factor::privileged_actor(ctx)?,
         )
         .await
-        .map_err(|_| {
+        .map_err(|error| {
+            if error
+                .downcast_ref::<hms_db::auth::assurance::FactorError>()
+                .is_some()
+            {
+                return crate::services::auth_factor::error(error);
+            }
             ApiError::conflict(
                 "invoice_finalization_failed",
                 "Invoice could not be finalized.",
@@ -328,7 +335,7 @@ impl FinancialWorkflowService {
                     ApiError::not_found("payment_not_found", "Payment was not found.")
                 })?;
         common::require_invoice_patient_access(&self.state, ctx, invoice_id).await?;
-        let reversal = hms_db::billing::record_payment_reversal(
+        let reversal = hms_db::billing::record_payment_reversal_authorized(
             self.pool(),
             NewPaymentReversal {
                 id: Uuid::new_v4(),
@@ -342,9 +349,16 @@ impl FinancialWorkflowService {
                 reauthorized_at: Utc::now(),
                 request_id: Some(ctx.request_id.clone()),
             },
+            crate::services::auth_factor::privileged_actor(ctx)?,
         )
         .await
-        .map_err(|_| {
+        .map_err(|error| {
+            if error
+                .downcast_ref::<hms_db::auth::assurance::FactorError>()
+                .is_some()
+            {
+                return crate::services::auth_factor::error(error);
+            }
             ApiError::conflict(
                 "payment_reversal_failed",
                 "Payment reversal could not be recorded.",

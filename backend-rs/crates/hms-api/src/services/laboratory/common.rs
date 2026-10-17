@@ -173,7 +173,14 @@ pub(super) fn require_laboratory_access(
     facility_id: Uuid,
     permission: PermissionCode,
 ) -> Result<(), ApiError> {
-    hms_access::require_lab_access(ctx, facility_id, permission).map_err(|_| {
+    hms_access::require_lab_access(ctx, facility_id, permission).map_err(|error| {
+        if matches!(
+            error,
+            hms_access::AccessError::FactorVerificationRequired
+                | hms_access::AccessError::ReauthRequired
+        ) {
+            return ApiError::from(error);
+        }
         ApiError::forbidden(
             "permission_denied",
             "You do not have permission to perform this laboratory action.",

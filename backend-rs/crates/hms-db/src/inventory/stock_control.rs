@@ -238,13 +238,9 @@ pub async fn create_batch(
     if batch.quantity_received <= 0 || batch.quantity_received > 9_007_199_254_740_991 {
         anyhow::bail!("invalid_stock_receipt_quantity");
     }
-    let unit: Option<String> = sqlx::query_scalar(
-        "SELECT unit FROM inventory_items WHERE facility_id=$1 AND id=$2 AND is_active FOR SHARE",
-    )
-    .bind(batch.facility_id)
-    .bind(batch.item_id)
-    .fetch_optional(&mut *transaction)
-    .await?;
+    let unit =
+        super::lock_generic_stock_item_tx(&mut transaction, batch.facility_id, batch.item_id)
+            .await?;
     if unit.as_deref() != Some(batch.expected_unit.trim()) {
         return Err(crate::clinical::stock_basis::StockBasisError::ReceiptUnitChanged.into());
     }
@@ -777,6 +773,9 @@ pub async fn dispense_supply_request(
     mut lines: Vec<SupplyDispenseLine>,
     actor_user_id: Uuid,
 ) -> anyhow::Result<SupplyRequestDispenseResult> {
+    if lines.len() > hms_domain::inventory::MAX_LEGACY_SUPPLY_LINES {
+        return Err(super::GenericStockWriteError::TooManySupplyLines.into());
+    }
     if lines.is_empty() {
         anyhow::bail!("at least one supply dispense line is required");
     }
@@ -806,6 +805,9 @@ pub async fn dispense_supply_request(
         if line.quantity <= 0 {
             anyhow::bail!("supply dispense quantity must be positive");
         }
+        super::lock_generic_stock_item_tx(&mut tx, facility_id, line.item_id)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("inventory_item_not_actionable"))?;
         apply_stock_delta_tx(
             &mut tx,
             facility_id,

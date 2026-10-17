@@ -3,6 +3,7 @@ use hms_access::require_patient_demographics_access;
 use hms_db::consent::{ConsentCursor, NewConsentGrant};
 use hms_domain::care::CursorListQuery;
 use hms_domain::consent::{ConsentGrantListItem, CreateConsentGrantRequest};
+use hms_domain::deployment::PermissionCode;
 use hms_domain::patients::PatientRecord;
 use serde_json::json;
 use uuid::Uuid;
@@ -73,7 +74,7 @@ impl ConsentService {
             }
         }
 
-        let grant = hms_db::consent::create_consent_grant(
+        let grant = hms_db::consent::create_consent_grant_authorized(
             self.pool(),
             NewConsentGrant {
                 id: Uuid::new_v4(),
@@ -84,9 +85,16 @@ impl ConsentService {
                 expires_at: payload.expires_at,
                 created_by_user_id: ctx.user_id,
             },
+            crate::services::auth_factor::privileged_actor(ctx)?,
         )
         .await
-        .map_err(|_| {
+        .map_err(|error| {
+            if error
+                .downcast_ref::<hms_db::auth::assurance::FactorError>()
+                .is_some()
+            {
+                return crate::services::auth_factor::error(error);
+            }
             ApiError::conflict(
                 "consent_create_failed",
                 "Consent grant could not be created.",
@@ -111,18 +119,27 @@ impl ConsentService {
                 ApiError::not_found("consent_not_found", "Consent grant was not found.")
             })?;
         let _patient = load_patient_for_access(&self.state, ctx, existing.patient_id).await?;
-        let grant =
-            hms_db::consent::revoke_consent_grant(self.pool(), self.facility_id(), id, ctx.user_id)
-                .await
-                .map_err(|_| {
-                    ApiError::conflict(
-                        "consent_revoke_failed",
-                        "Consent grant could not be revoked.",
-                    )
-                })?
-                .ok_or_else(|| {
-                    ApiError::not_found("consent_not_found", "Consent grant was not found.")
-                })?;
+        let grant = hms_db::consent::revoke_consent_grant_authorized(
+            self.pool(),
+            self.facility_id(),
+            id,
+            ctx.user_id,
+            crate::services::auth_factor::privileged_actor(ctx)?,
+        )
+        .await
+        .map_err(|error| {
+            if error
+                .downcast_ref::<hms_db::auth::assurance::FactorError>()
+                .is_some()
+            {
+                return crate::services::auth_factor::error(error);
+            }
+            ApiError::conflict(
+                "consent_revoke_failed",
+                "Consent grant could not be revoked.",
+            )
+        })?
+        .ok_or_else(|| ApiError::not_found("consent_not_found", "Consent grant was not found."))?;
 
         Ok(object(grant))
     }
@@ -170,6 +187,12 @@ fn require_consent_permission(
     ctx: &hms_access::RequestContext,
     facility_id: Uuid,
 ) -> Result<(), ApiError> {
+    hms_access::require_high_risk_facility_permission(
+        ctx,
+        facility_id,
+        PermissionCode::ConsentManage,
+        Utc::now(),
+    )?;
     hms_access::require_consent_access(ctx, facility_id).map_err(|_| {
         ApiError::forbidden(
             "permission_denied",

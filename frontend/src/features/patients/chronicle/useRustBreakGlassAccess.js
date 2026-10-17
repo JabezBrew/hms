@@ -105,7 +105,7 @@ export function useRustBreakGlassAccess({ enabled, patientId, user, reauthentica
     let grantAttempted = false;
     let grantReceipt;
     try {
-      const authenticated = await reauthenticate(user.email, password, user.facilityCode);
+      const authenticated = await reauthenticate(user.email, password, user.facilityCode, { signal: controller.signal });
       if (controller.signal.aborted) return false;
       assertSameScope(user, authenticated);
       grantAttempted = true;

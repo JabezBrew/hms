@@ -325,7 +325,10 @@ async fn concurrent_create_replays_once_and_expected_revision_serializes_competi
             .downcast_ref(),
         Some(&HandoverError::RequestConflict)
     );
-    let other = actor(&f.db, Uuid::from_u128(hms_db::provision::LIMITED_USER_ID)).await;
+    let other_user = Uuid::new_v4();
+    sqlx::query("INSERT INTO users(id,facility_id,email,display_name,password_hash,is_active,password_change_required) VALUES($1,$2,$3,'Synthetic eligible handover reviewer','synthetic-not-used-for-signin',true,false)")
+        .bind(other_user).bind(f.db.facility_id()).bind(format!("handover-reviewer-{other_user}@example.invalid")).execute(f.db.pool()).await.unwrap();
+    let other = actor(&f.db, other_user).await;
     assert_eq!(
         amend(f.db.pool(), other, id, f.amendment(&receipts[0]))
             .await

@@ -30,6 +30,8 @@ pub struct RequestContext {
     pub permission_version: i64,
     pub offsite: OffsiteState,
     pub reauth: ReauthState,
+    #[serde(default)]
+    pub authorization_deadline: Option<DateTime<Utc>>,
     pub user: AuthUser,
 }
 
@@ -58,8 +60,14 @@ impl RequestContext {
             permission_version: user.permission_version,
             offsite,
             reauth,
+            authorization_deadline: None,
             user,
         }
+    }
+
+    pub fn with_authorization_deadline(mut self, deadline: DateTime<Utc>) -> Self {
+        self.authorization_deadline = Some(deadline);
+        self
     }
 
     pub fn auth_user(&self) -> &AuthUser {
@@ -227,7 +235,7 @@ impl ReauthState {
     pub fn is_fresh_at(&self, now: DateTime<Utc>) -> bool {
         self.verified_at.is_some_and(|verified_at| {
             verified_at <= now
-                && now <= self.required_after
+                && now < self.required_after
                 && self.required_after
                     <= verified_at + Duration::minutes(HIGH_RISK_REAUTH_WINDOW_MINUTES)
         })
@@ -256,6 +264,8 @@ pub enum AccessError {
     InventoryAccessDenied,
     #[error("admin authority access denied")]
     AdminAuthorityAccessDenied,
+    #[error("fresh passkey verification is required")]
+    FactorVerificationRequired,
     #[error("fresh reauthentication is required")]
     ReauthRequired,
     #[error("passkey enrollment is required")]
@@ -554,6 +564,9 @@ pub fn require_lab_access(
     facility_id: Uuid,
     permission: PermissionCode,
 ) -> Result<(), AccessError> {
+    if permission == PermissionCode::LaboratoryResultVerify {
+        require_high_risk_facility_permission(ctx, facility_id, permission, Utc::now())?;
+    }
     require_feature(ctx, FeatureKey::Laboratory)
         .map_err(|_| AccessError::LaboratoryAccessDenied)?;
     require_patient_workflow_access(ctx, facility_id, permission)
@@ -643,7 +656,12 @@ pub fn require_ops_dashboard_access(
     facility_id: Uuid,
 ) -> Result<(), AccessError> {
     require_feature(ctx, FeatureKey::Admin)?;
-    require_facility_permission(ctx, facility_id, PermissionCode::SystemOpsView)
+    require_high_risk_facility_permission(
+        ctx,
+        facility_id,
+        PermissionCode::SystemOpsView,
+        Utc::now(),
+    )
 }
 
 pub fn require_staff_access(ctx: &RequestContext, facility_id: Uuid) -> Result<(), AccessError> {
@@ -782,11 +800,18 @@ pub fn require_high_risk_reauth(
 }
 
 pub fn require_privileged_action_allowed(ctx: &RequestContext) -> Result<(), AccessError> {
-    if ctx.user.auth_security.passkey_required && !ctx.user.auth_security.passkey_enrolled {
-        Err(AccessError::PasskeyRequired)
-    } else {
-        Ok(())
+    if !ctx.user.auth_security.passkey_enrolled {
+        return Err(AccessError::PasskeyRequired);
     }
+    if !ctx
+        .user
+        .auth_security
+        .session_assurance
+        .is_fresh_passkey_at(Utc::now())
+    {
+        return Err(AccessError::FactorVerificationRequired);
+    }
+    Ok(())
 }
 
 pub fn require_high_risk_facility_permission(
@@ -862,7 +887,7 @@ mod tests {
             PermissionCode::InventoryView,
             PermissionCode::AdminAuthorityManage,
         ];
-        let user = AuthUser {
+        let mut user = AuthUser {
             id: Uuid::new_v4(),
             email: "doctor@hms.local".to_owned(),
             display_name: "Doctor".to_owned(),
@@ -880,6 +905,15 @@ mod tests {
             permission_version: 1,
             password_change_required: false,
             auth_security: AuthSecurityState::from_permissions(&permissions, true, 4),
+        };
+        // Unit access subjects model proof facts resolved by the server; HTTP
+        // integration fixtures establish these with actual signed assertions.
+        let verified_at = Utc::now();
+        user.auth_security.session_assurance = hms_domain::auth_assurance::SessionAssurance {
+            method: Some(hms_domain::auth_assurance::FactorMethod::Passkey),
+            verified_at: Some(verified_at),
+            expires_at: Some(verified_at + chrono::Duration::minutes(15)),
+            credential_id: Some(Uuid::new_v4()),
         };
         RequestContext::new(
             "request-1".to_owned(),
@@ -1325,6 +1359,26 @@ mod tests {
                 Utc::now(),
             ),
             Err(AccessError::PasskeyRequired)
+        );
+    }
+
+    #[test]
+    fn privileged_actions_require_fresh_passkey_proof_beyond_enrollment() {
+        let mut ctx = make_ctx();
+        assert_eq!(require_privileged_action_allowed(&ctx), Ok(()));
+        ctx.user.auth_security.session_assurance.method =
+            Some(hms_domain::auth_assurance::FactorMethod::Recovery);
+        assert_eq!(
+            require_privileged_action_allowed(&ctx),
+            Err(AccessError::FactorVerificationRequired)
+        );
+        ctx.user.auth_security.session_assurance.method =
+            Some(hms_domain::auth_assurance::FactorMethod::Passkey);
+        ctx.user.auth_security.session_assurance.expires_at =
+            Some(Utc::now() - chrono::Duration::seconds(1));
+        assert_eq!(
+            require_privileged_action_allowed(&ctx),
+            Err(AccessError::FactorVerificationRequired)
         );
     }
 

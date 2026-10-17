@@ -194,12 +194,22 @@ pub(crate) async fn resolve_request(
     let authorization_deadline = context_facts.session_expires_at.min(
         DateTime::<Utc>::from_timestamp(claims.exp as i64, 0).ok_or_else(ApiError::unauthorized)?,
     );
+    let password_verified_at = context_facts.password_verified_at;
     let user = context_facts.user;
 
     reject_stale_claims(&user, &claims)?;
 
     let enabled_features = enabled_features(&context_facts.feature_flags, &user);
-    let reauth = access_token_reauth(&claims);
+    let mut reauth = access_token_reauth(&claims);
+    if let Some(at) = reauth.verified_at {
+        reauth = ReauthState::from_authentication_time(at.min(password_verified_at));
+    }
+    if user.password_change_required && !password_change_lifecycle(&parts.method, &route_pattern) {
+        return Err(ApiError::forbidden(
+            "password_change_required",
+            "Change your current password before opening other workflows.",
+        ));
+    }
     let network = match crate::network_access::facts(parts, state, &reauth).await {
         Ok(value) => value,
         Err(_)
@@ -236,7 +246,8 @@ pub(crate) async fn resolve_request(
         offsite,
         reauth,
     )
-    .with_active_authorities(context_facts.active_authorities);
+    .with_active_authorities(context_facts.active_authorities)
+    .with_authorization_deadline(authorization_deadline);
     let assemble_elapsed = assemble_started_at.elapsed();
     let total_elapsed = total_started_at.elapsed();
 
@@ -270,6 +281,14 @@ async fn resolve_authenticated_user(parts: &Parts, state: &AppState) -> Result<A
         .ok_or_else(ApiError::unauthorized)?;
 
     reject_stale_claims(&user, &claims)?;
+    if user.password_change_required
+        && !password_change_lifecycle(&parts.method, &route_pattern(parts))
+    {
+        return Err(ApiError::forbidden(
+            "password_change_required",
+            "Change your current password before opening other workflows.",
+        ));
+    }
 
     Ok(user)
 }
@@ -334,4 +353,25 @@ fn access_token_reauth(claims: &AccessClaims) -> ReauthState {
         .and_then(|timestamp| DateTime::<Utc>::from_timestamp(timestamp, 0))
         .map(ReauthState::from_authentication_time)
         .unwrap_or_else(|| ReauthState::missing(Utc::now()))
+}
+
+fn password_change_lifecycle(method: &axum::http::Method, path: &str) -> bool {
+    matches!(
+        (method.as_str(), path),
+        (
+            "GET",
+            "/api/v2/auth/me"
+                | "/api/v2/auth/network-access"
+                | "/api/v2/auth/assurance"
+                | "/api/v2/auth/mfa/status"
+                | "/api/v2/auth/sessions"
+        ) | (
+            "POST",
+            "/api/v2/auth/password"
+                | "/api/v2/auth/logout"
+                | "/api/v2/auth/refresh"
+                | "/api/v2/auth/sessions/revoke-all"
+                | "/api/v2/auth/sessions/:session_id/revoke"
+        )
+    )
 }

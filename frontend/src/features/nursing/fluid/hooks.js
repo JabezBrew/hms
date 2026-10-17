@@ -6,6 +6,7 @@ import { useAuth } from '@/lib/auth';
 import { fluidAccessScope } from './model';
 import { fluidApi } from './api';
 import { useScopedNotifications } from '@/shared/hooks/useScopedNotifications';
+import { useCommandTransportLifetime } from '@/shared/hooks/useCommandTransportLifetime';
 export const fluidKeys = {
   root: ['fluid-observations'],
   scope: (proof = getV2ClientScopeKey()) => ['fluid-observations', proof],
@@ -34,6 +35,7 @@ export function useFluidWrite(operation, patientId) {
   const capture = useScopedNotifications(proof);
   const [state, set] = useReducer(reducer, { busy: false, unknown: false, saved: null, error: null });
   const frozen = useRef(null); const pending = useRef(null); const mounted = useRef(true); const client = useQueryClient();
+  useCommandTransportLifetime(pending, () => { if (!state.saved) set({ busy: false, unknown: true, error: new Error('The sign-in proof changed while this request was pending. Check the original observation or explicitly retry the unchanged request.') }); });
   useLayoutEffect(() => { mounted.current = true; return () => { mounted.current = false; pending.current?.abort(); }; }, []);
   const refresh = () => { void client.invalidateQueries({ queryKey: [...fluidKeys.scope(proof), 'source'] }); void client.invalidateQueries({ queryKey: [...fluidKeys.scope(proof), 'history'] }); void client.invalidateQueries({ queryKey: [...fluidKeys.scope(proof), 'assessment'] }); void client.invalidateQueries({ queryKey: patientId ? fluidKeys.patient(patientId, proof) : fluidKeys.scope(proof) }); void client.invalidateQueries({ queryKey: nursingKeys.fluidBalanceAll() }); void client.invalidateQueries({ queryKey: nursingKeys.fluidBalanceSummaryAll() }); void client.invalidateQueries({ queryKey: nursingKeys.fluidBalanceTrendsAll() }); void client.invalidateQueries({ queryKey: nursingKeys.fluidBalanceTodayAll() }); void client.invalidateQueries({ queryKey: nursingKeys.patientMonitoringAll() }); void client.invalidateQueries({ queryKey: ['ward-board'] }); };
   const submit = async (...args) => {
@@ -43,7 +45,7 @@ export function useFluidWrite(operation, patientId) {
     const controller = new AbortController(); pending.current = controller; set({ busy: true, error: null });
     try { const saved = await fluidApi[operation](...frozen.current, { signal: controller.signal }); if (!mounted.current || !lease.isCurrent()) return null; set({ saved, unknown: false }); refresh(); return saved; }
     catch (error) { if (mounted.current && lease.isCurrent()) { set({ error, unknown: state.unknown || error.name === 'FluidWriteUnconfirmedError' }); refresh(); } return null; }
-    finally { pending.current = null; if (mounted.current && lease.isCurrent()) set({ busy: false }); }
+    finally { if (pending.current === controller) pending.current = null; if (mounted.current && lease.isCurrent()) set({ busy: false }); }
   };
   const reset = () => { if (!state.saved || pending.current) return; frozen.current = null; set({ busy: false, unknown: false, saved: null, error: null }); };
   return { ...state, submit, refresh, reset };

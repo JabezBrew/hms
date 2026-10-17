@@ -21,7 +21,7 @@ export function useNetworkPolicyChange({ user, policy, reauthenticate }) {
   const finish = () => { pending.current = null; if (mounted.current) set({ busy: false }); };
   const authenticate = async (password, controller) => {
     if (!password) throw new Error('Confirm your current password to review this change.');
-    const authenticated = await reauthenticate(user.email, password, user.facilityCode);
+    const authenticated = await reauthenticate(user.email, password, user.facilityCode, { signal: controller.signal });
     if (controller.signal.aborted) return false;
     assertNetworkAuthority(user, authenticated);
     const decision = await networkApi.current({ signal: controller.signal });

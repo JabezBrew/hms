@@ -1,6 +1,6 @@
 # Python to Rust and UI feature parity
 
-Updated: 2026-10-16. Scope: the user's expanded request for all phases after the
+Updated: 2026-10-17. Scope: the user's expanded request for all phases after the
 phase-one release. This ledger extends `v2-cutover-scope.md`; its old baseline
 labels are historical evidence, not a claim that all Python workflows work in
 the Rust UI. Python is a behavior reference; Rust access and PHI contracts win
@@ -46,9 +46,9 @@ also need configured sandbox validation before they can be described as working.
 | Workflow | Evidence | Required work | Status |
 | --- | --- | --- | --- |
 | Grant revocation | Python `organization/views.py`; Rust admin list/create + expiry queries | Append-safe authority/permission/delegation ending, permission-version invalidation and immediate request denial. Socket reauthorization remains a realtime slice. | request lifecycle implemented in third checkpoint; realtime queued |
-| Organization lifecycle/membership | Python clinical units/members/coverage; UI `organization.js` | Audited unit updates/activation and hierarchy constraints, scoped membership/coverage; replace empty-array placeholders only when real contracts exist. | queued |
+| Organization lifecycle/membership | Python clinical units/members/coverage; UI `organization.js` | Audited unit updates/activation and hierarchy constraints, scoped membership/coverage; replace empty-array placeholders only when real contracts exist. | twelfth checkpoint adds active/local parent, position/template reference and scoped projection protection; lifecycle/membership remains queued |
 | Account setup/reset delivery | Rust `state.rs` delivery interfaces / reset request | Trusted reset adapter, bounded asynchronous delivery, no raw-token persistence/logging, account-locked all-link invalidation and stale-proof fencing. Durable retries and actual configured provider delivery still require work. | adapter/lifecycle implemented; external sandbox and durable delivery queued |
-| Strong authentication | Python MFA flow; Rust enrollment primitives | Verified second-factor login/recovery and fresh privileged proof; enrollment alone is insufficient. | existing ceremony exact-session/clock/atomicity hardening in eleventh checkpoint; genuine MFA login/recovery/step-up and bounded credential/challenge management remain queued |
+| Strong authentication | Python MFA flow; Rust enrollment primitives | Verified second-factor login/recovery and fresh privileged proof; enrollment alone is insufficient. | genuine signed factor login/recovery/step-up, restricted first setup, credential management and privileged workflow protection implemented in twelfth checkpoint; frozen local acceptance passed (689 Rust / 2,202 frontend / 40 native HTTP checks); the earlier isolated fresh-proof rejection remains under diagnostic follow-up; TOTP, physical authenticator/browser and staging evidence remain separate |
 | Offsite network policy | Python `core/models.py`; Rust extractor header facts | Trusted-proxy-derived client provenance, CIDR policy, deny/read-only decisions and facility administration. Never trust caller-supplied location headers. Caller headers are no longer authority. Actual socket/trusted-proxy facts and current facility policy govern protected reads and writes; policy publication fences server-authorized and client-reviewed versions under lock. | implemented; sixth checkpoint local Rust/frontend/HTTP/proxy acceptance; browser/staging pending |
 | Continuous realtime | Python Channels; Rust dashboard upgrade sends initial delta then ends | Persistent bounded fanout, channel visibility, reauthorization/version changes, disconnect/backpressure/reconnect tests; polling remains fallback. | queued |
 | Audit investigation | Python `audit/views.py`; Rust admin bounded list | Filter/statistics parity; export only through governed minimal async/download contract, never historical broad PHI CSV. | queued |
@@ -63,6 +63,7 @@ also need configured sandbox validation before they can be described as working.
 | Inventory item/location administration | Python inventory; Rust read surfaces | Governed create/update/deactivate, stock/history constraints and audits; catalog correction is a narrower phase-2 slice. | queued |
 | GRN/procurement/transfers | Python inventory; Rust limited transitions | GRN item correction/rejection, requisition-to-order conversion and explicit transfer lifecycle, concurrency and stock conservation. | queued |
 | Standing orders | Rust previously created metadata and generated empty drafts; legacy UI expects recurring items | Versioned recurring-item payload, populated requisitions and conserved stock issue. Scheduled automatic generation remains separate. | explicit templates/approval/full stock issue implemented; automatic scheduler queued |
+| Controlled-stock integrity | Rust controlled register/count/movement and active UI adapters | Active local location/witness, coupled physical/register evidence, serialized movement and single-dispatch errors; no inferred opening balance. | twelfth checkpoint fixes eligibility, drift refusal and unsafe frontend retry; governed reconciliation, cryptographic witness attestation and UUID receipts remain queued; frozen local acceptance passed |
 | Catalog versions | Rust stores future versions but reads current item; no activation worker/history API | Version history/conflicts and deterministic future activation before offering scheduled edits. | queued |
 
 ## Phase 6: scheduling, laboratory, configurable charting

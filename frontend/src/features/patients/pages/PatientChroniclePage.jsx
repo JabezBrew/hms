@@ -115,7 +115,7 @@ function usePatientChroniclePageModel(defaultAction) {
   const { id } = useParams();
   const navigate = useNavigate();
   const { pathname, search } = useLocation();
-  const { user, login, loading: authLoading } = useAuth();
+  const { user, login, reauthenticate, loading: authLoading } = useAuth();
   const { data: deploymentCapabilities } = useSystemCapabilities({ enabled: !authLoading });
   const queryClient = useQueryClient();
   const [activeFilter, setActiveFilter] = useState('all');
@@ -399,7 +399,7 @@ function usePatientChroniclePageModel(defaultAction) {
     rustV2Mode,
     startupError,
     user,
-    reauthenticate: login,
+    reauthenticate: rustV2Mode ? reauthenticate || login : login,
     accessSource: chronicleContext?.access_source,
   });
 
