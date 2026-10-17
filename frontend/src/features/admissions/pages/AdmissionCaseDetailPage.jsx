@@ -18,6 +18,8 @@ import { usePageMeta } from '@/shared/hooks/usePageMeta'
 import { useAuth } from '@/lib/auth'
 import { usePatient } from '@/features/patients/hooks/usePatientQueries'
 import { isRustV2ApiMode } from '@/lib/api/v2/runtime'
+import { canUseAdmissionAdvisories } from '@/features/admissions/advisory/access'
+import { uuid } from '@/features/admissions/advisory/model'
 import {
   useAdmissionCase,
   useActivateAdmissionCase,
@@ -62,13 +64,14 @@ function getUserCapabilities(user) {
   ])
 }
 
-function AdmissionCaseHeaderActions({ admissionCase, cancelCase, onNavigate }) {
+function AdmissionCaseHeaderActions({ admissionCase, cancelCase, onNavigate, canFollowUp }) {
   return (
     <div className="flex flex-wrap gap-2">
       <Button variant="outline" size="sm" onClick={() => onNavigate('/admissions/requests')}>
         <ChevronLeft className="mr-2 size-4" />
         Admissions
       </Button>
+      {canFollowUp && <Button variant="outline" size="sm" onClick={() => onNavigate(`/patients/${encodeURIComponent(admissionCase.patient)}/chronicle?${new URLSearchParams({ action: 'admission_follow_up', admission: admissionCase.id, visit: 'all' }).toString()}`)}>Admission follow-up</Button>}
       {admissionCase.admission_id && (
         <Button variant="outline" size="sm" onClick={() => onNavigate(`/admissions/${admissionCase.admission_id}`)}>
           Active Stay
@@ -329,7 +332,7 @@ function AdmissionTasksCard({
           <ClipboardList className="size-5" />
           Tasks
         </CardTitle>
-        <CardDescription>Blocking tasks must clear before activation or intake completion. Advisory tasks stay visible but do not block.</CardDescription>
+        <CardDescription>{admissionTaskMutationsAvailable ? 'Blocking tasks must clear before activation or intake completion. Advisory tasks stay visible but do not block.' : 'System clearance and intake tasks remain separate from nonblocking admission follow-up in Patient Chronicle.'}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         {!admissionTaskMutationsAvailable && <AdmissionTaskReviewNotice />}
@@ -460,6 +463,7 @@ export default function AdmissionCaseDetailPage() {
         actions={(
           <AdmissionCaseHeaderActions
             admissionCase={admissionCase}
+            canFollowUp={isRustV2ApiMode() && uuid(admissionCase.id) && uuid(admissionCase.patient) && canUseAdmissionAdvisories(user, user?.accessContext?.patient_visibility?.includes('full_clinical'))}
             cancelCase={cancelCase}
             onNavigate={navigate}
           />

@@ -1,0 +1,8 @@
+import { Button } from '@/components/ui/button';
+import { AdvisoryEvidence } from './AdvisoryEvidence';
+import { ADVISORY_TYPES, DECISIONS } from './model';
+export function AdvisoryResult({ command, canWrite, onCurrent }) {
+  if (command.saved) return <div className="space-y-4"><p role="status" className="rounded-lg border bg-muted/20 p-4 text-sm">Follow-up change recorded. This is the original saved result; current status may have changed later.</p><AdvisoryEvidence value={command.saved.advisory} title="Original saved result" />{command.refreshFailed && <p role="alert" className="text-sm">The change is confirmed, but current follow-up records could not refresh.</p>}<Button type="button" variant="outline" onClick={onCurrent}>Review current follow-up</Button></div>;
+  const original = command.frozen;
+  return <section className="space-y-4 rounded-xl border p-4"><h3 className="font-medium">Save status unknown</h3><p role="alert" className="text-sm leading-6">{command.error}</p>{original && <div className="space-y-2 text-sm"><p className="font-medium">Unchanged reviewed request · {original.kind === 'create' ? ADVISORY_TYPES[original.payload.task_type] : DECISIONS[original.payload.decision]}</p><p className="whitespace-pre-wrap break-words">{original.kind === 'create' ? original.payload.notes : original.payload.reason || 'No completion note'}</p></div>}<div className="flex flex-wrap gap-2"><Button type="button" variant="outline" disabled={command.pending} onClick={() => command.run(null, true)}>Check original saved result</Button><Button type="button" variant="outline" disabled={command.pending || !canWrite} onClick={() => command.run()}>Retry exact reviewed request</Button></div></section>;
+}

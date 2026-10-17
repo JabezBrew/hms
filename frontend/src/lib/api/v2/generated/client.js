@@ -1951,6 +1951,56 @@ export const operations = {
     ],
     "hasBody": false
   },
+  "getPatientChronicleAdmissionAdvisories": {
+    "operationId": "getPatientChronicleAdmissionAdvisories",
+    "method": "GET",
+    "path": "/api/v2/patients/{patient_id}/chronicle/admissions/{case_id}/advisories",
+    "pathParamNames": [
+      "patient_id",
+      "case_id"
+    ],
+    "queryParamNames": [],
+    "hasBody": false
+  },
+  "getPatientChronicleAdmissionAdvisory": {
+    "operationId": "getPatientChronicleAdmissionAdvisory",
+    "method": "GET",
+    "path": "/api/v2/patients/{patient_id}/chronicle/admissions/{case_id}/advisories/{advisory_id}",
+    "pathParamNames": [
+      "patient_id",
+      "case_id",
+      "advisory_id"
+    ],
+    "queryParamNames": [],
+    "hasBody": false
+  },
+  "getPatientChronicleAdmissionAdvisoryCases": {
+    "operationId": "getPatientChronicleAdmissionAdvisoryCases",
+    "method": "GET",
+    "path": "/api/v2/patients/{patient_id}/chronicle/admission-advisory-cases",
+    "pathParamNames": [
+      "patient_id"
+    ],
+    "queryParamNames": [
+      "cursor",
+      "limit",
+      "include_closed",
+      "status"
+    ],
+    "hasBody": false
+  },
+  "getPatientChronicleAdmissionAdvisoryRequest": {
+    "operationId": "getPatientChronicleAdmissionAdvisoryRequest",
+    "method": "GET",
+    "path": "/api/v2/patients/{patient_id}/chronicle/admissions/{case_id}/advisories/requests/{request_id}",
+    "pathParamNames": [
+      "patient_id",
+      "case_id",
+      "request_id"
+    ],
+    "queryParamNames": [],
+    "hasBody": false
+  },
   "getPatientChronicleCurrentWardRound": {
     "operationId": "getPatientChronicleCurrentWardRound",
     "method": "GET",
@@ -4215,6 +4265,29 @@ export const operations = {
     "queryParamNames": [],
     "hasBody": true
   },
+  "postPatientChronicleAdmissionAdvisory": {
+    "operationId": "postPatientChronicleAdmissionAdvisory",
+    "method": "POST",
+    "path": "/api/v2/patients/{patient_id}/chronicle/admissions/{case_id}/advisories",
+    "pathParamNames": [
+      "patient_id",
+      "case_id"
+    ],
+    "queryParamNames": [],
+    "hasBody": true
+  },
+  "postPatientChronicleAdmissionAdvisoryDecision": {
+    "operationId": "postPatientChronicleAdmissionAdvisoryDecision",
+    "method": "POST",
+    "path": "/api/v2/patients/{patient_id}/chronicle/admissions/{case_id}/advisories/{advisory_id}/decision",
+    "pathParamNames": [
+      "patient_id",
+      "case_id",
+      "advisory_id"
+    ],
+    "queryParamNames": [],
+    "hasBody": true
+  },
   "postPatientChronicleWardRoundActions": {
     "operationId": "postPatientChronicleWardRoundActions",
     "method": "POST",
@@ -5006,6 +5079,10 @@ export function createGeneratedClient(request) {
     getPatientById: createOperation(request, operations.getPatientById),
     getPatientChartEntries: createOperation(request, operations.getPatientChartEntries),
     getPatientChronicle: createOperation(request, operations.getPatientChronicle),
+    getPatientChronicleAdmissionAdvisories: createOperation(request, operations.getPatientChronicleAdmissionAdvisories),
+    getPatientChronicleAdmissionAdvisory: createOperation(request, operations.getPatientChronicleAdmissionAdvisory),
+    getPatientChronicleAdmissionAdvisoryCases: createOperation(request, operations.getPatientChronicleAdmissionAdvisoryCases),
+    getPatientChronicleAdmissionAdvisoryRequest: createOperation(request, operations.getPatientChronicleAdmissionAdvisoryRequest),
     getPatientChronicleCurrentWardRound: createOperation(request, operations.getPatientChronicleCurrentWardRound),
     getPatientChroniclePrint: createOperation(request, operations.getPatientChroniclePrint),
     getPatientChronicleTimeline: createOperation(request, operations.getPatientChronicleTimeline),
@@ -5231,6 +5308,8 @@ export function createGeneratedClient(request) {
     postPatientBreakGlass: createOperation(request, operations.postPatientBreakGlass),
     postPatientBreakGlassEnd: createOperation(request, operations.postPatientBreakGlassEnd),
     postPatientChartEntries: createOperation(request, operations.postPatientChartEntries),
+    postPatientChronicleAdmissionAdvisory: createOperation(request, operations.postPatientChronicleAdmissionAdvisory),
+    postPatientChronicleAdmissionAdvisoryDecision: createOperation(request, operations.postPatientChronicleAdmissionAdvisoryDecision),
     postPatientChronicleWardRoundActions: createOperation(request, operations.postPatientChronicleWardRoundActions),
     postPatientChronicleWardRoundCommit: createOperation(request, operations.postPatientChronicleWardRoundCommit),
     postPatientChronicleWardRoundDraft: createOperation(request, operations.postPatientChronicleWardRoundDraft),

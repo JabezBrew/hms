@@ -58,6 +58,33 @@ impl axum::extract::FromRequest<AppState> for EmptyNursingDecisionBody {
     }
 }
 
+/// Existing closure operations do not persist submitted narrative or reason fields.
+pub struct EmptyAdmissionClosureBody;
+#[async_trait::async_trait]
+impl axum::extract::FromRequest<AppState> for EmptyAdmissionClosureBody {
+    type Rejection = ApiError;
+    async fn from_request(
+        request: axum::extract::Request,
+        state: &AppState,
+    ) -> Result<Self, ApiError> {
+        let invalid = || {
+            ApiError::bad_request(
+                "invalid_admission_closure_request",
+                "This admission closure accepts no additional fields.",
+            )
+        };
+        let body = <axum::body::Bytes as axum::extract::FromRequest<AppState>>::from_request(
+            request, state,
+        )
+        .await
+        .map_err(|_| invalid())?;
+        if !body.is_empty() {
+            return Err(invalid());
+        }
+        Ok(Self)
+    }
+}
+
 #[utoipa::path(
     get,
     path = "/api/v2/wards",
@@ -984,6 +1011,7 @@ pub async fn activate_admission_case(
     params(("id" = Uuid, Path, description = "Admission case id")),
     responses(
         (status = 200, description = "Admission case cancelled", body = ObjectResponse<AdmissionCaseListItem>),
+        (status = 400, description = "This command accepts no additional fields", body = ApiErrorResponse),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Permission denied", body = ApiErrorResponse),
         (status = 404, description = "Admission case not found", body = ApiErrorResponse),
@@ -992,14 +1020,15 @@ pub async fn activate_admission_case(
 )]
 pub async fn cancel_admission_case(
     State(state): State<AppState>,
-    RequestContext(user): RequestContext,
+    proof: crate::extractors::NetworkContext,
     Path(id): Path<Uuid>,
+    _body: EmptyAdmissionClosureBody,
 ) -> Result<Json<ObjectResponse<AdmissionCaseListItem>>, ApiError> {
     Ok(Json(
         state
             .ward_services()
             .admission_cases()
-            .cancel_admission_case(&user, id)
+            .cancel_admission_case(&proof.context, id, proof.authorization_deadline)
             .await?,
     ))
 }
@@ -1251,21 +1280,24 @@ pub async fn override_discharge_blocker(
     params(("id" = Uuid, Path, description = "Discharge case id")),
     responses(
         (status = 200, description = "Discharge completed", body = ObjectResponse<DischargeCaseListItem>),
+        (status = 400, description = "This command accepts no additional fields", body = ApiErrorResponse),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Permission denied", body = ApiErrorResponse),
-        (status = 404, description = "Discharge not found", body = ApiErrorResponse)
+        (status = 404, description = "Discharge not found", body = ApiErrorResponse),
+        (status = 409, description = "Open source blockers or unconfirmed completion", body = ApiErrorResponse)
     )
 )]
 pub async fn complete_discharge(
     State(state): State<AppState>,
-    RequestContext(user): RequestContext,
+    proof: crate::extractors::NetworkContext,
     Path(id): Path<Uuid>,
+    _body: EmptyAdmissionClosureBody,
 ) -> Result<Json<ObjectResponse<DischargeCaseListItem>>, ApiError> {
     Ok(Json(
         state
             .ward_services()
             .discharge_cases()
-            .complete_discharge(&user, id)
+            .complete_discharge(&proof.context, id, proof.authorization_deadline)
             .await?,
     ))
 }

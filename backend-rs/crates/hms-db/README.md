@@ -31,6 +31,7 @@ interfaces for workflow projections; handlers should not run SQL directly.
 | `scheduling.rs` | scheduling services, sessions, templates, availability |
 | `search.rs` | omni-search projections |
 | `ward/` | ward admin, admissions, bed management, discharges, handoff, MAR, nursing tasks, monitoring, ward stock |
+| `ward/admission_advisories.rs` | current-ward follow-up, immutable terminal decisions and closure retirement |
 | `ward_rounds.rs` | ward-round persistence |
 | `ward_rounds/governed.rs` | proof-bearing complete-draft CAS, atomic commit and immutable Ward Round request receipts |
 
@@ -87,6 +88,15 @@ immutable original command results and human-readable reviewed source snapshots.
 Legacy plain helpers remain trusted fixture/import compatibility. See the
 [command scope](../../../docs/v2/2026-10-16-ward-round-command-scope.md) and focused
 `ward_round_commands`, `ward_rounds` and `medication_lifecycle` tests.
+
+## Admission follow-up
+
+`ward/admission_advisories.rs` owns proof-bearing nonblocking case follow-up and
+immutable actor-bound command recovery. Migration020 preserves separate manual
+and canonical closure outcomes; cancellation/discharge retire Pending children
+inside the existing parent transaction. See the
+[scope and compatibility](../../../docs/v2/2026-10-16-admission-advisory-scope.md)
+and focused `admission_advisories` repository tests.
 
 ## Clinical note evidence
 

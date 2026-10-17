@@ -18,6 +18,7 @@ export const chronicleWorkspaceIds = Object.freeze([
   'treatmentSheet',
   'fluids',
   'handover',
+  'admissionAdvisory',
   'trends',
   'insurance',
   'wardRound',
@@ -38,6 +39,7 @@ export const chronicleWorkspaceLoaders = Object.freeze({
   treatmentSheet: () => import('@/components/chronicle/TreatmentSheetSlideOver'),
   fluids: () => import('@/components/chronicle/AddFluidBalanceSlideOver'),
   handover: () => import('@/features/nursing/handover/PatientHandoverPanel'),
+  admissionAdvisory: () => import('@/features/admissions/advisory/AdmissionAdvisoryPanel'),
   trends: () => import('@/components/chronicle/TrendReviewSlideOver'),
   insurance: () => import('@/components/chronicle/PatientInsuranceSlideOver'),
   wardRound: () => import('@/components/chronicle/WardRoundSlideOver'),
@@ -224,6 +226,8 @@ export function buildChronicleWorkspaceProps(workspaceId, context) {
         clinicalPermissions: context.clinicalPermissions,
         onFluidRecorded,
       };
+    case 'admissionAdvisory':
+      return { open: true, onClose, patient, clinicalPermissions: context.clinicalPermissions, selectedAdmissionId: chronicleAllHistory ? null : selectedAdmissionId || null, allHistory: chronicleAllHistory === true, requestedCaseId: context.requestedAdvisoryCaseId || null };
     case 'handover':
       return { open: true, onClose, patient, admission: getChronicleAdmissionReference(patient, selectedAdmissionId), clinicalPermissions: context.clinicalPermissions };
     case 'trends':

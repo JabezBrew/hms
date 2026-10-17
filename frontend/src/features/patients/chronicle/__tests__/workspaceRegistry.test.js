@@ -27,6 +27,7 @@ describe('chronicle workspace registry', () => {
       'treatmentSheet',
       'fluids',
       'handover',
+      'admissionAdvisory',
       'trends',
       'insurance',
       'wardRound',

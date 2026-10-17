@@ -332,6 +332,21 @@ pub async fn complete_discharge(
     facility_id: Uuid,
     discharge_case_id: Uuid,
 ) -> anyhow::Result<Option<DischargeCaseListItem>> {
+    complete_discharge_inner(pool, facility_id, discharge_case_id, None).await
+}
+pub async fn complete_discharge_authorized(
+    pool: &PgPool,
+    actor: super::admission_advisories::AdmissionClosureActor,
+    discharge_case_id: Uuid,
+) -> anyhow::Result<Option<DischargeCaseListItem>> {
+    complete_discharge_inner(pool, actor.facility_id, discharge_case_id, Some(actor)).await
+}
+async fn complete_discharge_inner(
+    pool: &PgPool,
+    facility_id: Uuid,
+    discharge_case_id: Uuid,
+    mut actor: Option<super::admission_advisories::AdmissionClosureActor>,
+) -> anyhow::Result<Option<DischargeCaseListItem>> {
     let existing = get_discharge_case(pool, facility_id, discharge_case_id).await?;
     let Some(existing) = existing else {
         return Ok(None);
@@ -347,6 +362,21 @@ pub async fn complete_discharge(
     }
 
     let mut transaction = pool.begin().await?;
+    // Preserve canonical discharge -> admission -> bed ordering. The locked
+    // admission refreshes actual placement after waits before retiring children.
+    let source:Option<(Uuid,Uuid)>=sqlx::query_as("SELECT admission_case_id,patient_id FROM discharge_cases WHERE facility_id=$1 AND id=$2 AND status='requested' FOR UPDATE")
+        .bind(facility_id).bind(discharge_case_id).fetch_optional(&mut *transaction).await?;
+    let Some((admission_id, patient_id)) = source else {
+        return Ok(None);
+    };
+    let admission:Option<Uuid>=sqlx::query_scalar("SELECT id FROM admission_cases WHERE facility_id=$1 AND id=$2 AND patient_id=$3 FOR UPDATE")
+        .bind(facility_id).bind(admission_id).bind(patient_id).fetch_optional(&mut *transaction).await?;
+    if admission.is_none() {
+        return Ok(None);
+    }
+    if let Some(actor) = actor.as_mut() {
+        super::admission_advisories::verify_closure(&mut transaction, actor).await?;
+    }
     let row = observe_db_query(
         "ward.discharge_cases.complete.mark_discharge",
         sqlx::query_as::<_, DischargeCompletionContextRow>(
@@ -420,6 +450,17 @@ pub async fn complete_discharge(
         .await?;
     }
 
+    super::admission_advisories::retire_pending(
+        &mut transaction,
+        facility_id,
+        row.admission_case_id,
+        actor.as_ref(),
+        hms_domain::admission_advisories::AdmissionAdvisorySystemReason::AdmissionDischarged,
+    )
+    .await?;
+    if let Some(actor) = actor.as_ref() {
+        super::admission_advisories::closure_deadline(&mut transaction, actor).await?;
+    }
     transaction.commit().await?;
     Ok(Some(
         discharge_item_by_admission(pool, facility_id, row.admission_case_id).await?,

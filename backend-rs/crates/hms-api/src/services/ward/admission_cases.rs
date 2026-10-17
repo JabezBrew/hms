@@ -324,26 +324,21 @@ impl AdmissionCasesService {
         &self,
         ctx: &hms_access::RequestContext,
         id: Uuid,
+        deadline: DateTime<Utc>,
     ) -> Result<ObjectResponse<AdmissionCaseListItem>, ApiError> {
-        common::require_facility_permission(
+        common::require_patient_workflow_access(
             ctx,
             self.state.facility_id(),
             PermissionCode::AdmissionManage,
         )?;
         let _existing = common::load_admission_case_for_access(&self.state, ctx, id).await?;
-        let admission_case = hms_db::ward::cancel_admission_case(
+        let admission_case = hms_db::ward::cancel_admission_case_authorized(
             self.state.db_pool(),
-            self.state.facility_id(),
+            super::admission_advisories::closure_actor(ctx, self.state.facility_id(), deadline),
             id,
-            ctx.user_id,
         )
         .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "admission_case_cancel_failed",
-                "Admission case could not be cancelled.",
-            )
-        })?
+        .map_err(|e| super::admission_advisories::map_error(e, true))?
         .ok_or_else(|| {
             ApiError::conflict(
                 "admission_case_cancel_failed",

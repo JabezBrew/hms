@@ -15,6 +15,7 @@ repositories should exchange domain types instead of ad hoc JSON shapes.
 | File | Product area |
 | --- | --- |
 | `admin.rs` | organization units, positions, authority, permissions, staff/practitioners |
+| `admission_advisories.rs` | nonblocking admission follow-up, captured evidence and original command receipts |
 | `auth.rs` | auth/session-facing domain types |
 | `billing.rs` | invoices, payments, receipts, NHIS, cash controls |
 | `capabilities.rs` | feature keys and capability registry |

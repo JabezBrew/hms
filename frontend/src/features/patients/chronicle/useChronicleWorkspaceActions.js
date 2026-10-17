@@ -52,6 +52,7 @@ export function useChronicleWorkspaceActions({
   const [editNoteData, setEditNoteData] = useState(null);
   const [trendReviewTab, setTrendReviewTab] = useState('vitals');
   const handleViewPatientHandover = useCallback(() => openChronicleWorkspace('handover'), [openChronicleWorkspace]);
+  const handleViewAdmissionFollowUp = useCallback(() => openChronicleWorkspace('admissionAdvisory'), [openChronicleWorkspace]);
 
   const refreshData = useCallback(() => {
     if (rustV2Mode) {
@@ -277,6 +278,7 @@ export function useChronicleWorkspaceActions({
     copyForwardData,
     editNoteData,
     noteDraft: workspaceOptions?.noteDraft || null,
+    requestedAdvisoryCaseId: workspaceOptions?.advisoryCaseId || null,
     requestedDischargeAdmissionId,
     requestedTreatmentSheetAdmissionId,
     mobileContext: mobileWorkspaceContext,
@@ -335,6 +337,7 @@ export function useChronicleWorkspaceActions({
     handleViewMedicationHistory,
     handleViewTreatmentSheet,
     handleViewPatientHandover,
+    handleViewAdmissionFollowUp,
     handleViewTrends,
     refreshData,
     workspaceContext,

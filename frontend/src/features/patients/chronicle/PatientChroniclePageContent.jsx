@@ -13,6 +13,7 @@ import { useAfterInitialPaint } from '@/shared/hooks/useAfterInitialPaint';
 import { ChronicleEmergencyAccess } from './ChronicleEmergencyAccess';
 import { PrescriptionPatientProvider } from '@/features/pharmacy/prescribing/PrescriptionPatientProvider';
 import { userHasCapability } from '@/shared/lib/access';
+import { canUseAdmissionAdvisories } from '@/features/admissions/advisory/access';
 
 const ClinicalSummarySidebar = lazy(() => import('@/components/chronicle/ClinicalSummarySidebar'));
 const ChronicleTimelinePanel = lazy(() => import('@/features/patients/chronicle/ChronicleTimelinePanel'));
@@ -273,6 +274,7 @@ export function PatientChroniclePageContent({
     handleViewMedicationHistory,
     handleViewTreatmentSheet,
     handleViewPatientHandover,
+    handleViewAdmissionFollowUp,
     handleViewTrends,
     refreshData,
     workspaceContext,
@@ -332,6 +334,7 @@ export function PatientChroniclePageContent({
             onReceiveRecord={fullClinical ? handleReceiveRecord : undefined}
             onScheduleFollowUp={handleScheduleFollowUp}
             onViewTreatmentSheet={fullClinical && nursing ? handleViewTreatmentSheet : undefined}
+            onViewAdmissionFollowUp={rustV2Mode && canUseAdmissionAdvisories(user, fullClinical) ? handleViewAdmissionFollowUp : undefined}
             onViewPatientHandover={rustV2Mode && fullClinical && userHasCapability(user, 'nursing.task.manage') && user?.accessContext?.features?.includes('nursing') ? handleViewPatientHandover : undefined}
             onViewMedicationHistory={fullClinical && nursing ? handleViewMedicationHistory : undefined}
             onRecordFluids={fullClinical && nursing ? handleRecordFluids : undefined}

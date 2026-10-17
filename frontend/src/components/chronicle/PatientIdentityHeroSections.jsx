@@ -323,6 +323,7 @@ function MoreActionsMenu({ actions, activeAdmission, prefetchAction }) {
             Fluid Balance
           </DropdownMenuItem>
         )}
+        {actions.onViewAdmissionFollowUp && <DropdownMenuItem onClick={actions.onViewAdmissionFollowUp}>Admission follow-up</DropdownMenuItem>}
         {actions.onViewPatientHandover && <DropdownMenuItem onClick={actions.onViewPatientHandover}>Patient handover</DropdownMenuItem>}
         {activeAdmission && actions.onStartWardRound && (
           <>

@@ -1,9 +1,10 @@
-import { render, screen } from '@testing-library/react';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { fireEvent, render, screen } from '@testing-library/react';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { useAuth } from '@/lib/auth';
 import AdmissionCaseDetailPage from '../AdmissionCaseDetailPage';
+import { user as advisoryUser, patientId as advisoryPatient, caseId as advisoryCase } from '../../advisory/__tests__/fixtures';
 
 const baseAdmissionCase = {
   id: 'case-1',
@@ -88,11 +89,14 @@ vi.mock('@/features/admissions/hooks/useAdmissionCaseQueries', () => ({
   useAcknowledgeAdmissionTask: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }));
 
+function ChronicleLocation() { const location = useLocation(); return <div data-testid="chronicle-location">{location.pathname}{location.search}</div>; }
+
 function renderPage() {
   return render(
     <MemoryRouter initialEntries={['/admissions/cases/case-1']}>
       <Routes>
         <Route path="/admissions/cases/:caseId" element={<AdmissionCaseDetailPage />} />
+        <Route path="/patients/:id/chronicle" element={<ChronicleLocation />} />
       </Routes>
     </MemoryRouter>,
   );
@@ -123,6 +127,19 @@ describe('AdmissionCaseDetailPage Rust V2 guards', () => {
       screen.getByText(/admission task clearance and intake completion are not available for this deployment yet/i),
     ).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /cancel case/i })).toBeInTheDocument();
+  });
+
+  it('hands off the exact Ready case to Chronicle for explicitly authorized full clinical users', () => {
+    window.__HMS_RUNTIME_CONFIG__ = { apiMode: 'rust-v2' };
+    mockAdmissionCase = { ...baseAdmissionCase, id: advisoryCase, patient: advisoryPatient, status: 'ready_for_activation', tasks: [] };
+    useAuth.mockReturnValue({ user: advisoryUser }); renderPage(); fireEvent.click(screen.getByRole('button', { name: 'Admission follow-up' }));
+    const destination = new URL(screen.getByTestId('chronicle-location').textContent, 'http://localhost');
+    expect(destination.pathname).toBe(`/patients/${advisoryPatient}/chronicle`); expect(destination.searchParams.get('admission')).toBe(advisoryCase); expect(destination.searchParams.get('visit')).toBe('all'); expect(destination.searchParams.get('action')).toBe('admission_follow_up');
+  });
+
+  it('does not infer a follow-up launch from an admin role or Summary visibility', () => {
+    window.__HMS_RUNTIME_CONFIG__ = { apiMode: 'rust-v2' };
+    useAuth.mockReturnValue({ user: { ...advisoryUser, role: 'admin', accessContext: { ...advisoryUser.accessContext, patient_visibility: ['clinical_summary'] } } }); renderPage(); expect(screen.queryByRole('button', { name: 'Admission follow-up' })).not.toBeInTheDocument();
   });
 
   it('keeps task workflow controls available outside Rust V2 mode', () => {

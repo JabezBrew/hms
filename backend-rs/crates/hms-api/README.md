@@ -40,6 +40,7 @@ IDs.
 | `routes/care.rs` | appointments, clinics, visits, triage, encounters | `handlers/care.rs` | `services/care.rs` |
 | `routes/clinical.rs` | note templates, notes, problems, allergies, prescriptions, chart entries | `handlers/clinical.rs` | `services/clinical.rs` |
 | `routes/ward.rs` | wards, sections, beds, admissions, discharges, nursing, ward stock | `handlers/ward.rs`, `handlers/ward_rounds.rs` | `services/ward/*` |
+| `routes/admission_advisories.rs` | Chronicle admission follow-up, protected evidence and original receipts | `handlers/admission_advisories.rs` | `services/ward/admission_advisories.rs` |
 | `routes/laboratory.rs` | catalog, panels, orders, specimens, results | `handlers/laboratory.rs` | `services/laboratory/*` |
 | `routes/inventory.rs` | items, locations, stock, requisitions, procurement, controlled substances, dispensing | `handlers/inventory.rs` | `services/inventory/*` |
 | `routes/billing.rs` | service catalog, invoices, payments, receipts, cash sessions, NHIS | `handlers/billing.rs` | `services/billing/*` |

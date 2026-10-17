@@ -534,6 +534,31 @@ pub async fn cancel_admission_case(
     admission_case_id: Uuid,
     actor_user_id: Uuid,
 ) -> anyhow::Result<Option<AdmissionCaseListItem>> {
+    cancel_admission_case_inner(pool, facility_id, admission_case_id, actor_user_id, None).await
+}
+
+pub async fn cancel_admission_case_authorized(
+    pool: &PgPool,
+    actor: super::admission_advisories::AdmissionClosureActor,
+    admission_case_id: Uuid,
+) -> anyhow::Result<Option<AdmissionCaseListItem>> {
+    cancel_admission_case_inner(
+        pool,
+        actor.facility_id,
+        admission_case_id,
+        actor.user_id,
+        Some(actor),
+    )
+    .await
+}
+
+async fn cancel_admission_case_inner(
+    pool: &PgPool,
+    facility_id: Uuid,
+    admission_case_id: Uuid,
+    actor_user_id: Uuid,
+    mut actor: Option<super::admission_advisories::AdmissionClosureActor>,
+) -> anyhow::Result<Option<AdmissionCaseListItem>> {
     let mut transaction = pool.begin().await?;
     let case = observe_db_query(
         "ward.admission_cases.cancel.select_case",
@@ -559,6 +584,9 @@ pub async fn cancel_admission_case(
     let Some(case) = case else {
         return Ok(None);
     };
+    if let Some(actor) = actor.as_mut() {
+        super::admission_advisories::verify_closure(&mut transaction, actor).await?;
+    }
     if case.status != codec::encode(AdmissionStatus::ReadyForActivation)? {
         return Ok(None);
     }
@@ -607,6 +635,17 @@ pub async fn cancel_admission_case(
     )
     .await?;
 
+    super::admission_advisories::retire_pending(
+        &mut transaction,
+        facility_id,
+        case.id,
+        actor.as_ref(),
+        hms_domain::admission_advisories::AdmissionAdvisorySystemReason::AdmissionCaseCancelled,
+    )
+    .await?;
+    if let Some(actor) = actor.as_ref() {
+        super::admission_advisories::closure_deadline(&mut transaction, actor).await?;
+    }
     transaction.commit().await?;
     optional_admission_case_by_id(pool, facility_id, case.id).await
 }

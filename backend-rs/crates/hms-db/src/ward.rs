@@ -2,6 +2,7 @@ use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
 mod admin;
+pub mod admission_advisories;
 mod admission_cases;
 mod analytics;
 mod bed_management;
@@ -23,9 +24,10 @@ pub use admin::{
     WardSectionUpdate, WardUpdate,
 };
 pub use admission_cases::{
-    activate_admission_case, admit_patient, cancel_admission_case, create_admission_case,
-    get_admission_case, get_admission_context, get_ward_board_admission, list_admission_cases,
-    list_ward_board, reserve_admission_bed, AdmissionContext, NewAdmission, NewAdmissionCase,
+    activate_admission_case, admit_patient, cancel_admission_case,
+    cancel_admission_case_authorized, create_admission_case, get_admission_case,
+    get_admission_context, get_ward_board_admission, list_admission_cases, list_ward_board,
+    reserve_admission_bed, AdmissionContext, NewAdmission, NewAdmissionCase,
 };
 pub use analytics::ward_analytics;
 pub use bed_management::{
@@ -33,8 +35,9 @@ pub use bed_management::{
     release_cleaned_beds, update_bed, BedUpdate, NewBed,
 };
 pub use discharge_cases::{
-    cancel_discharge, complete_discharge, get_discharge_case, hold_discharge_blocker,
-    list_discharge_cases, override_discharge_blocker, record_nursing_release, request_discharge,
+    cancel_discharge, complete_discharge, complete_discharge_authorized, get_discharge_case,
+    hold_discharge_blocker, list_discharge_cases, override_discharge_blocker,
+    record_nursing_release, request_discharge,
 };
 pub use fluid::*;
 pub use handoff::{

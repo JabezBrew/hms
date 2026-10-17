@@ -1,4 +1,4 @@
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use hms_domain::care::CursorListQuery;
 use hms_domain::deployment::PermissionCode;
 use hms_domain::ward::{
@@ -365,8 +365,9 @@ impl DischargeCasesService {
         &self,
         ctx: &hms_access::RequestContext,
         id: Uuid,
+        deadline: DateTime<Utc>,
     ) -> Result<ObjectResponse<DischargeCaseListItem>, ApiError> {
-        common::require_facility_permission(
+        common::require_patient_workflow_access(
             ctx,
             self.state.facility_id(),
             PermissionCode::AdmissionManage,
@@ -382,18 +383,14 @@ impl DischargeCasesService {
                 })?;
         let _patient =
             common::load_patient_for_access(&self.state, ctx, existing.patient_id).await?;
-        let discharge =
-            hms_db::ward::complete_discharge(self.state.db_pool(), self.state.facility_id(), id)
-                .await
-                .map_err(|_| {
-                    ApiError::conflict(
-                        "discharge_complete_failed",
-                        "Discharge could not be completed.",
-                    )
-                })?
-                .ok_or_else(|| {
-                    ApiError::not_found("discharge_not_found", "Discharge was not found.")
-                })?;
+        let discharge = hms_db::ward::complete_discharge_authorized(
+            self.state.db_pool(),
+            super::admission_advisories::closure_actor(ctx, self.state.facility_id(), deadline),
+            id,
+        )
+        .await
+        .map_err(|e| super::admission_advisories::map_error(e, true))?
+        .ok_or_else(|| ApiError::not_found("discharge_not_found", "Discharge was not found."))?;
 
         self.state.invalidate_ward_board_cache();
         self.state.invalidate_patient_list_cache();

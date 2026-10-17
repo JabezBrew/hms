@@ -1,4 +1,5 @@
 pub mod admin;
+pub mod admission_advisories;
 pub mod appointment_series;
 pub mod auth;
 pub mod billing;

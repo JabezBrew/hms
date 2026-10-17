@@ -298,6 +298,14 @@ async fn scoped_permissions_and_appointments_keep_scope_and_history_when_revoked
     .fetch_one(db.pool())
     .await
     .unwrap();
+    // This case tests scope and revocation, not a cross-clock activation boundary.
+    // Derive an already-active start from the same clock used by the reader.
+    let starts_at = sqlx::query_scalar::<_, chrono::DateTime<Utc>>(
+        "SELECT clock_timestamp() - interval '1 second'",
+    )
+    .fetch_one(db.pool())
+    .await
+    .unwrap();
     let scoped = create_permission_assignment(
         db.pool(),
         NewPermissionAssignment {
@@ -307,7 +315,7 @@ async fn scoped_permissions_and_appointments_keep_scope_and_history_when_revoked
             scope_type: "organization_unit".into(),
             scope_id: Some(unit),
             granted_by_user_id: db.owner_user_id(),
-            starts_at: Utc::now(),
+            starts_at,
             ends_at: None,
             reason_code: "unit_cover".into(),
         },

@@ -27,6 +27,9 @@ function handleChronicleRouteAction({
       : null;
     openChronicleWorkspace('note', noteDraft ? { noteDraft } : null);
     if (actionParam || noteTitleParam || noteTypeParam) clearQueryParams();
+  } else if (action === 'admission_follow_up') {
+    openChronicleWorkspace('admissionAdvisory', { advisoryCaseId: admissionParam || null });
+    if (actionParam || admissionParam) clearQueryParams();
   } else if (action === 'vitals' || action === 'record_vitals' || action === 'add_vitals') {
     openChronicleWorkspace('vitals');
     if (actionParam) clearQueryParams();

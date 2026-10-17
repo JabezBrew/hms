@@ -16,6 +16,12 @@ use uuid::Uuid;
 use crate::codec;
 use crate::PgPool;
 
+mod webauthn;
+pub use webauthn::{
+    begin_webauthn_ceremony, insert_webauthn_challenge_bound, webauthn_credentials_authorized,
+    WebAuthnActor, WebAuthnCeremony, WebAuthnError,
+};
+
 #[derive(Clone, Debug)]
 pub struct UserAccount {
     pub id: Uuid,
@@ -272,25 +278,6 @@ impl WebAuthnCeremonyType {
             Self::Authentication => "authentication",
         }
     }
-}
-
-#[derive(Clone, Debug, FromRow)]
-pub struct WebAuthnChallengeRow {
-    pub id: Uuid,
-    pub user_id: Uuid,
-    pub facility_id: Uuid,
-    pub state: serde_json::Value,
-    pub expires_at: DateTime<Utc>,
-}
-
-#[derive(Clone, Debug)]
-pub struct NewWebAuthnChallenge {
-    pub id: Uuid,
-    pub user_id: Uuid,
-    pub facility_id: Uuid,
-    pub ceremony_type: WebAuthnCeremonyType,
-    pub state: serde_json::Value,
-    pub expires_at: DateTime<Utc>,
 }
 
 impl UserAccount {
@@ -1777,83 +1764,6 @@ pub async fn list_webauthn_credentials(
     .bind(user_id)
     .fetch_all(pool)
     .await?)
-}
-
-pub async fn insert_webauthn_challenge(
-    pool: &PgPool,
-    challenge: &NewWebAuthnChallenge,
-) -> anyhow::Result<()> {
-    sqlx::query(
-        r#"
-        INSERT INTO auth_webauthn_challenges (
-            id,
-            user_id,
-            facility_id,
-            ceremony_type,
-            state,
-            expires_at
-        )
-        VALUES ($1, $2, $3, $4, $5, $6)
-        "#,
-    )
-    .bind(challenge.id)
-    .bind(challenge.user_id)
-    .bind(challenge.facility_id)
-    .bind(challenge.ceremony_type.as_str())
-    .bind(&challenge.state)
-    .bind(challenge.expires_at)
-    .execute(pool)
-    .await?;
-    Ok(())
-}
-
-pub async fn consume_webauthn_challenge(
-    pool: &PgPool,
-    facility_id: Uuid,
-    user_id: Uuid,
-    challenge_id: Uuid,
-    ceremony_type: WebAuthnCeremonyType,
-) -> anyhow::Result<Option<WebAuthnChallengeRow>> {
-    let mut transaction = pool.begin().await?;
-    let challenge = sqlx::query_as::<_, WebAuthnChallengeRow>(
-        r#"
-        SELECT id,
-               user_id,
-               facility_id,
-               state,
-               expires_at
-        FROM auth_webauthn_challenges
-        WHERE id = $1
-          AND facility_id = $2
-          AND user_id = $3
-          AND ceremony_type = $4
-          AND consumed_at IS NULL
-          AND expires_at > now()
-        FOR UPDATE
-        "#,
-    )
-    .bind(challenge_id)
-    .bind(facility_id)
-    .bind(user_id)
-    .bind(ceremony_type.as_str())
-    .fetch_optional(&mut *transaction)
-    .await?;
-
-    if challenge.is_some() {
-        sqlx::query(
-            r#"
-            UPDATE auth_webauthn_challenges
-            SET consumed_at = now()
-            WHERE id = $1
-            "#,
-        )
-        .bind(challenge_id)
-        .execute(&mut *transaction)
-        .await?;
-    }
-
-    transaction.commit().await?;
-    Ok(challenge)
 }
 
 pub async fn insert_webauthn_credential(

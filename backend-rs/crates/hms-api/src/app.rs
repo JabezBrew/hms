@@ -16,6 +16,7 @@ pub fn build_app(state: AppState) -> Router {
         .merge(routes::care::routes())
         .merge(routes::ward::routes())
         .merge(routes::patient_handover::routes())
+        .merge(routes::admission_advisories::routes())
         .merge(routes::clinical::routes())
         .merge(routes::clinical_notes::routes())
         .merge(routes::consent::routes())

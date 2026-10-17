@@ -25,3 +25,7 @@ Scope: SQLx repositories and database infrastructure.
 - Avoid `DATE(column)`, avoid N+1 loops, and keep transactions short.
 - Repository interfaces should express product intent instead of leaking SQL
   coordination to services.
+
+## Session-bound credential ceremonies
+
+`auth/webauthn.rs` owns exact-session challenge binding, canonical facility/user/session proof locks, post-wait database-clock expiry and atomic credential/consume/audit persistence. The public enrollment/assertion endpoints retain their existing assurance semantics. See [ceremony scope](../../../../docs/v2/2026-10-16-webauthn-ceremony-scope.md).
