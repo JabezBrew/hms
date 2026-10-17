@@ -533,24 +533,14 @@ export const clinicalNotesApi = {
    * @returns {Promise<Object>} The newly created template copy
    */
   duplicateTemplate: async (id, options = {}) => {
+    if (isRustV2ApiMode()) {
+      if (options.signal?.aborted) throw new DOMException('The operation was aborted.', 'AbortError');
+      throw new Error('Open Clinical note templates, select an exact saved revision, and use Create shared copy to review a new facility-shared template.');
+    }
     try {
-      if (isRustV2ApiMode()) {
-        const template = await clinicalNotesApi.getNoteTemplate(id, options);
-        return await clinicalNotesApi.createNoteTemplate(
-          {
-            title: `Copy of ${template.title}`,
-            note_type: template.note_type,
-            body_template: template.body_template,
-          },
-          { signal: options.signal },
-        );
-      }
       return await apiClient.post(`/clinical-notes/templates/${id}/duplicate/`);
     } catch (error) {
       rethrowAbortError(error);
-      if (isRustV2ApiMode()) {
-        throw new Error(handleV2ApiError(error, 'Failed to duplicate template'));
-      }
       throw new Error(handleApiError(error, 'Failed to duplicate template'));
     }
   },
@@ -562,7 +552,8 @@ export const clinicalNotesApi = {
    */
   getTemplateRevisions: async (id, options = {}) => {
     if (isRustV2ApiMode()) {
-      return [];
+      if (options.signal?.aborted) throw new DOMException('The operation was aborted.', 'AbortError');
+      throw new Error('Open Clinical note templates and select Revision history to read bounded pages and an exact saved revision.');
     }
     try {
       const response = await apiClient.getWithPagination(`/clinical-notes/templates/${id}/revisions/`, options);
@@ -579,19 +570,13 @@ export const clinicalNotesApi = {
    * @param {Object} data - Render payload
    * @returns {Promise<Object>} Rendered defaults with revision metadata
    */
-  renderTemplate: async (id, data = {}) => {
-    try {
-      if (isRustV2ApiMode()) {
-        return {
-          rendered_data: data.base_data || {},
-          revision_id: data.revision_id || null,
-          revision_version: null,
-        };
-      }
-      return await apiClient.post(`/clinical-notes/templates/${id}/render/`, data);
-    } catch (error) {
-      throw new Error(handleApiError(error, 'Failed to render template defaults'));
+  renderTemplate: async (id, data = {}, options = {}) => {
+    if (isRustV2ApiMode()) {
+      if (options.signal?.aborted) throw new DOMException('The operation was aborted.', 'AbortError');
+      throw new Error('Open the patient Chronicle note workspace and explicitly preview the selected template revision. This legacy helper cannot confirm patient context or apply a preview.');
     }
+    try { return await apiClient.post(`/clinical-notes/templates/${id}/render/`, data, options); }
+    catch (error) { rethrowAbortError(error); throw new Error(handleApiError(error, 'Failed to render template defaults')); }
   },
 
   /**

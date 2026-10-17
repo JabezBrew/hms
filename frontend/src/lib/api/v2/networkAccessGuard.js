@@ -5,7 +5,7 @@ const AUTH_POSTS = new Set(['/api/v2/auth/login', '/api/v2/auth/refresh', '/api/
   '/api/v2/auth/password-reset/request', '/api/v2/auth/password-reset/complete', '/api/v2/auth/sessions/revoke-all', '/api/v2/auth/sessions/:session_id/revoke',
   '/api/v2/auth/mfa/webauthn/register/options', '/api/v2/auth/mfa/webauthn/register/verify', '/api/v2/auth/mfa/webauthn/authenticate/options', '/api/v2/auth/mfa/webauthn/authenticate/verify', '/api/v2/auth/mfa/recovery-codes',
   '/api/v2/auth/assurance/options', '/api/v2/auth/assurance/verify', '/api/v2/auth/mfa/passkeys/:id/disable']);
-const READ_POSTS = new Set(['/api/v2/patients/search', '/api/v2/patients/context/search', '/api/v2/wards/board/search', '/api/v2/search/omni',
+const READ_POSTS = new Set(['/api/v2/patients/search', '/api/v2/patients/:patient_id/clinical/note-template-previews', '/api/v2/patients/context/search', '/api/v2/wards/board/search', '/api/v2/search/omni',
   '/api/v2/appointments/search', '/api/v2/encounters/search', '/api/v2/admin/audit-events/search',
   '/api/v2/laboratory/orders/search', '/api/v2/laboratory/results/search', '/api/v2/billing/patient-insurances/search', '/api/v2/billing/invoices/search',
   '/api/v2/billing/payment-intents/search', '/api/v2/billing/settlements/search', '/api/v2/billing/settlements/:id/lines/search', '/api/v2/billing/payments/search',
@@ -17,6 +17,7 @@ function routeTemplate(path) {
   path = String(path || '');
   const full = path.startsWith('/api/v2/') ? path : `/api/v2${path.startsWith('/') ? '' : '/'}${path}`;
   return full.replace(/\{([a-z_]+)\}/g, ':$1')
+    .replace(/^(\/api\/v2\/patients\/)[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(\/clinical\/note-template-previews)$/i, '$1:patient_id$2')
     .replace(/^(\/api\/v2\/auth\/sessions\/)[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(\/revoke)$/i, '$1:session_id$2')
     .replace(/^(\/api\/v2\/auth\/mfa\/passkeys\/)[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(\/disable)?$/i, '$1:id$2')
     .replace(/^(\/api\/v2\/billing\/settlements\/)[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(\/lines\/search)$/i, '$1:id$2')

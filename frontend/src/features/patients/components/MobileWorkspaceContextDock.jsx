@@ -15,6 +15,7 @@ import { cn } from '@/lib/utils';
 const WORKSPACE_LABELS = Object.freeze({
   copilot: 'Chronicle copilot',
   note: 'Add note',
+  noteTemplatePreview: 'Preview note template',
   vitals: 'Record vitals',
   prescription: 'Prescribe',
   labs: 'Order labs',

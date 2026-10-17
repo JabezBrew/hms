@@ -193,10 +193,11 @@ vi.mock('@/hooks/useSystemQueries', () => ({
 }))
 
 vi.mock('@/components/chronicle/PatientIdentityHero', () => ({
-  default: ({ onAskChronicle, onStartWardRound, onStartDischarge, onAddNote, onRecordVitals, onPrescribe }) => (
+  default: ({ onAskChronicle, onStartWardRound, onStartDischarge, onAddNote, onPreviewNoteTemplate, onRecordVitals, onPrescribe }) => (
     <div>
       <span data-testid="ask-chronicle-action">{String(Boolean(onAskChronicle))}</span>
       <span data-testid="ward-round-action">{String(Boolean(onStartWardRound))}</span>
+      <span data-testid="preview-template-action">{String(Boolean(onPreviewNoteTemplate))}</span>
       <span data-testid="note-action">{String(Boolean(onAddNote))}</span>
       <span data-testid="vitals-action">{String(Boolean(onRecordVitals))}</span>
       <span data-testid="prescribe-action">{String(Boolean(onPrescribe))}</span>
@@ -782,6 +783,10 @@ describe('PatientChroniclePage Rust V2 workflow guards', () => {
 
   it('keeps the summary visible without granting nursing trend/history access from the data class alone', async () => {
     window.__HMS_RUNTIME_CONFIG__ = { apiMode: 'rust-v2' }; authState.user = { ...authState.user, adminAccess: { capabilities: ['clinical_documentation.view'] }, accessContext: { ...authState.user.accessContext, features: ['encounters'], patient_visibility: ['demographics', 'clinical_summary'] } }; chronicleStartupState.data.permissions = { can_view_full_clinical: false, can_add_note: false, can_record_vitals: false, can_prescribe: false }; renderPage(); await screen.findByTestId('clinical-summary'); expect(summarySidebarState.lastProps.onViewVitalsTrends).toBeUndefined(); expect(summarySidebarState.lastProps.onViewFluidTrends).toBeUndefined(); expect(summarySidebarState.lastProps.showFluidBalance).toBe(false);
+  });
+
+  it.each(['full-read', 'summary', 'missing-patients'])('exposes template preview only for the current ordinary Full/read feature contract (%s)', async (state) => {
+    window.__HMS_RUNTIME_CONFIG__ = { apiMode: 'rust-v2' }; authState.user = { ...authState.user, adminAccess: { capabilities: ['clinical_documentation.view'] }, accessContext: { ...authState.user.accessContext, features: state === 'missing-patients' ? ['encounters'] : ['patients', 'encounters'], patient_visibility: state === 'summary' ? ['demographics', 'clinical_summary'] : ['demographics', 'clinical_summary', 'full_clinical'] } }; chronicleStartupState.data.permissions = { can_view_full_clinical: state !== 'summary', can_add_note: false, can_record_vitals: false, can_prescribe: false }; renderPage(); await screen.findByTestId('clinical-summary'); expect(screen.getByTestId('preview-template-action')).toHaveTextContent(String(state === 'full-read')); expect(screen.getByTestId('note-action')).toHaveTextContent('false');
   });
 
 })

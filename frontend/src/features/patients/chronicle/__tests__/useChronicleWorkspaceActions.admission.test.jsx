@@ -36,3 +36,7 @@ it.each([undefined, { can_add_note: false, can_record_vitals: false, can_prescri
 it('uses each current authoritative write flag independently', () => {
   const open = vi.fn(); const { result } = renderHook(() => useChronicleWorkspaceActions({ rustV2Mode: true, clinicalPermissions: { can_add_note: true, can_record_vitals: false, can_prescribe: false }, openChronicleWorkspace: open })); act(() => { result.current.handleAddNote(); result.current.handleRecordVitals(); result.current.handlePrescribe(); }); expect(open.mock.calls).toEqual([['note']]);
 });
+
+it('opens the separate read-only template preview only with current Full proof', () => {
+  const open = vi.fn(); const { result, rerender } = renderHook((props) => useChronicleWorkspaceActions({ rustV2Mode: true, openChronicleWorkspace: open, ...props }), { initialProps: { clinicalPermissions: { can_view_full_clinical: false } } }); act(() => result.current.handlePreviewNoteTemplate()); expect(open).not.toHaveBeenCalled(); rerender({ clinicalPermissions: { can_view_full_clinical: true, can_add_note: false } }); act(() => result.current.handlePreviewNoteTemplate()); expect(open).toHaveBeenCalledWith('noteTemplatePreview');
+});

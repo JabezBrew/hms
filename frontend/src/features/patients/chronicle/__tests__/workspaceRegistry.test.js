@@ -17,6 +17,7 @@ describe('chronicle workspace registry', () => {
     expect(chronicleWorkspaceIds).toEqual([
       'copilot',
       'note',
+      'noteTemplatePreview',
       'vitals',
       'prescription',
       'labs',
@@ -266,4 +267,9 @@ describe('chronicle workspace registry', () => {
     labTestsSpy.mockRestore();
     labPanelsSpy.mockRestore();
   });
+});
+
+it('binds template preview to explicit selected encounter, including all-history null, without active fallback', () => {
+  expect(buildChronicleWorkspaceProps('noteTemplatePreview', { patient: { id: 'synthetic' }, activeEncounter: { id: 'active' }, selectedEncounter: null }).encounter).toBeNull();
+  expect(buildChronicleWorkspaceProps('noteTemplatePreview', { selectedEncounter: { id: 'selected' }, activeEncounter: { id: 'active' } }).encounter.id).toBe('selected');
 });

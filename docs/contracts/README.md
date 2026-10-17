@@ -98,6 +98,18 @@ Scope: durable Interfaces that code, tests, deploys, and frontend integrations r
   admission care journey. A patient-wide legacy discharge summary, invoice, or
   dispense without `admission_case_id`, `encounter_id`, or `visit_id`
   provenance must not clear or block the current admission's discharge state.
+- Clinical note template history uses bounded descending version cursors and
+  metadata-only rows. Exact revision reads bind facility, template and revision;
+  they never replace a missing selection with the latest revision. Recorded
+  availability remains separate from current root availability. Scoped identity
+  joins redact both foreign creator/owner IDs and names. Imported malformed
+  content remains readable evidence without becoming an active copy source.
+  A reviewed shared copy uses the existing new-template UUID command, fresh
+  management authority and current ownership; it does not grant management of
+  its source or establish private-sharing/copy-lineage semantics. Exact body
+  copies preserve original text; structured edits must not round unknown JSON
+  numbers or collapse duplicate metadata keys. Unsupported lossy structures
+  require exact-content mode rather than silent reserialization.
 
 ## Access Contract Rules
 
@@ -324,3 +336,17 @@ Before changing a contract:
 4. Update the frontend bridge when HTTP shape changes.
 5. Update runbooks when deploy/runtime behavior changes.
 6. Update ADRs when the decision changes the long-term architecture.
+
+## Patient-aware note-template previews
+
+Patient-aware note-template previews bind an exact immutable revision, protected
+patient and explicit encounter UUID or null. The exact POST operation is a
+read-only calculation for offsite policy and uncertainty handling; it retains
+ordinary Full/documentation/demographics authority through final database time,
+without inheriting emergency access or management authority. The response is a
+bounded string/one-level string-map patch. Eight literal allowlisted tokens use
+server demographics and a disclosed UTC date; missing values remain literal.
+There is no expression evaluation, arbitrary override, implicit latest revision
+or saved note/command receipt. Applying a reviewed preview and saving a UUID note
+remain separate. A current access denial clears both preview and applied draft;
+reads never acknowledge an uncertain clinical write.

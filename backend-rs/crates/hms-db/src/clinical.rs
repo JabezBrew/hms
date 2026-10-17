@@ -1,8 +1,10 @@
 pub mod medication_access;
+pub mod note_previews;
 pub mod note_records;
 pub mod note_templates;
 pub mod prescription_courses;
 pub mod stock_basis;
+pub mod template_render;
 
 use anyhow::Context;
 use chrono::{DateTime, NaiveDate, Utc};

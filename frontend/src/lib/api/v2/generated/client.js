@@ -752,6 +752,16 @@ export const operations = {
     "queryParamNames": [],
     "hasBody": false
   },
+  "getClinicalNoteTemplateHistory": {
+    "operationId": "getClinicalNoteTemplateHistory",
+    "method": "GET",
+    "path": "/api/v2/clinical/note-templates/{id}/history",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [],
+    "hasBody": false
+  },
   "getClinicalNoteTemplateRequestReceipt": {
     "operationId": "getClinicalNoteTemplateRequestReceipt",
     "method": "GET",
@@ -767,6 +777,17 @@ export const operations = {
     "method": "GET",
     "path": "/api/v2/clinical/note-templates",
     "pathParamNames": [],
+    "queryParamNames": [],
+    "hasBody": false
+  },
+  "getClinicalNoteTemplateVersion": {
+    "operationId": "getClinicalNoteTemplateVersion",
+    "method": "GET",
+    "path": "/api/v2/clinical/note-templates/{id}/versions/{version_id}",
+    "pathParamNames": [
+      "id",
+      "version_id"
+    ],
     "queryParamNames": [],
     "hasBody": false
   },
@@ -5108,6 +5129,16 @@ export const operations = {
     "queryParamNames": [],
     "hasBody": true
   },
+  "previewClinicalNoteTemplate": {
+    "operationId": "previewClinicalNoteTemplate",
+    "method": "POST",
+    "path": "/api/v2/patients/{patient_id}/clinical/note-template-previews",
+    "pathParamNames": [
+      "patient_id"
+    ],
+    "queryParamNames": [],
+    "hasBody": true
+  },
   "putAdminNetworkPolicy": {
     "operationId": "putAdminNetworkPolicy",
     "method": "PUT",
@@ -5198,8 +5229,10 @@ export function createGeneratedClient(request) {
     getClinicalNoteHistory: createOperation(request, operations.getClinicalNoteHistory),
     getClinicalNoteRequestReceipt: createOperation(request, operations.getClinicalNoteRequestReceipt),
     getClinicalNoteTemplateById: createOperation(request, operations.getClinicalNoteTemplateById),
+    getClinicalNoteTemplateHistory: createOperation(request, operations.getClinicalNoteTemplateHistory),
     getClinicalNoteTemplateRequestReceipt: createOperation(request, operations.getClinicalNoteTemplateRequestReceipt),
     getClinicalNoteTemplates: createOperation(request, operations.getClinicalNoteTemplates),
+    getClinicalNoteTemplateVersion: createOperation(request, operations.getClinicalNoteTemplateVersion),
     getClinicalNoteVersion: createOperation(request, operations.getClinicalNoteVersion),
     getClinicalNoteVersions: createOperation(request, operations.getClinicalNoteVersions),
     getClinicalPrescriptionById: createOperation(request, operations.getClinicalPrescriptionById),
@@ -5610,6 +5643,7 @@ export function createGeneratedClient(request) {
     postWardStockRequestApprove: createOperation(request, operations.postWardStockRequestApprove),
     postWardStockRequestFulfill: createOperation(request, operations.postWardStockRequestFulfill),
     postWardStockRequests: createOperation(request, operations.postWardStockRequests),
+    previewClinicalNoteTemplate: createOperation(request, operations.previewClinicalNoteTemplate),
     putAdminNetworkPolicy: createOperation(request, operations.putAdminNetworkPolicy),
     putAdminStaffPractitionerProfile: createOperation(request, operations.putAdminStaffPractitionerProfile),
   };

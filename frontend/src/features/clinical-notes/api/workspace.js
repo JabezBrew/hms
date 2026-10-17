@@ -52,7 +52,7 @@ function receipt(value, command) {
     const saved = templateDetail(value.template, { id: source?.id });
     if (value.action !== (kind === 'templateRecord' ? 'created' : 'changed') || saved.version !== (source ? payload.expected_version + 1 : 1)
       || ['title', 'note_type', 'body_template', 'is_active'].some((key) => saved[key] !== payload[key])) throw unavailable();
-    if (saved.owner_user_id !== (source ? source.owner_user_id : command.actorId) || (source && saved.current_revision_id === source.current_revision_id)) throw unavailable();
+    if (saved.can_manage !== false || (command.copySource && (saved.id === command.copySource.templateId || saved.current_revision_id === command.copySource.revisionId)) || saved.owner_user_id !== (source ? source.owner_user_id : command.actorId) || (source && saved.current_revision_id === source.current_revision_id)) throw unavailable();
   }
   return value;
 }

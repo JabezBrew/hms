@@ -71,3 +71,7 @@ describe('PatientIdentityHero', () => {
     expect(screen.queryByText('Penicillin')).not.toBeInTheDocument()
   })
 })
+
+it('keeps template preview reachable from the responsive overflow menu without Add Note authority', async () => {
+  const events = userEvent.setup(); const onPreviewNoteTemplate = vi.fn(); renderHero({ onPreviewNoteTemplate, onAddNote: undefined }); expect(screen.queryByRole('button', { name: 'Add Note' })).not.toBeInTheDocument(); await events.click(screen.getByRole('button', { name: /more actions/i })); await events.click(await screen.findByRole('menuitem', { name: 'Preview note template' })); expect(onPreviewNoteTemplate).toHaveBeenCalledTimes(1);
+});

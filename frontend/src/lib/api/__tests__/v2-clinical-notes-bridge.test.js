@@ -740,77 +740,18 @@ describe('Rust V2 clinical notes bridge', () => {
     );
   });
 
-  it('duplicates templates through Rust detail and create contracts', async () => {
-    globalThis.fetch
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({
-            data: {
-              id: 'template-1',
-              title: 'Consultation Note',
-              note_type: 'doctor_note',
-              body_template: 'SOAP template',
-              is_active: true,
-            },
-            meta: {},
-          }),
-          {
-            status: 200,
-            headers: { 'content-type': 'application/json' },
-          },
-        ),
-      )
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({
-            data: {
-              id: 'template-copy',
-              title: 'Copy of Consultation Note',
-              note_type: 'doctor_note',
-              body_template: 'SOAP template',
-              is_active: true,
-            },
-            meta: {},
-          }),
-          {
-            status: 200,
-            headers: { 'content-type': 'application/json' },
-          },
-        ),
-      );
+  it('retires unsafe Rust template duplication and fake history without any request', async () => {
+    await expect(clinicalNotesApi.duplicateTemplate('template-1')).rejects.toThrow(/Create shared copy/);
+    await expect(clinicalNotesApi.getTemplateRevisions('template-1')).rejects.toThrow(/Revision history/);
+    await expect(clinicalNotesApi.renderTemplate('template-1', { base_data: { assessment: 'Synthetic typed work' } })).rejects.toThrow(/patient Chronicle note workspace/);
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
 
-    const template = await clinicalNotesApi.duplicateTemplate('template-1', {
-      signal: new AbortController().signal,
-    });
-
-    expect(globalThis.fetch).toHaveBeenNthCalledWith(
-      1,
-      'http://localhost:8080/api/v2/clinical/note-templates/template-1',
-      expect.objectContaining({
-        method: 'GET',
-        credentials: 'include',
-      }),
-    );
-    expect(globalThis.fetch).toHaveBeenNthCalledWith(
-      2,
-      'http://localhost:8080/api/v2/clinical/note-templates',
-      expect.objectContaining({
-        method: 'POST',
-        credentials: 'include',
-        body: JSON.stringify({
-          title: 'Copy of Consultation Note',
-          note_type: 'doctor_note',
-          body_template: 'SOAP template',
-        }),
-      }),
-    );
-    expect(template).toEqual(
-      expect.objectContaining({
-        id: 'template-copy',
-        title: 'Copy of Consultation Note',
-        note_type: 'doctor_note',
-      }),
-    );
+  it('preserves a cancelled signal on retired Rust template helpers without a request', async () => {
+    const controller = new AbortController(); controller.abort();
+    await expect(clinicalNotesApi.duplicateTemplate('template-1', { signal: controller.signal })).rejects.toMatchObject({ name: 'AbortError' });
+    await expect(clinicalNotesApi.getTemplateRevisions('template-1', { signal: controller.signal })).rejects.toMatchObject({ name: 'AbortError' });
+    expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 
   it('preserves AbortError from Rust clinical note calls', async () => {

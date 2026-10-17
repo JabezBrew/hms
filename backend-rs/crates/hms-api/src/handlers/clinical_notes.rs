@@ -21,6 +21,31 @@ fn body<T>(v: Result<Json<T>, JsonRejection>) -> Result<T, ApiError> {
         )
     })
 }
+#[utoipa::path(post,path="/api/v2/patients/{patient_id}/clinical/note-template-previews",operation_id="previewClinicalNoteTemplate",tag="clinical",security(("bearerAuth"=[])),params(("patient_id"=Uuid,Path)),request_body=PreviewClinicalNoteTemplateRequest,responses((status=200,body=ObjectResponse<ClinicalNoteTemplatePreview>),(status=400,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse)))]
+pub async fn preview_template(
+    State(state): State<AppState>,
+    network: NetworkContext,
+    Path(patient_id): Path<Uuid>,
+    input: Result<Json<PreviewClinicalNoteTemplateRequest>, JsonRejection>,
+) -> Result<Json<ObjectResponse<ClinicalNoteTemplatePreview>>, ApiError> {
+    let input = input.map(|Json(input)| input).map_err(|_| {
+        ApiError::bad_request(
+            "invalid_clinical_note_template_preview",
+            "Provide only the supported preview fields using the required format.",
+        )
+    })?;
+    Ok(Json(
+        state
+            .clinical_service()
+            .preview_note_template(
+                &network.context,
+                patient_id,
+                input,
+                network.authorization_deadline,
+            )
+            .await?,
+    ))
+}
 pub(crate) fn query<T>(v: Result<Query<T>, QueryRejection>) -> Result<T, ApiError> {
     v.map(|Query(x)| x).map_err(|_| {
         ApiError::bad_request(
@@ -124,6 +149,43 @@ pub async fn change_template(
     Ok(Json(
         s.clinical_service()
             .change_template(&n.context, id, body(payload)?, n.authorization_deadline)
+            .await?,
+    ))
+}
+#[utoipa::path(get,path="/api/v2/clinical/note-templates/{id}/history",operation_id="getClinicalNoteTemplateHistory",tag="clinical",security(("bearerAuth"=[])),params(("id"=Uuid,Path),NoteTemplateHistoryQuery),responses((status=200,body=ListResponse<NoteTemplateHistoryItem>),(status=400,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=404,body=ApiErrorResponse),(status=409,body=ApiErrorResponse)))]
+pub async fn template_history(
+    State(state): State<AppState>,
+    network: NetworkContext,
+    Path(id): Path<Uuid>,
+    query_input: Result<Query<NoteTemplateHistoryQuery>, QueryRejection>,
+) -> Result<Json<ListResponse<NoteTemplateHistoryItem>>, ApiError> {
+    Ok(Json(
+        state
+            .clinical_service()
+            .template_history(
+                &network.context,
+                id,
+                query(query_input)?,
+                network.authorization_deadline,
+            )
+            .await?,
+    ))
+}
+#[utoipa::path(get,path="/api/v2/clinical/note-templates/{id}/versions/{version_id}",operation_id="getClinicalNoteTemplateVersion",tag="clinical",security(("bearerAuth"=[])),params(("id"=Uuid,Path),("version_id"=Uuid,Path)),responses((status=200,body=ObjectResponse<NoteTemplateVersionDetail>),(status=403,body=ApiErrorResponse),(status=404,body=ApiErrorResponse),(status=409,body=ApiErrorResponse)))]
+pub async fn template_version(
+    State(state): State<AppState>,
+    network: NetworkContext,
+    Path((id, version_id)): Path<(Uuid, Uuid)>,
+) -> Result<Json<ObjectResponse<NoteTemplateVersionDetail>>, ApiError> {
+    Ok(Json(
+        state
+            .clinical_service()
+            .template_version(
+                &network.context,
+                id,
+                version_id,
+                network.authorization_deadline,
+            )
             .await?,
     ))
 }

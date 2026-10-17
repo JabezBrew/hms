@@ -258,6 +258,7 @@ export function PatientChroniclePageContent({
 }) {
   const {
     handleAddNote,
+    handlePreviewNoteTemplate,
     handleAskChronicle,
     handleCopyNote,
     handleEditNote,
@@ -327,6 +328,7 @@ export function PatientChroniclePageContent({
             allergies={allergies}
             onActionIntent={rustV2Mode ? undefined : prefetchActionResources}
             onAskChronicle={canUseAiAssistant ? handleAskChronicle : undefined}
+            onPreviewNoteTemplate={rustV2Mode && fullClinical && userHasCapability(user, 'clinical_documentation.view') && user?.accessContext?.features?.includes('encounters') && user?.accessContext?.features?.includes('patients') ? handlePreviewNoteTemplate : undefined}
             onAddNote={clinicalPermissions.can_add_note ? handleAddNote : undefined}
             onRecordVitals={clinicalPermissions.can_record_vitals ? handleRecordVitals : undefined}
             onPrescribe={clinicalPermissions.can_prescribe ? handlePrescribe : undefined}

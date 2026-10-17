@@ -4338,6 +4338,78 @@
         },
         "type": "object"
       },
+      "ClinicalNoteTemplatePreview": {
+        "description": "Ephemeral proposed starter text. This is neither a note nor a saved receipt.",
+        "properties": {
+          "applied_sections": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100,
+            "type": "array"
+          },
+          "date_basis": {
+            "$ref": "#/components/schemas/NoteTemplatePreviewDateBasis"
+          },
+          "encounter_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "kind": {
+            "$ref": "#/components/schemas/NoteTemplatePreviewKind"
+          },
+          "patch": {
+            "description": "Plain string or a patch of generated canonical section values only."
+          },
+          "patient_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "rendered_on": {
+            "format": "date",
+            "type": "string"
+          },
+          "template_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "template_revision_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "template_revision_version": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "unresolved": {
+            "items": {
+              "$ref": "#/components/schemas/NoteTemplatePreviewUnresolvedToken"
+            },
+            "maxItems": 32,
+            "type": "array"
+          },
+          "unresolved_truncated": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "patient_id",
+          "template_id",
+          "template_revision_id",
+          "template_revision_version",
+          "rendered_on",
+          "date_basis",
+          "kind",
+          "patch",
+          "applied_sections",
+          "unresolved",
+          "unresolved_truncated"
+        ],
+        "type": "object"
+      },
       "ClinicalNoteType": {
         "enum": [
           "doctor_note",
@@ -14887,6 +14959,87 @@
         ],
         "type": "object"
       },
+      "ListResponse_NoteTemplateHistoryItem": {
+        "properties": {
+          "data": {
+            "items": {
+              "description": "Lightweight immutable revision evidence; body content is an exact-detail read.",
+              "properties": {
+                "change_summary": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "created_at": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "created_by_display_name": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "created_by_user_id": {
+                  "format": "uuid",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "imported_legacy": {
+                  "type": "boolean"
+                },
+                "is_active": {
+                  "description": "Availability recorded in this revision, not the template's current state.",
+                  "type": "boolean"
+                },
+                "note_type": {
+                  "$ref": "#/components/schemas/ClinicalNoteType"
+                },
+                "template_id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string"
+                },
+                "version": {
+                  "format": "int64",
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "id",
+                "template_id",
+                "version",
+                "title",
+                "note_type",
+                "is_active",
+                "created_at",
+                "imported_legacy"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "meta": {},
+          "page": {
+            "$ref": "#/components/schemas/PageInfo"
+          }
+        },
+        "required": [
+          "data",
+          "page",
+          "meta"
+        ],
+        "type": "object"
+      },
       "ListResponse_NotificationListItem": {
         "properties": {
           "data": {
@@ -21094,6 +21247,153 @@
         ],
         "type": "object"
       },
+      "NoteTemplateHistoryItem": {
+        "description": "Lightweight immutable revision evidence; body content is an exact-detail read.",
+        "properties": {
+          "change_summary": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "created_by_display_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "created_by_user_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "imported_legacy": {
+            "type": "boolean"
+          },
+          "is_active": {
+            "description": "Availability recorded in this revision, not the template's current state.",
+            "type": "boolean"
+          },
+          "note_type": {
+            "$ref": "#/components/schemas/ClinicalNoteType"
+          },
+          "template_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "version": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "template_id",
+          "version",
+          "title",
+          "note_type",
+          "is_active",
+          "created_at",
+          "imported_legacy"
+        ],
+        "type": "object"
+      },
+      "NoteTemplateHistoryQuery": {
+        "additionalProperties": false,
+        "properties": {
+          "cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "limit": {
+            "format": "int32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "NoteTemplatePreviewDateBasis": {
+        "enum": [
+          "utc"
+        ],
+        "type": "string"
+      },
+      "NoteTemplatePreviewKind": {
+        "enum": [
+          "plain",
+          "structured"
+        ],
+        "type": "string"
+      },
+      "NoteTemplatePreviewMode": {
+        "enum": [
+          "all",
+          "empty_only",
+          "selected"
+        ],
+        "type": "string"
+      },
+      "NoteTemplatePreviewUnresolvedToken": {
+        "properties": {
+          "count": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "name": {
+            "maxLength": 64,
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "count"
+        ],
+        "type": "object"
+      },
+      "NoteTemplateVersionDetail": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/NoteTemplateHistoryItem"
+          },
+          {
+            "properties": {
+              "body_template": {
+                "description": "The exact saved representation, including legacy or malformed content.",
+                "type": "string"
+              },
+              "current_template": {
+                "$ref": "#/components/schemas/GovernedNoteTemplateItem",
+                "description": "Current protected root metadata, separately identified from saved evidence."
+              }
+            },
+            "required": [
+              "body_template",
+              "current_template"
+            ],
+            "type": "object"
+          }
+        ]
+      },
       "NotificationCounts": {
         "properties": {
           "action_required": {
@@ -23670,6 +23970,88 @@
               "created_at",
               "updated_at",
               "can_amend"
+            ],
+            "type": "object"
+          },
+          "meta": {}
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "type": "object"
+      },
+      "ObjectResponse_ClinicalNoteTemplatePreview": {
+        "properties": {
+          "data": {
+            "description": "Ephemeral proposed starter text. This is neither a note nor a saved receipt.",
+            "properties": {
+              "applied_sections": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 100,
+                "type": "array"
+              },
+              "date_basis": {
+                "$ref": "#/components/schemas/NoteTemplatePreviewDateBasis"
+              },
+              "encounter_id": {
+                "format": "uuid",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "kind": {
+                "$ref": "#/components/schemas/NoteTemplatePreviewKind"
+              },
+              "patch": {
+                "description": "Plain string or a patch of generated canonical section values only."
+              },
+              "patient_id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "rendered_on": {
+                "format": "date",
+                "type": "string"
+              },
+              "template_id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "template_revision_id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "template_revision_version": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "unresolved": {
+                "items": {
+                  "$ref": "#/components/schemas/NoteTemplatePreviewUnresolvedToken"
+                },
+                "maxItems": 32,
+                "type": "array"
+              },
+              "unresolved_truncated": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "patient_id",
+              "template_id",
+              "template_revision_id",
+              "template_revision_version",
+              "rendered_on",
+              "date_basis",
+              "kind",
+              "patch",
+              "applied_sections",
+              "unresolved",
+              "unresolved_truncated"
             ],
             "type": "object"
           },
@@ -26685,6 +27067,40 @@
               "replayed"
             ],
             "type": "object"
+          },
+          "meta": {}
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "type": "object"
+      },
+      "ObjectResponse_NoteTemplateVersionDetail": {
+        "properties": {
+          "data": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/NoteTemplateHistoryItem"
+              },
+              {
+                "properties": {
+                  "body_template": {
+                    "description": "The exact saved representation, including legacy or malformed content.",
+                    "type": "string"
+                  },
+                  "current_template": {
+                    "$ref": "#/components/schemas/GovernedNoteTemplateItem",
+                    "description": "Current protected root metadata, separately identified from saved evidence."
+                  }
+                },
+                "required": [
+                  "body_template",
+                  "current_template"
+                ],
+                "type": "object"
+              }
+            ]
           },
           "meta": {}
         },
@@ -36330,6 +36746,55 @@
           "completed"
         ],
         "type": "string"
+      },
+      "PreviewClinicalNoteTemplateRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "apply_mode": {
+            "$ref": "#/components/schemas/NoteTemplatePreviewMode"
+          },
+          "base_body": {
+            "maxLength": 20000,
+            "type": "string"
+          },
+          "chief_complaint": {
+            "description": "Explicit clinician input, never an override of server demographic facts.",
+            "maxLength": 500,
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "encounter_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sections": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100,
+            "type": "array"
+          },
+          "template_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "template_revision_id": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "template_id",
+          "template_revision_id",
+          "apply_mode",
+          "base_body"
+        ],
+        "type": "object"
       },
       "PrnDoseRequestResult": {
         "properties": {
@@ -53550,6 +54015,181 @@
             "description": ""
           },
           "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "clinical"
+        ]
+      }
+    },
+    "/api/v2/clinical/note-templates/{id}/history": {
+      "get": {
+        "operationId": "getClinicalNoteTemplateHistory",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "cursor",
+            "required": true,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "path",
+            "name": "limit",
+            "required": true,
+            "schema": {
+              "format": "int32",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListResponse_NoteTemplateHistoryItem"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "clinical"
+        ]
+      }
+    },
+    "/api/v2/clinical/note-templates/{id}/versions/{version_id}": {
+      "get": {
+        "operationId": "getClinicalNoteTemplateVersion",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "version_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_NoteTemplateVersionDetail"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
             "content": {
               "application/json": {
                 "schema": {
@@ -75182,6 +75822,82 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ObjectResponse_ClinicalNoteCommandReceipt"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "clinical"
+        ]
+      }
+    },
+    "/api/v2/patients/{patient_id}/clinical/note-template-previews": {
+      "post": {
+        "operationId": "previewClinicalNoteTemplate",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "patient_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PreviewClinicalNoteTemplateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_ClinicalNoteTemplatePreview"
                 }
               }
             },

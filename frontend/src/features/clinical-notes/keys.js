@@ -10,4 +10,6 @@ export const noteKeys = {
   templates: (scope) => [...root.all, scope, 'templates'],
   catalog: (scope, query) => [...noteKeys.templates(scope), 'list', hashQueryValue(JSON.stringify(query))],
   template: (scope, id) => [...noteKeys.templates(scope), 'detail', hashQueryValue(id)],
+  templateHistory: (scope, id, cursor) => [...noteKeys.template(scope, id), 'history', hashQueryValue(cursor || '')],
+  templateVersion: (scope, id, versionId) => [...noteKeys.template(scope, id), 'version', hashQueryValue(versionId)],
 };

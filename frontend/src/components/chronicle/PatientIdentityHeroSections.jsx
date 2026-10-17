@@ -252,6 +252,11 @@ function PrimaryActions({ actions, activeAdmission, prefetchAction }) {
   );
 }
 
+function TemplatePreviewMenuAction({ onClick }) {
+  if (!onClick) return null;
+  return <DropdownMenuItem onClick={onClick}>Preview note template</DropdownMenuItem>;
+}
+
 function MoreActionsMenu({ actions, activeAdmission, prefetchAction }) {
   return (
     <DropdownMenu>
@@ -323,6 +328,7 @@ function MoreActionsMenu({ actions, activeAdmission, prefetchAction }) {
             Fluid Balance
           </DropdownMenuItem>
         )}
+        <TemplatePreviewMenuAction onClick={actions.onPreviewNoteTemplate} />
         {actions.onViewAdmissionFollowUp && <DropdownMenuItem onClick={actions.onViewAdmissionFollowUp}>Admission follow-up</DropdownMenuItem>}
         {actions.onViewMedicationCourses && <DropdownMenuItem onClick={actions.onViewMedicationCourses}>Medication courses</DropdownMenuItem>}
         {actions.onViewPatientHandover && <DropdownMenuItem onClick={actions.onViewPatientHandover}>Patient handover</DropdownMenuItem>}

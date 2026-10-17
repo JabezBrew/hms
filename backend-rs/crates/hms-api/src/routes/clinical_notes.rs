@@ -20,12 +20,24 @@ pub fn routes() -> Router<AppState> {
             get(h::version),
         )
         .route(
+            "/api/v2/patients/:patient_id/clinical/note-template-previews",
+            post(h::preview_template),
+        )
+        .route(
             "/api/v2/clinical/note-templates/record",
             post(h::record_template),
         )
         .route(
             "/api/v2/clinical/note-templates/:id/changes",
             post(h::change_template),
+        )
+        .route(
+            "/api/v2/clinical/note-templates/:id/history",
+            get(h::template_history),
+        )
+        .route(
+            "/api/v2/clinical/note-templates/:id/versions/:version_id",
+            get(h::template_version),
         )
         .route(
             "/api/v2/clinical/note-templates/requests/:request_id",

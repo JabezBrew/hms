@@ -65,6 +65,7 @@ pub(crate) fn read_post(method: &Method, path: &str) -> bool {
                 | "/api/v2/search/omni"
                 | "/api/v2/appointments/search"
                 | "/api/v2/encounters/search"
+                | "/api/v2/patients/:patient_id/clinical/note-template-previews"
                 | "/api/v2/admin/audit-events/search"
                 | "/api/v2/laboratory/orders/search"
                 | "/api/v2/laboratory/results/search"
@@ -171,6 +172,24 @@ mod tests {
             "/api/v2/auth/admin-write"
         ));
         assert!(read_post(&Method::POST, "/api/v2/patients/search"));
+        assert!(read_post(
+            &Method::POST,
+            "/api/v2/patients/:patient_id/clinical/note-template-previews"
+        ));
+        for method in [Method::GET, Method::PATCH, Method::DELETE] {
+            assert!(!read_post(
+                &method,
+                "/api/v2/patients/:patient_id/clinical/note-template-previews"
+            ));
+        }
+        assert!(!read_post(
+            &Method::POST,
+            "/api/v2/patients/:patient_id/clinical/notes/record"
+        ));
+        assert!(!read_post(
+            &Method::POST,
+            "/api/v2/patients/:patient_id/clinical/note-template-previews/save"
+        ));
         assert!(!read_post(
             &Method::POST,
             "/api/v2/patients/identity/lookup"

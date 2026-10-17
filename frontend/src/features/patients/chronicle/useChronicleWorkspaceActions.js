@@ -89,6 +89,11 @@ export function useChronicleWorkspaceActions({
     openChronicleWorkspace('note');
   }, [clinicalPermissions?.can_add_note, openChronicleWorkspace, rustV2Mode]);
 
+  const handlePreviewNoteTemplate = useCallback(() => {
+    if (!rustV2Mode || clinicalPermissions?.can_view_full_clinical !== true) return;
+    openChronicleWorkspace('noteTemplatePreview');
+  }, [clinicalPermissions?.can_view_full_clinical, openChronicleWorkspace, rustV2Mode]);
+
   const handleRecordVitals = useCallback(() => {
     if (rustV2Mode && clinicalPermissions?.can_record_vitals !== true) return;
     openChronicleWorkspace('vitals');
@@ -329,6 +334,7 @@ export function useChronicleWorkspaceActions({
 
   return {
     handleAddNote,
+    handlePreviewNoteTemplate,
     handleAskChronicle,
     handleCopyNote,
     handleEditNote,

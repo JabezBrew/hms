@@ -12,10 +12,11 @@ export function useNoteAccess() {
   const transport = useSyncExternalStore(subscribeV2ClientScope, getV2ClientScopeKey, getV2ClientScopeKey);
   const feature = user?.accessContext?.features?.includes('encounters') === true;
   const manage = userHasCapability(user, 'clinical_documentation.manage');
-  const canReadTemplates = feature && (userHasCapability(user, 'clinical_documentation.view') || userHasCapability(user, 'clinical_documentation.manage'));
+  const canReadTemplates = feature && userHasCapability(user, 'clinical_documentation.view');
   const canRead = feature && user?.accessContext?.patient_visibility?.includes('full_clinical') === true && permissions.can_view_full_clinical && (userHasCapability(user, 'clinical_documentation.view') || manage);
+  const canPreviewTemplates = canRead && canReadTemplates && user?.accessContext?.features?.includes('patients') === true;
   const canWrite = canRead && manage && permissions.can_add_note && access?.isReadOnly !== true;
   const canManageTemplates = feature && manage && access?.isReadOnly !== true;
   const scope = hashQueryValue(JSON.stringify([authorizationScope(user, transport), canRead, canWrite, canManageTemplates, access?.networkDecision?.policy_version]));
-  return { user, scope, canRead, canWrite, canReadTemplates, canManageTemplates, readonlyMessage: access?.readonlyMessage };
+  return { user, scope, canRead, canWrite, canReadTemplates, canPreviewTemplates, canManageTemplates, readonlyMessage: access?.readonlyMessage };
 }

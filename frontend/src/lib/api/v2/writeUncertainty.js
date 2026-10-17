@@ -121,7 +121,8 @@ export async function recordWriteRecoveryRead(request, response, context) {
   if (!context.readEvidence?.length || !load().entries.length) return;
   // Lean eligibility/header reads cannot establish saved-record review. No
   // deferred bookkeeping is needed when there is no unresolved command.
-  if (String(request.resolvedPath).split('?')[0] === '/api/v2/nursing/fluid-observations/context') return;
+  const evidencePath = String(request.resolvedPath).split('?')[0];
+  if (evidencePath === '/api/v2/nursing/fluid-observations/context' || (/^\/api\/v2\/patients\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/clinical\/note-template-previews$/i.test(evidencePath))) return;
   const admission = await admissionScope(request);
   if (admission?.excludeRead || context.isCurrentScope?.() === false) return;
   const [scope, familyHash, related] = await Promise.all([scopeFor(context.principal), digest(`family:${admission?.family || family(request.resolvedPath)}`), references(request.pathParams, request.query, request.body, response.data)]); let changed = false;

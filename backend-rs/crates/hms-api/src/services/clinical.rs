@@ -1,4 +1,5 @@
 pub(crate) mod medication_access;
+mod note_previews;
 pub mod note_records;
 pub mod prescription_courses;
 mod visibility;

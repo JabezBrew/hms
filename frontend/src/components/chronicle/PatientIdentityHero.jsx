@@ -152,6 +152,7 @@ function getPatientStatus(patient) {
 const PatientIdentityHero = ({
   patient,
   onAddNote,
+  onPreviewNoteTemplate,
   onRecordVitals,
   onPrescribe,
   onAskChronicle,
@@ -193,6 +194,7 @@ const PatientIdentityHero = ({
     <PatientIdentityHeroLayout
       actions={{
         onAddNote,
+        onPreviewNoteTemplate,
         onAskChronicle,
         onManageInsurance,
         onOrderLabs,

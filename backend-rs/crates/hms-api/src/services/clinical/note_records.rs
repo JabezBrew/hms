@@ -36,6 +36,15 @@ fn not_found() -> ApiError {
         "The clinical note, template or saved request was not found.",
     )
 }
+fn template_read_error(error: anyhow::Error) -> ApiError {
+    if error.is::<notes::NoteError>() || error.is::<hms_db::network::NetworkPublicationError>() {
+        return self::error(error);
+    }
+    ApiError::conflict(
+        "clinical_note_template_read_failed",
+        "The selected template history could not be loaded. Reload current access before trying again.",
+    )
+}
 pub(crate) fn error(e: anyhow::Error) -> ApiError {
     if let Some(error) = ApiError::network_publication(&e) {
         return error;
@@ -201,6 +210,63 @@ impl ClinicalService {
             templates::get(self.pool(), actor(ctx, deadline), id)
                 .await
                 .map_err(error)?,
+        ))
+    }
+    pub async fn template_history(
+        &self,
+        ctx: &hms_access::RequestContext,
+        id: Uuid,
+        query: NoteTemplateHistoryQuery,
+        deadline: DateTime<Utc>,
+    ) -> Result<ListResponse<NoteTemplateHistoryItem>, ApiError> {
+        read(ctx, self.facility_id())?;
+        let before = query
+            .cursor
+            .as_deref()
+            .map(|cursor| {
+                cursor
+                    .strip_prefix("v:")
+                    .filter(|value| {
+                        !value.is_empty()
+                            && value.len() <= 19
+                            && value.bytes().all(|byte| byte.is_ascii_digit())
+                    })
+                    .and_then(|value| value.parse::<i64>().ok())
+                    .filter(|value| *value > 0)
+                    .ok_or_else(|| {
+                        ApiError::bad_request(
+                            "invalid_note_template_history_cursor",
+                            "Use a valid template history page cursor.",
+                        )
+                    })
+            })
+            .transpose()?;
+        let limit = query.limit.unwrap_or(25).clamp(1, 100);
+        let rows = templates::history(
+            self.pool(),
+            actor(ctx, deadline),
+            id,
+            before,
+            i64::from(limit) + 1,
+        )
+        .await
+        .map_err(template_read_error)?;
+        Ok(cursor_list::page_response(rows, limit, |row| {
+            format!("v:{}", row.version)
+        }))
+    }
+    pub async fn template_version(
+        &self,
+        ctx: &hms_access::RequestContext,
+        id: Uuid,
+        version_id: Uuid,
+        deadline: DateTime<Utc>,
+    ) -> Result<ObjectResponse<NoteTemplateVersionDetail>, ApiError> {
+        read(ctx, self.facility_id())?;
+        Ok(object(
+            templates::get_version(self.pool(), actor(ctx, deadline), id, version_id)
+                .await
+                .map_err(template_read_error)?,
         ))
     }
     pub async fn record_template(

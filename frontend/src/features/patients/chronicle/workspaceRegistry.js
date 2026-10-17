@@ -8,6 +8,7 @@ import { drugSafetyApi } from '@/shared/api/drugSafety';
 export const chronicleWorkspaceIds = Object.freeze([
   'copilot',
   'note',
+  'noteTemplatePreview',
   'vitals',
   'prescription',
   'labs',
@@ -29,6 +30,7 @@ export const chronicleWorkspaceIds = Object.freeze([
 
 export const chronicleWorkspaceLoaders = Object.freeze({
   copilot: () => import('@/features/patients/components/ChronicleCopilotSlideOver'),
+  noteTemplatePreview: () => import('@/features/clinical-notes/components/NoteTemplatePreviewWorkspace'),
   note: () => import('@/components/chronicle/AddNoteSlideOver'),
   vitals: () => import('@/components/chronicle/AddVitalsSlideOver'),
   prescription: () => import('@/components/chronicle/AddPrescriptionSlideOver'),
@@ -145,6 +147,8 @@ export function buildChronicleWorkspaceProps(workspaceId, context) {
         encounterId: activeEncounter?.id || null,
         patientName: copilotPatientName,
       };
+    case 'noteTemplatePreview':
+      return { open: true, onClose, patient, admissionId: selectedAdmissionId || null, encounter: context.selectedEncounter || null };
     case 'note':
       return {
         open: true,
