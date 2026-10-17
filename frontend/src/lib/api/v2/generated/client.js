@@ -345,6 +345,71 @@ export const operations = {
     ],
     "hasBody": false
   },
+  "getAdmissionMove": {
+    "operationId": "getAdmissionMove",
+    "method": "GET",
+    "path": "/api/v2/patients/{patient_id}/chronicle/admissions/{admission_case_id}/moves/{move_id}",
+    "pathParamNames": [
+      "patient_id",
+      "admission_case_id",
+      "move_id"
+    ],
+    "queryParamNames": [],
+    "hasBody": false
+  },
+  "getAdmissionMoveDestinations": {
+    "operationId": "getAdmissionMoveDestinations",
+    "method": "GET",
+    "path": "/api/v2/patients/{patient_id}/chronicle/admissions/{admission_case_id}/move-destinations",
+    "pathParamNames": [
+      "patient_id",
+      "admission_case_id"
+    ],
+    "queryParamNames": [
+      "cursor",
+      "limit",
+      "ward_id",
+      "search"
+    ],
+    "hasBody": false
+  },
+  "getAdmissionMoveHistory": {
+    "operationId": "getAdmissionMoveHistory",
+    "method": "GET",
+    "path": "/api/v2/patients/{patient_id}/chronicle/admissions/{admission_case_id}/moves",
+    "pathParamNames": [
+      "patient_id",
+      "admission_case_id"
+    ],
+    "queryParamNames": [
+      "cursor",
+      "limit"
+    ],
+    "hasBody": false
+  },
+  "getAdmissionMoveRequestReceipt": {
+    "operationId": "getAdmissionMoveRequestReceipt",
+    "method": "GET",
+    "path": "/api/v2/patients/{patient_id}/chronicle/admissions/{admission_case_id}/move-requests/{request_id}",
+    "pathParamNames": [
+      "patient_id",
+      "admission_case_id",
+      "request_id"
+    ],
+    "queryParamNames": [],
+    "hasBody": false
+  },
+  "getAdmissionPlacementContext": {
+    "operationId": "getAdmissionPlacementContext",
+    "method": "GET",
+    "path": "/api/v2/patients/{patient_id}/chronicle/admissions/{admission_case_id}/placement",
+    "pathParamNames": [
+      "patient_id",
+      "admission_case_id"
+    ],
+    "queryParamNames": [],
+    "hasBody": false
+  },
   "getAppointmentById": {
     "operationId": "getAppointmentById",
     "method": "GET",
@@ -3421,6 +3486,17 @@ export const operations = {
     "queryParamNames": [],
     "hasBody": true
   },
+  "postAdmissionMove": {
+    "operationId": "postAdmissionMove",
+    "method": "POST",
+    "path": "/api/v2/patients/{patient_id}/chronicle/admissions/{admission_case_id}/moves",
+    "pathParamNames": [
+      "patient_id",
+      "admission_case_id"
+    ],
+    "queryParamNames": [],
+    "hasBody": true
+  },
   "postAdmissions": {
     "operationId": "postAdmissions",
     "method": "POST",
@@ -5252,6 +5328,11 @@ export function createGeneratedClient(request) {
     getAdmissionById: createOperation(request, operations.getAdmissionById),
     getAdmissionCaseById: createOperation(request, operations.getAdmissionCaseById),
     getAdmissionCases: createOperation(request, operations.getAdmissionCases),
+    getAdmissionMove: createOperation(request, operations.getAdmissionMove),
+    getAdmissionMoveDestinations: createOperation(request, operations.getAdmissionMoveDestinations),
+    getAdmissionMoveHistory: createOperation(request, operations.getAdmissionMoveHistory),
+    getAdmissionMoveRequestReceipt: createOperation(request, operations.getAdmissionMoveRequestReceipt),
+    getAdmissionPlacementContext: createOperation(request, operations.getAdmissionPlacementContext),
     getAppointmentById: createOperation(request, operations.getAppointmentById),
     getAppointments: createOperation(request, operations.getAppointments),
     getAppointmentTypes: createOperation(request, operations.getAppointmentTypes),
@@ -5513,6 +5594,7 @@ export function createGeneratedClient(request) {
     postAdmissionCaseActivate: createOperation(request, operations.postAdmissionCaseActivate),
     postAdmissionCaseCancel: createOperation(request, operations.postAdmissionCaseCancel),
     postAdmissionCaseReserveBed: createOperation(request, operations.postAdmissionCaseReserveBed),
+    postAdmissionMove: createOperation(request, operations.postAdmissionMove),
     postAdmissions: createOperation(request, operations.postAdmissions),
     postAppointmentCancel: createOperation(request, operations.postAppointmentCancel),
     postAppointments: createOperation(request, operations.postAppointments),

@@ -1,6 +1,7 @@
 pub mod admin;
 pub mod admin_access;
 pub mod admission_advisories;
+pub mod admission_moves;
 pub mod appointment_series;
 pub mod auth;
 pub mod auth_factor;

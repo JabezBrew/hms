@@ -1,3 +1,4 @@
+import { taskRoutingKnown } from './taskRouting';
 import { v2Api } from '@/lib/api/v2/client';
 import { acknowledgeWriteResponse, copyWriteResponseMetadata, markWriteResponseUncertain } from '@/lib/api/v2/writeUncertainty';
 
@@ -46,7 +47,7 @@ export function recordNursingTask(payload, { patientId, signal } = {}) {
   return write(() => v2Api.postNursingTasks(command, { signal }), (row) => patientRow(row)
     && (!expectedPatient || row.patient_id === expectedPatient)
     && row.admission_case_id === payload.admission_case_id
-    && text(row.ward_id) && row.task_type === payload.task_type && row.status === 'open'
+    && text(row.ward_id) && taskRoutingKnown(row) && row.service_ward_id === row.ward_id && row.route_version === 0 && row.task_type === payload.task_type && row.status === 'open'
     && sameTime(row.due_at, payload.due_at)
     && (row.assigned_to_user_id ?? null) === (payload.assigned_to_user_id ?? null)
     && (row.title ?? null) === (payload.title ?? null)
@@ -57,7 +58,7 @@ export function decideNursingTask(taskId, status, { signal, patientId, admission
   const operation = status === 'completed' ? v2Api.postNursingTaskComplete : v2Api.postNursingTaskCancel;
   if (!['completed', 'cancelled'].includes(status)) throw new Error('Choose a supported nursing task decision.');
   return write(() => operation({ id: taskId }, { signal }), (row) => patientRow(row)
-    && row.id === taskId && text(row.ward_id) && row.status === status
+    && row.id === taskId && text(row.ward_id) && taskRoutingKnown(row) && row.status === status
     && (!patientId || row.patient_id === patientId)
     && (!admissionId || row.admission_case_id === admissionId)
     // Historical actor/time may be unknown. Never fabricate them from this caller.

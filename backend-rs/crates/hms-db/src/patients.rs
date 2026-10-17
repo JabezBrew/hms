@@ -298,6 +298,7 @@ struct CurrentOutpatientContextRow {
 #[derive(Clone, Debug, FromRow)]
 struct CurrentInpatientContextRow {
     admission_case_id: Uuid,
+    placement_revision: i64,
     ward_id: Option<Uuid>,
     ward_name: Option<String>,
     bed_id: Option<Uuid>,
@@ -1050,6 +1051,7 @@ pub async fn get_patient_current_contexts(
         sqlx::query_as::<_, CurrentInpatientContextRow>(
             r#"
         SELECT admission_cases.id AS admission_case_id,
+               admission_cases.placement_revision,
                admission_cases.ward_id,
                wards.name AS ward_name,
                admission_cases.bed_id,
@@ -1751,6 +1753,7 @@ fn inpatient_context_from_row(
 ) -> anyhow::Result<PatientCurrentInpatientContext> {
     Ok(PatientCurrentInpatientContext {
         admission_case_id: row.admission_case_id,
+        placement_revision: row.placement_revision,
         ward_id: row.ward_id,
         ward_name: row.ward_name,
         bed_id: row.bed_id,

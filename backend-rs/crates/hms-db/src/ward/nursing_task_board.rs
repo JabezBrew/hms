@@ -34,6 +34,8 @@ pub struct NursingTaskFilters {
 struct NursingTaskRow {
     assigned_to_user_id: Option<Uuid>,
     ward_id: Uuid,
+    service_ward_id: Uuid,
+    route_version: i64,
     completed_at: Option<DateTime<Utc>>,
     completed_by_user_id: Option<Uuid>,
     cancelled_at: Option<DateTime<Utc>>,
@@ -189,7 +191,7 @@ pub async fn get_nursing_task(
     optional_nursing_task_by_id(pool, facility_id, task_id).await
 }
 
-/// Production list: current authority plus captured task ward are applied before paging.
+/// Production list: current authority and effective service ward are applied before paging.
 pub async fn list_nursing_tasks_for_actor(
     pool: &PgPool,
     mut actor: super::nursing_access::NursingActor,
@@ -207,12 +209,12 @@ pub async fn list_nursing_tasks_for_actor(
     q.push(" WHERE nursing_tasks.facility_id=")
         .push_bind(actor.facility_id);
     if let Some(ids) = wards {
-        q.push(" AND nursing_tasks.ward_id=ANY(")
+        q.push(" AND nursing_tasks.service_ward_id=ANY(")
             .push_bind(ids)
             .push(")");
     }
     if let Some(id) = filters.ward_id {
-        q.push(" AND nursing_tasks.ward_id=").push_bind(id);
+        q.push(" AND nursing_tasks.service_ward_id=").push_bind(id);
     }
     if let Some(id) = filters.patient_id {
         q.push(" AND nursing_tasks.patient_id=").push_bind(id);
@@ -320,7 +322,7 @@ pub async fn decide_nursing_task_for_actor(
 ) -> anyhow::Result<NursingTaskListItem> {
     use super::nursing_access::{self as access, NursingError};
     let mut tx = pool.begin().await?;
-    let row:Option<(Uuid,Uuid,Uuid,String)>=sqlx::query_as("SELECT patient_id,admission_case_id,ward_id,status FROM nursing_tasks WHERE facility_id=$1 AND id=$2 FOR UPDATE")
+    let row:Option<(Uuid,Uuid,Uuid,String)>=sqlx::query_as("SELECT patient_id,admission_case_id,service_ward_id,status FROM nursing_tasks WHERE facility_id=$1 AND id=$2 FOR UPDATE")
         .bind(actor.facility_id).bind(id).fetch_optional(&mut *tx).await?;
     let (patient, admission, ward, status) = row.ok_or(NursingError::NotFound)?;
     let wards = access::verify(&mut tx, &mut actor).await?;
@@ -387,7 +389,7 @@ async fn task_tx(
 fn nursing_task_query() -> QueryBuilder<'static, Postgres> {
     QueryBuilder::<Postgres>::new(
         r#"
-        SELECT nursing_tasks.assigned_to_user_id, nursing_tasks.ward_id, nursing_tasks.completed_at, nursing_tasks.completed_by_user_id,
+        SELECT nursing_tasks.assigned_to_user_id, nursing_tasks.ward_id, nursing_tasks.service_ward_id, nursing_tasks.route_version, nursing_tasks.completed_at, nursing_tasks.completed_by_user_id,
                nursing_tasks.cancelled_at, nursing_tasks.cancelled_by_user_id, nursing_tasks.id,
                nursing_tasks.admission_case_id,
                nursing_tasks.patient_id,
@@ -402,6 +404,7 @@ fn nursing_task_query() -> QueryBuilder<'static, Postgres> {
         JOIN patients ON patients.id = nursing_tasks.patient_id AND patients.facility_id=nursing_tasks.facility_id
         JOIN admission_cases task_admission ON task_admission.id=nursing_tasks.admission_case_id AND task_admission.facility_id=nursing_tasks.facility_id AND task_admission.patient_id=nursing_tasks.patient_id
         JOIN wards task_ward ON task_ward.id=nursing_tasks.ward_id AND task_ward.facility_id=nursing_tasks.facility_id
+        JOIN wards service_ward ON service_ward.id=nursing_tasks.service_ward_id AND service_ward.facility_id=nursing_tasks.facility_id
         "#,
     )
 }
@@ -440,6 +443,8 @@ fn nursing_task_from_row(row: NursingTaskRow) -> anyhow::Result<NursingTaskListI
     Ok(NursingTaskListItem {
         assigned_to_user_id: row.assigned_to_user_id,
         ward_id: row.ward_id,
+        service_ward_id: row.service_ward_id,
+        route_version: row.route_version,
         completed_at: row.completed_at,
         completed_by_user_id: row.completed_by_user_id,
         cancelled_at: row.cancelled_at,

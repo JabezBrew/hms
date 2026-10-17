@@ -31,6 +31,9 @@ function handleChronicleRouteAction({
   } else if (action === 'referral_response') {
     openChronicleWorkspace('referralResponse', { referralId: referralIdParam || null });
     if (actionParam || referralIdParam) clearQueryParams();
+  } else if (action === 'admission_move') {
+    openChronicleWorkspace('admissionMove', { moveAdmissionId: admissionParam || null });
+    if (actionParam || admissionParam) clearQueryParams();
   } else if (action === 'admission_follow_up') {
     openChronicleWorkspace('admissionAdvisory', { advisoryCaseId: admissionParam || null });
     if (actionParam || admissionParam) clearQueryParams();

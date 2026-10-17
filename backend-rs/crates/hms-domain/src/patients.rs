@@ -447,6 +447,7 @@ pub struct PatientCurrentOutpatientContext {
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
 pub struct PatientCurrentInpatientContext {
     pub admission_case_id: Uuid,
+    pub placement_revision: i64,
     pub ward_id: Option<Uuid>,
     pub ward_name: Option<String>,
     pub bed_id: Option<Uuid>,

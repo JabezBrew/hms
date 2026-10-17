@@ -32,6 +32,18 @@ beforeEach(() => {
 afterEach(() => queryClient.clear());
 
 describe('Chronicle authorization on remount', () => {
+  it('uses authoritative current placement revision over stale patient location fields, including a null bed', async () => {
+    const source = { ...cached, patient: { ...cached.patient, current_admission_id: 'old-case', current_ward: 'Old ward', current_bed: 'Old bed', local_data: { current_ward: 'Old local ward', current_bed: 'Old local bed' } }, active_admission: { admission_id: 'actual-case', placement_revision: 5, ward_id: 'actual-ward', ward_name: 'Actual ward', bed_code: 'Actual bed' } };
+    patientsApi.getPatientChronicleStartup.mockResolvedValueOnce(source);
+    function Placement() { const { patientForChronicle } = useChroniclePatientRecord({ id: 'patient-1', rustV2Mode: true }); return <output aria-label="Actual current placement">{JSON.stringify(patientForChronicle)}</output>; }
+    render(<QueryClientProvider client={queryClient}><Placement /></QueryClientProvider>);
+    await waitFor(() => expect(screen.getByLabelText('Actual current placement')).toHaveTextContent('Actual bed'));
+    expect(screen.getByLabelText('Actual current placement')).not.toHaveTextContent('Old bed'); expect(screen.getByLabelText('Actual current placement')).toHaveTextContent('actual-case');
+    patientsApi.getPatientChronicleStartup.mockResolvedValueOnce({ ...source, active_admission: { ...source.active_admission, placement_revision: 6, bed_code: null, bed_number: null } });
+    await act(async () => { await queryClient.invalidateQueries({ queryKey: patientKeys.detail('patient-1') }); });
+    await waitFor(() => expect(screen.getByLabelText('Actual current placement')).not.toHaveTextContent('Actual bed'));
+    expect(screen.getByLabelText('Actual current placement')).not.toHaveTextContent('Old local bed');
+  });
   it('never renders cached clinical data when a remounted record is now forbidden', async () => {
     patientsApi.getPatientChronicleStartup.mockResolvedValueOnce(cached);
     const first = mount();

@@ -850,10 +850,20 @@ async fn actual_current_ward_filters_before_limit_and_transfer_preserves_creatio
     let old_context = context(f.db.pool(), assigned.clone(), f.patient, f.case_id)
         .await
         .unwrap();
-    sqlx::query("UPDATE admission_cases SET ward_id=$2,updated_at=clock_timestamp() WHERE id=$1")
-        .bind(f.case_id)
-        .bind(other_ward)
-        .execute(f.db.pool())
+    let destination = hms_db::ward::create_bed(
+        f.db.pool(),
+        hms_db::ward::NewBed {
+            id: Uuid::new_v4(),
+            facility_id: f.actor.facility_id,
+            ward_id: other_ward,
+            section_id: None,
+            bed_code: "SYNTHETIC-DESTINATION".into(),
+            actor_user_id: f.actor.user_id,
+        },
+    )
+    .await
+    .unwrap();
+    hms_db::test_support::ward_lifecycle::move_admission(&f.db, f.case_id, destination.id)
         .await
         .unwrap();
     error(
@@ -968,7 +978,23 @@ async fn context_token_fences_bed_changes_even_without_legacy_updated_at_bump() 
             .fetch_one(f.db.pool())
             .await
             .unwrap();
-    sqlx::query("UPDATE admission_cases SET bed_id=(SELECT id FROM beds WHERE facility_id=$2 AND ward_id=$3 ORDER BY id LIMIT 1) WHERE id=$1").bind(f.case_id).bind(f.actor.facility_id).bind(f.ward).execute(f.db.pool()).await.unwrap();
+    hms_db::ward::activate_admission_case(
+        f.db.pool(),
+        f.actor.facility_id,
+        f.case_id,
+        f.actor.user_id,
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    // Keep the legacy timestamp fixed while the canonical placement revision and
+    // actual bed/evidence advance. Context identity must not rely on updated_at.
+    sqlx::query("UPDATE admission_cases SET updated_at=$2 WHERE id=$1")
+        .bind(f.case_id)
+        .bind(at)
+        .execute(f.db.pool())
+        .await
+        .unwrap();
     assert_eq!(
         sqlx::query_scalar::<_, chrono::DateTime<Utc>>(
             "SELECT updated_at FROM admission_cases WHERE id=$1"

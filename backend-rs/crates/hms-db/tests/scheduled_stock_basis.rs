@@ -140,9 +140,7 @@ impl Fixture {
         .unwrap()
     }
     async fn close(&self) {
-        sqlx::query("UPDATE admission_cases SET status='discharged' WHERE id=$1")
-            .bind(self.admission)
-            .execute(self.db.pool())
+        hms_db::test_support::ward_lifecycle::close_admission(&self.db, self.admission)
             .await
             .unwrap();
     }
@@ -586,16 +584,21 @@ async fn generation_supply_and_given_waits_recheck_admission_closure_without_new
                 .unwrap();
         }
         let before = f.total().await;
+        let discharge = hms_db::test_support::ward_lifecycle::prepare_discharge(&f.db, f.admission)
+            .await
+            .unwrap();
         let mut held = f.db.pool().begin().await.unwrap();
         let pid: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
             .fetch_one(&mut *held)
             .await
             .unwrap();
-        sqlx::query("UPDATE admission_cases SET status='discharged' WHERE id=$1")
-            .bind(f.admission)
-            .execute(&mut *held)
-            .await
-            .unwrap();
+        hms_db::test_support::ward_lifecycle::complete_prepared_discharge_tx(
+            &mut held,
+            f.db.facility_id(),
+            discharge,
+        )
+        .await
+        .unwrap();
         let pool = f.db.pool().clone();
         let generation = f.generation();
         let supply = fulfillment.map(|id| f.supply(id, 1));
@@ -731,7 +734,9 @@ async fn legacy_null_discharge_context_is_derived_from_locked_active_admission_a
     .unwrap();
     assert_eq!(saved.prescription.encounter_id, Some(encounter));
     f.close().await;
-    basis(
+    // Canonical closure also completes its real discharge record. That terminal
+    // source is refused before the later inactive-admission stock fence.
+    assert_eq!(
         create_with_stock_policy(
             f.db.pool(),
             input(),
@@ -739,10 +744,12 @@ async fn legacy_null_discharge_context_is_derived_from_locked_active_admission_a
             None,
             PrescriptionDocumentation::default(),
             None,
-            None,
+            None
         )
-        .await,
-        clinical::stock_basis::StockBasisError::AdmissionInactive,
+        .await
+        .unwrap_err()
+        .downcast_ref::<PrescriptionCourseError>(),
+        Some(&PrescriptionCourseError::InvalidContext)
     );
 }
 #[tokio::test]

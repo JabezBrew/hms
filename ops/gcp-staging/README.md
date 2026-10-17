@@ -221,8 +221,10 @@ source only and leave existing containers untouched. After quiescence, unknown
 or incompatible DB state keeps writers stopped and both release anchors intact.
 In particular, migration 202610170023 excludes checkpoint 12 binaries from normal
 runtime rollback. Migration202610170024 also excludes earlier023 runtimes because
-they bypass governed referral-response content policy. The current API and worker
-require an actual024 probe with coherent checksums/layout/guards before startup;
+they bypass governed referral-response content policy. Migration202610170025
+excludes earlier024 runtimes that bypass canonical placement and effective task
+routing. The current API and worker require an actual025 probe with coherent
+checksums/layout/guards before startup;
 `--skip-migrations` is not an override. Use a reviewed compatible forward artifact
 or separately reviewed database restoration. See the [schema compatibility contract](../../docs/v2/2026-10-17-runtime-schema-compatibility-scope.md).
 The canonical private kernel deployment lease remains held across that probe,

@@ -1,5 +1,6 @@
 pub mod admin;
 pub mod admin_access;
+pub mod admission_moves;
 pub mod appointment_series;
 pub mod auth_factor;
 pub mod auth_webauthn;

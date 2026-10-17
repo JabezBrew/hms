@@ -454,14 +454,19 @@ async fn complete_discharge_inner(
     if let Some(actor) = actor.as_mut() {
         super::admission_advisories::verify_closure(&mut transaction, actor).await?;
     }
+    let at: DateTime<Utc> = observe_db_query(
+        "ward.discharge_cases.complete.clock",
+        sqlx::query_scalar("SELECT clock_timestamp()").fetch_one(&mut *transaction),
+    )
+    .await?;
     let row = observe_db_query(
         "ward.discharge_cases.complete.mark_discharge",
         sqlx::query_as::<_, DischargeCompletionContextRow>(
             r#"
         UPDATE discharge_cases
         SET status = $1,
-            discharged_at = COALESCE(discharge_cases.discharged_at, now()),
-            updated_at = now()
+            discharged_at = COALESCE(discharge_cases.discharged_at, $5),
+            updated_at = $5
         FROM admission_cases
         WHERE discharge_cases.facility_id = $2
           AND discharge_cases.id = $3
@@ -476,6 +481,7 @@ async fn complete_discharge_inner(
         .bind(facility_id)
         .bind(discharge_case_id)
         .bind(codec::encode(DischargeStatus::Requested)?)
+        .bind(at)
         .fetch_optional(&mut *transaction),
     )
     .await?;
@@ -490,14 +496,16 @@ async fn complete_discharge_inner(
             r#"
         UPDATE admission_cases
         SET status = $1,
-            discharged_at = COALESCE(discharged_at, now()),
-            updated_at = now()
+            discharged_at = COALESCE(discharged_at, $4),
+            updated_at = $4,
+            placement_revision = placement_revision + 1
         WHERE facility_id = $2 AND id = $3
         "#,
         )
         .bind(codec::encode(AdmissionStatus::Discharged)?)
         .bind(facility_id)
         .bind(row.admission_case_id)
+        .bind(at)
         .execute(&mut *transaction),
     )
     .await?;
@@ -509,9 +517,9 @@ async fn complete_discharge_inner(
                 r#"
             UPDATE beds
             SET status = $1,
-                cleaning_due_at = now()
+                cleaning_due_at = $4
                     + make_interval(mins => COALESCE(wards.bed_cleaning_minutes_override, 60)),
-                updated_at = now()
+                updated_at = $4
             FROM wards
             WHERE beds.facility_id = $2
               AND beds.id = $3
@@ -522,11 +530,20 @@ async fn complete_discharge_inner(
             .bind(codec::encode(BedStatus::Cleaning)?)
             .bind(facility_id)
             .bind(bed_id)
+            .bind(at)
             .execute(&mut *transaction),
         )
         .await?;
     }
 
+    super::admission_moves::close_discharge_tx(
+        &mut transaction,
+        facility_id,
+        row.admission_case_id,
+        discharge_case_id,
+        at,
+    )
+    .await?;
     super::admission_advisories::retire_pending(
         &mut transaction,
         facility_id,

@@ -633,6 +633,9 @@ async fn prn_supply_skips_expired_batches_and_denies_inactive_locations() {
 #[tokio::test]
 async fn waiting_prn_request_observes_admission_closure_and_source_stop() {
     let f = Fixture::new(Some(policy())).await;
+    let discharge = hms_db::test_support::ward_lifecycle::prepare_discharge(&f.db, f.admission)
+        .await
+        .unwrap();
     let mut tx = f.db.pool().begin().await.unwrap();
     sqlx::query("SELECT id FROM admission_cases WHERE id=$1 FOR UPDATE")
         .bind(f.admission)
@@ -647,18 +650,25 @@ async fn waiting_prn_request_observes_admission_closure_and_source_stop() {
             .await
             .is_err()
     );
-    sqlx::query("UPDATE admission_cases SET status='discharged' WHERE id=$1")
-        .bind(f.admission)
-        .execute(&mut *tx)
-        .await
-        .unwrap();
+    hms_db::test_support::ward_lifecycle::complete_prepared_discharge_tx(
+        &mut tx,
+        f.db.facility_id(),
+        discharge,
+    )
+    .await
+    .unwrap();
     tx.commit().await.unwrap();
     assert!(pending.await.unwrap().is_err());
-    sqlx::query("UPDATE admission_cases SET status='admitted' WHERE id=$1")
-        .bind(f.admission)
-        .execute(f.db.pool())
-        .await
-        .unwrap();
+    let first_count: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM medication_administrations WHERE prescription_id=$1",
+    )
+    .bind(f.source)
+    .fetch_one(f.db.pool())
+    .await
+    .unwrap();
+    assert_eq!(first_count, 0);
+    // A terminal admission is never reopened to set up the separate source-stop race.
+    let f = Fixture::new(Some(policy())).await;
     let mut tx = f.db.pool().begin().await.unwrap();
     sqlx::query("SELECT id FROM prescriptions WHERE id=$1 FOR UPDATE")
         .bind(f.source)

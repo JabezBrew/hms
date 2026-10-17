@@ -356,6 +356,7 @@ impl AdmissionCasesService {
         &self,
         ctx: &hms_access::RequestContext,
         payload: AdmitPatientRequest,
+        deadline: DateTime<Utc>,
     ) -> Result<ObjectResponse<WardBoardItem>, ApiError> {
         common::require_facility_permission(
             ctx,
@@ -364,7 +365,7 @@ impl AdmissionCasesService {
         )?;
         let _patient =
             common::load_patient_for_access(&self.state, ctx, payload.patient_id).await?;
-        let admission = hms_db::ward::admit_patient(
+        let admission = hms_db::ward::admit_patient_authorized(
             self.state.db_pool(),
             NewAdmission {
                 id: Uuid::new_v4(),
@@ -374,10 +375,14 @@ impl AdmissionCasesService {
                 bed_id: payload.bed_id,
                 actor_user_id: ctx.user_id,
             },
+            super::admission_advisories::closure_actor(ctx,self.state.facility_id(),deadline),
         )
         .await
-        .map_err(|_| {
-            ApiError::conflict("admission_create_failed", "Admission could not be created.")
+        .map_err(|error| {
+            if let Some(error)=ApiError::network_publication(&error){return error;}
+            if error.is::<hms_db::ward::AdmissionPlacementRejected>(){return ApiError::conflict("admission_bed_unavailable","The selected bed is unavailable for this ward. Review current bed availability.");}
+            if error.is::<hms_db::clinical::prescription_courses::PrescriptionCourseError>()||error.is::<hms_db::ward::admission_advisories::AdvisoryError>(){return ApiError::forbidden("admission_authorization_expired","Current admission and patient authorization is required.");}
+            ApiError::conflict("admission_create_write_unconfirmed","The admission outcome could not be confirmed. Review current admissions before another change.")
         })?;
 
         self.state.invalidate_ward_board_cache();

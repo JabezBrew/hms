@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useAuth } from '@/lib/auth';
 import AdmissionCaseDetailPage from '../AdmissionCaseDetailPage';
 import { user as advisoryUser, patientId as advisoryPatient, caseId as advisoryCase } from '../../advisory/__tests__/fixtures';
+import { user as moveUser } from '../../moves/__tests__/fixtures';
 
 const baseAdmissionCase = {
   id: 'case-1',
@@ -140,6 +141,13 @@ describe('AdmissionCaseDetailPage Rust V2 guards', () => {
   it('does not infer a follow-up launch from an admin role or Summary visibility', () => {
     window.__HMS_RUNTIME_CONFIG__ = { apiMode: 'rust-v2' };
     useAuth.mockReturnValue({ user: { ...advisoryUser, role: 'admin', accessContext: { ...advisoryUser.accessContext, patient_visibility: ['clinical_summary'] } } }); renderPage(); expect(screen.queryByRole('button', { name: 'Admission follow-up' })).not.toBeInTheDocument();
+  });
+  it('hands off an actual admitted case for a reviewed move without requiring note or encounter authority', () => {
+    window.__HMS_RUNTIME_CONFIG__ = { apiMode: 'rust-v2' };
+    mockAdmissionCase = { ...baseAdmissionCase, id: advisoryCase, patient: advisoryPatient, status: 'admitted', admission_id: advisoryCase, tasks: [] };
+    useAuth.mockReturnValue({ user: { ...moveUser, accessContext: { ...moveUser.accessContext, features: ['patients', 'admissions'] }, adminAccess: { capabilities: ['admission.manage', 'patient.demographics.view'] } } }); renderPage();
+    fireEvent.click(screen.getByRole('button', { name: 'Move bed' })); const destination = new URL(screen.getByTestId('chronicle-location').textContent, 'http://localhost');
+    expect(destination.searchParams.get('action')).toBe('admission_move'); expect(destination.searchParams.get('admission')).toBe(advisoryCase); expect(destination.searchParams.get('visit')).toBe('all');
   });
 
   it('keeps task workflow controls available outside Rust V2 mode', () => {

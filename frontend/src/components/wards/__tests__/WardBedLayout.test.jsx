@@ -11,6 +11,17 @@ vi.mock('@/features/wards/hooks/useWardQueries', () => ({
 }));
 
 describe('WardBedLayout', () => {
+  it('does not turn a legacy observation into a known bed stay through an admission fallback', () => {
+    mockUseWardSections.mockReturnValue({ data: [] });
+    render(<WardBedLayout wardId="ward-1" viewMode="grid" beds={[{ id: 'bed-old', bed_number: 'OLD', ward: 'ward-1', status: 'occupied', occupied_since: null, occupancy_start_known: false, occupancy_observed_at: TEST_NOW, admitted_at: TEST_NOW }]} admissions={[{ bed: 'bed-old', status: 'admitted', admission_date: TEST_NOW }]} />);
+    expect(screen.getByText('Bed stay unknown')).toBeInTheDocument();
+    expect(screen.queryByText('LOS 0d')).toBeNull();
+  });
+  it('shows a known placement bed stay separately from episode LOS and gives no stay to a free bed', () => {
+    mockUseWardSections.mockReturnValue({ data: [] });
+    render(<WardBedLayout wardId="ward-1" viewMode="list" beds={[{ id: 'bed-known', bed_number: 'KNOWN', ward: 'ward-1', status: 'occupied', occupied_since: TEST_NOW, occupancy_start_known: true, occupancy_observed_at: null }, { id: 'bed-free', bed_number: 'FREE', ward: 'ward-1', status: 'available', occupied_since: null, occupancy_start_known: false, occupancy_observed_at: null }]} admissions={[]} />);
+    expect(screen.getByText('Bed stay 0d')).toBeInTheDocument(); expect(screen.queryByText('Bed stay unknown')).toBeNull(); expect(screen.queryByText('LOS 0d')).toBeNull();
+  });
   beforeEach(() => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date(TEST_NOW));

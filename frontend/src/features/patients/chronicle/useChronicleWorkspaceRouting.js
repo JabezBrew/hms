@@ -18,6 +18,8 @@ export function useChronicleWorkspaceRouting({
   const prefetchedActionsRef = useRef(new Set());
   const rawSlideOvers = useMultipleSlideOvers(chronicleWorkspaceIds);
   const [workspaceOptions, setWorkspaceOptions] = useState(null);
+  const openSlideOver = rawSlideOvers.open;
+  const closeSlideOver = rawSlideOvers.close;
 
   useEffect(() => {
     prefetchedActionsRef.current = new Set();
@@ -37,13 +39,13 @@ export function useChronicleWorkspaceRouting({
   const openChronicleWorkspace = useCallback((workspaceId, options = null) => {
     prefetchWorkspaceForOpen(workspaceId);
     setWorkspaceOptions(options && typeof options === 'object' ? options : null);
-    rawSlideOvers.open(workspaceId);
-  }, [prefetchWorkspaceForOpen, rawSlideOvers]);
+    openSlideOver(workspaceId);
+  }, [openSlideOver, prefetchWorkspaceForOpen]);
 
   const closeChronicleWorkspace = useCallback(() => {
     setWorkspaceOptions(null);
-    rawSlideOvers.close();
-  }, [rawSlideOvers]);
+    closeSlideOver();
+  }, [closeSlideOver]);
 
   const slideOvers = useMemo(() => ({
     ...rawSlideOvers,

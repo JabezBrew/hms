@@ -92,3 +92,35 @@ it('invalidates prior manual proof on current403 even while the exact retry is a
   resolve(json(null, 400)); await expect(pending).rejects.toMatchObject({ status: 400 });
   await expect(referralResponseManualReview('acknowledge', { scope, proof: review.proof, context: priorCurrent })).rejects.toThrow(); expect(state()).toHaveLength(1);
 });
+
+it.each(['denial', 'ABA'])('retains referral recovery when %s arrives during acknowledgement digest', async change => {
+  await lose(); const reviewed = await prepare(), fresh = await read();
+  const actual = crypto.subtle.digest.bind(crypto.subtle); let release, entered, gate = true;
+  const started = new Promise(resolve => { entered = resolve; }), pendingDigest = new Promise(resolve => { release = resolve; });
+  const spy = vi.spyOn(crypto.subtle, 'digest').mockImplementation(async (algorithm, bytes) => { if (gate && new TextDecoder().decode(bytes).includes('"context_token"')) { gate = false; entered(); await pendingDigest; } return actual(algorithm, bytes); });
+  try {
+    const result = referralResponseManualReview('acknowledge', { scope, proof: reviewed.proof, context: fresh }).then(() => 'released', () => 'rejected'); await started;
+    if (change === 'denial') { fetch.mockResolvedValueOnce(json(null, 403)); await expect(v2Request({ path: root, pathParams: params })).rejects.toMatchObject({ status: 403 }); }
+    else { await read('', { ...current, context_token: 'b'.repeat(64) }); await read(); }
+    release(); expect(await result).toBe('rejected'); expect(state()).toHaveLength(1);
+  } finally { release(); spy.mockRestore(); }
+});
+it('cannot restamp an old referral context after a later403 while its digest is pending', async () => {
+  await lose(); await read(); const actual = crypto.subtle.digest.bind(crypto.subtle); let release, entered, gate = true;
+  const started = new Promise(resolve => { entered = resolve; }), pendingDigest = new Promise(resolve => { release = resolve; });
+  const spy = vi.spyOn(crypto.subtle, 'digest').mockImplementation(async (algorithm, bytes) => { if (gate && new TextDecoder().decode(bytes).includes('"context_token"')) { gate = false; entered(); await pendingDigest; } return actual(algorithm, bytes); });
+  try {
+    const pending = read(); await started; fetch.mockResolvedValueOnce(json(null, 403)); await expect(v2Request({ path: root, pathParams: params })).rejects.toMatchObject({ status: 403 });
+    const version = await read('/versions/{version_id}', revision, { version_id: revisionId }); release(); const stale = await pending;
+    await expect(referralResponseManualReview('prepare', { scope, context: stale, version })).rejects.toThrow(); expect(state()).toHaveLength(1);
+  } finally { release(); spy.mockRestore(); }
+});
+it('refuses pre-denial dispatched referral evidence when successful response JSON arrives after current403', async () => {
+  await lose(); await read(); let deliver, entered;
+  const body = new Promise(resolve => { deliver = resolve; }), started = new Promise(resolve => { entered = resolve; });
+  fetch.mockResolvedValueOnce({ ok: true, status: 200, headers: new Headers({ 'content-type': 'application/json' }), json: () => { entered(); return body; } });
+  const older = v2Request({ path: root, pathParams: params }); await started;
+  fetch.mockResolvedValueOnce(json(null, 403)); await expect(v2Request({ path: root, pathParams: params })).rejects.toMatchObject({ status: 403 });
+  const version = await read('/versions/{version_id}', revision, { version_id: revisionId }); deliver({ data: current }); const stale = (await older).data;
+  await expect(referralResponseManualReview('prepare', { scope, context: stale, version })).rejects.toThrow(); expect(state()).toHaveLength(1);
+});

@@ -8,7 +8,7 @@ const ids = Array.from({ length: 8 }, (_, i) => `33333333-3333-4333-8333-${Strin
 const principal = { id: ids[0], facility_id: ids[1], active_profile: 'hospital' };
 const observed = { admission_case_id: ids[2], recorded_at: '2026-10-16T04:00:00Z', temperature_c: 37.6, systolic_bp: null, diastolic_bp: null, pulse: 80, respiratory_rate: null, oxygen_saturation: null };
 const taskPayload = { admission_case_id: ids[2], task_type: 'observation', due_at: observed.recorded_at, title: 'Synthetic protected task title', instruction: 'Synthetic protected task instruction', assigned_to_user_id: ids[0] };
-const common = { id: ids[4], patient_id: ids[3], admission_case_id: ids[2], ward_id: ids[5] };
+const common = { id: ids[4], patient_id: ids[3], admission_case_id: ids[2], ward_id: ids[5], service_ward_id: ids[5], route_version: 0 };
 const decision = (status) => ({ ...common, status, completed_at: status === 'completed' ? observed.recorded_at : null, completed_by_user_id: status === 'completed' ? ids[0] : null, cancelled_at: status === 'cancelled' ? observed.recorded_at : null, cancelled_by_user_id: status === 'cancelled' ? ids[0] : null });
 const scenarios = [
   { name: 'vitals', run: () => recordPatientVitals(observed, { patientId: ids[3] }), row: { ...common, ...observed, temperature_c: 37.599998474121094 }, read: () => v2Api.getPatientVitals({ query: { patient_id: ids[3], admission_case_id: ids[2] } }) },

@@ -1,3 +1,4 @@
+import { taskRoutingKnown } from '@/features/nursing/records/taskRouting';
 import ExternalLink from 'lucide-react/dist/esm/icons/external-link.js';
 import { useContext, useState } from 'react';
 import { Link } from 'react-router-dom';
@@ -92,7 +93,9 @@ function TaskTable({ tasks, patientId, currentWardId, onTaskAction, pendingActio
             const acked = isAcknowledged(task);
             const terminal = isTerminalTask(task);
             const isOverdue = status === 'overdue' || Boolean(task?.is_overdue);
-            const earlierWard = rust && currentWardId && task.ward_id && task.ward_id !== currentWardId;
+            const routingKnown = !rust || taskRoutingKnown(task);
+            const earlierWard = rust && currentWardId && routingKnown && task.service_ward_id !== currentWardId;
+            const movedFromOrigin = rust && routingKnown && task.ward_id !== task.service_ward_id;
             return (
               <tr
                 key={task?.id ?? task?.task_id ?? index}
@@ -106,7 +109,9 @@ function TaskTable({ tasks, patientId, currentWardId, onTaskAction, pendingActio
                 </td>
                 <td className="px-3 py-2">
                   <span className="text-sm font-medium text-foreground">{getTaskTitle(task)}</span>
-                  {earlierWard && <p className="mt-1 text-xs text-muted-foreground">Recorded for an earlier ward</p>}
+                  {!routingKnown && <p className="mt-1 text-xs text-muted-foreground">Task routing could not be confirmed. Refresh before a decision.</p>}
+                  {movedFromOrigin && <p className="mt-1 text-xs text-muted-foreground">{earlierWard ? 'Origin and responsibility wards differ.' : 'Created in another ward. Responsibility is now in this ward.'}</p>}
+                  {earlierWard && <p className="mt-1 text-xs text-muted-foreground">Responsibility is in another ward</p>}
                 </td>
                 {!rust && <td className="px-3 py-2">
                   <Badge
@@ -146,7 +151,8 @@ function TaskTable({ tasks, patientId, currentWardId, onTaskAction, pendingActio
                     patientId={patientId}
                     onAction={onTaskAction}
                     pendingAction={pendingAction}
-                    canComplete={!earlierWard}
+                    canComplete={routingKnown && !earlierWard}
+                    canCancel={routingKnown}
                   />
                 </td>
               </tr>

@@ -10,18 +10,21 @@ async function contentHash(value) { const bytes = await crypto.subtle.digest('SH
 function captureRead(kind, scope, versionId) {
   return async (envelope, transport) => {
     const data = envelope?.data;
-    if (!data || typeof data !== 'object' || data.patient_id !== scope.patientId || data.referral_id !== scope.referralId || !transport.scope || transport.isCurrent?.() === false) return;
+    if (!data || typeof data !== 'object' || data.patient_id !== scope.patientId || data.referral_id !== scope.referralId || !transport.scope || transport.isCurrent?.() === false || transport.isReadCurrent?.() !== true) return;
     if ((kind === 'version' && data.id !== versionId) || !Number.isSafeInteger(data.version) || data.version < 0) return;
+    const started = ++sequence, epoch = denialEpoch;
     const hash = await contentHash(data);
-    if (transport.isCurrent?.() === false) return;
+    if (transport.isCurrent?.() === false || transport.isReadCurrent() !== true || epoch !== denialEpoch) return;
     // No body or credentials are retained here; the object key is weak and the value
     // holds only source identity/version/hash and opaque authority metadata.
     const key = primary(scope); let current = contexts.get(key);
+    if (current?.observedSequence > started) return;
     if (kind === 'context') {
       if (!current || current.hash !== hash) { current = { hash, generation: ++sequence }; contexts.set(key, current); }
+      current.observedSequence = started;
       if (contexts.size > 32) { contexts.clear(); denialEpoch++; contexts.set(key, current); }
     }
-    stamps.set(data, { denialEpoch, contextGeneration: current?.generation, ...transport, principal: undefined, kind, ...scope, versionId: kind === 'version' ? versionId : data.response?.id ?? null, version: data.version, contextToken: kind === 'context' ? data.context_token : null, hash, sequence: ++sequence });
+    stamps.set(data, { denialEpoch, contextGeneration: current?.generation, ...transport, principal: undefined, kind, ...scope, versionId: kind === 'version' ? versionId : data.response?.id ?? null, version: data.version, contextToken: kind === 'context' ? data.context_token : null, hash, sequence: started });
   };
 }
 export function classifyReferralResponseWriteScope(path) {
@@ -43,12 +46,12 @@ async function matching(scope, store) {
   const [family, reference] = await Promise.all([store.digest('family:referral-response'), store.digest(`reference:${primary(scope)}`)]);
   return { ...state, entries: store.load().entries.filter(entry => entry.scope === state.scope && entry.family === family && entry.primary_reference === reference && !store.active(entry.id)) };
 }
-function currentStamp(stamp, state) { return stamp && stamp.denialEpoch === denialEpoch && stamp.contextGeneration === contexts.get(primary(stamp))?.generation && stamp.scope === state.scope && stamp.authority === state.context?.authority && stamp.transport === state.context?.transport && stamp.isCurrent?.() !== false; }
+function currentStamp(stamp, state) { return stamp && stamp.denialEpoch === denialEpoch && stamp.contextGeneration === contexts.get(primary(stamp))?.generation && stamp.scope === state.scope && stamp.authority === state.context?.authority && stamp.transport === state.context?.transport && stamp.isCurrent?.() !== false && stamp.isReadCurrent?.() === true; }
 const sameAuthority = (left, right) => left.scope === right.scope && left.context?.authority === right.context?.authority && left.context?.transport === right.context?.transport;
 const includesEvidence = (stamp, entry) => stamp.evidence?.some(value => value.id === entry.id && value.uncertainty_id === entry.uncertainty_id);
 async function checkedStamp(data, kind, scope, state) {
   const stamp = stamps.get(data);
-  if (!stamp || stamp.kind !== kind || !sameScope(stamp, scope) || !currentStamp(stamp, state) || await contentHash(data) !== stamp.hash) throw failure();
+  if (!stamp || stamp.kind !== kind || !sameScope(stamp, scope) || !currentStamp(stamp, state) || await contentHash(data) !== stamp.hash || !currentStamp(stamp, state)) throw failure();
   return stamp;
 }
 export async function referralManualProtocol(action, input, store) {
@@ -63,21 +66,21 @@ export async function referralManualProtocol(action, input, store) {
       const version = await checkedStamp(input.version, 'version', input.scope, state);
       if (version.versionId !== context.versionId || version.version !== context.version || context.sequence <= version.sequence || !includesEvidence(version, entry)) throw failure();
     }
-    if (!sameAuthority(state, store.current()) || context.isCurrent?.() === false || store.active(entry.id)) throw failure();
+    if (!sameAuthority(state, store.current()) || !currentStamp(context, state) || (context.versionId !== null && !currentStamp(stamps.get(input.version), state)) || store.active(entry.id)) throw failure();
     const proof = Object.freeze({});
-    proofs.set(proof, { entryId: entry.id, uncertaintyId: entry.uncertainty_id, ...input.scope, scope: state.scope, authority: state.context.authority, transport: state.context.transport, versionId: context.versionId, version: context.version, contextToken: context.contextToken, sequence: context.sequence, denialEpoch, contextGeneration: context.contextGeneration, isCurrent: context.isCurrent });
+    proofs.set(proof, { entryId: entry.id, uncertaintyId: entry.uncertainty_id, ...input.scope, scope: state.scope, authority: state.context.authority, transport: state.context.transport, versionId: context.versionId, version: context.version, contextToken: context.contextToken, sequence: context.sequence, denialEpoch, contextGeneration: context.contextGeneration, isCurrent: context.isCurrent, isReadCurrent: context.isReadCurrent });
     return proof;
   }
   if (action === 'acknowledge') return store.queue(async () => {
     const proof = proofs.get(input.proof); proofs.delete(input.proof);
     if (!proof || !validScope(input.scope) || !sameScope(proof, input.scope)) throw failure();
     const state = await matching(input.scope, store); const entry = state.entries.find(value => value.id === proof.entryId && value.uncertainty_id === proof.uncertaintyId);
-    if (!entry || proof.denialEpoch !== denialEpoch || proof.contextGeneration !== contexts.get(primary(proof))?.generation || proof.scope !== state.scope || proof.authority !== state.context.authority || proof.transport !== state.context.transport || proof.isCurrent?.() === false) throw failure();
+    if (!entry || proof.denialEpoch !== denialEpoch || proof.contextGeneration !== contexts.get(primary(proof))?.generation || proof.scope !== state.scope || proof.authority !== state.context.authority || proof.transport !== state.context.transport || proof.isCurrent?.() === false || proof.isReadCurrent?.() !== true) throw failure();
     // A separate explicit acknowledgment requires another actual current read.
     // A failed/current403 read cannot supply this new transport-only stamp.
     const current = await checkedStamp(input.context, 'context', input.scope, state);
     if (current.sequence <= proof.sequence || current.contextToken !== proof.contextToken || current.version !== proof.version || current.versionId !== proof.versionId || !includesEvidence(current, entry)) throw failure();
-    if (!sameAuthority(state, store.current()) || current.isCurrent?.() === false || store.active(entry.id) || !store.load().entries.some(value => value.id === proof.entryId && value.uncertainty_id === proof.uncertaintyId)) throw failure();
+    if (!sameAuthority(state, store.current()) || proof.denialEpoch !== denialEpoch || proof.contextGeneration !== contexts.get(primary(proof))?.generation || proof.isCurrent?.() === false || proof.isReadCurrent?.() !== true || !currentStamp(current, state) || store.active(entry.id) || !store.load().entries.some(value => value.id === proof.entryId && value.uncertainty_id === proof.uncertaintyId)) throw failure();
     store.remove(proof.entryId, proof.uncertaintyId);
   });
   throw failure();

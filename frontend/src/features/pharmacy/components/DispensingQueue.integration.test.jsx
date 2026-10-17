@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AuthContext } from '@/lib/auth/AuthContext';
 import { configureV2ApiClient, __resetV2ApiClientForTests } from '@/lib/api/v2/client';
@@ -22,7 +22,13 @@ beforeEach(() => {
     throw new Error('Unexpected pharmacy picker test request');
   });
 });
-afterEach(() => { client.clear(); globalThis.fetch = originalFetch; window.__HMS_RUNTIME_CONFIG__ = originalRuntime; __resetV2ApiClientForTests(); });
+afterEach(async () => {
+  cleanup();
+  // Radix restores focus on the next timer turn. Finish it while this test's
+  // jsdom realm still owns the dialog, before another file replaces globals.
+  await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
+  client.clear(); globalThis.fetch = originalFetch; window.__HMS_RUNTIME_CONFIG__ = originalRuntime; __resetV2ApiClientForTests();
+});
 function tree(user = actor) { return <AuthContext.Provider value={{ user }}><QueryClientProvider client={client}><PharmacyQueue /></QueryClientProvider></AuthContext.Provider>; }
 function issues() { return globalThis.fetch.mock.calls.filter(([url, options]) => options.method === 'POST' && new URL(url).pathname.endsWith('/dispense')); }
 async function open() { fireEvent.click(await screen.findByRole('button', { name: /^Dispense$/ })); return screen.findByRole('button', { name: /Main pharmacy/ }); }

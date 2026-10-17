@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, waitFor } from '@testing-library/react'
-import { MemoryRouter, Route, Routes } from 'react-router-dom'
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import PatientChroniclePage from '../PatientChroniclePage'
@@ -99,6 +99,7 @@ vi.mock('@/features/patients/hooks/usePatientQueries', () => ({
   }),
   usePatientChronicleStartup: (patientId, params, options) => {
     chronicleStartupState.calls.push({ patientId, params, options })
+    if (chronicleStartupState.calls.length > 100) throw new Error('Bounded referral-response route render diagnostic')
     return {
       data: chronicleStartupState.data,
       isLoading: false,
@@ -276,6 +277,8 @@ vi.mock('@/hooks/use-mobile', () => ({
   useIsMobile: () => false,
 }))
 
+function RouteCommandProbe() { const { search } = useLocation(); return <div data-testid="route-action-consumed">{new URLSearchParams(search).has('action') ? 'pending' : 'consumed'}</div>; }
+
 function renderPage(initialEntry = '/patients/patient-1/chronicle') {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
@@ -285,6 +288,7 @@ function renderPage(initialEntry = '/patients/patient-1/chronicle') {
     <QueryClientProvider client={queryClient}>
       <SidebarProvider>
         <MemoryRouter initialEntries={[initialEntry]}>
+          <RouteCommandProbe />
           <Routes>
             <Route path="/patients/:id" element={<PatientChroniclePage />} />
             <Route path="/patients/:id/chronicle" element={<PatientChroniclePage />} />
@@ -789,4 +793,12 @@ describe('PatientChroniclePage Rust V2 workflow guards', () => {
     window.__HMS_RUNTIME_CONFIG__ = { apiMode: 'rust-v2' }; authState.user = { ...authState.user, adminAccess: { capabilities: ['clinical_documentation.view'] }, accessContext: { ...authState.user.accessContext, features: state === 'missing-patients' ? ['encounters'] : ['patients', 'encounters'], patient_visibility: state === 'summary' ? ['demographics', 'clinical_summary'] : ['demographics', 'clinical_summary', 'full_clinical'] } }; chronicleStartupState.data.permissions = { can_view_full_clinical: state !== 'summary', can_add_note: false, can_record_vitals: false, can_prescribe: false }; renderPage(); await screen.findByTestId('clinical-summary'); expect(screen.getByTestId('preview-template-action')).toHaveTextContent(String(state === 'full-read')); expect(screen.getByTestId('note-action')).toHaveTextContent('false');
   });
 
+  it.each(['response', 'no-action'])('whole-page response entry consumes its command without a render loop (%s)', async mode => {
+    window.__HMS_RUNTIME_CONFIG__ = { apiMode: 'rust-v2' };
+    chronicleStartupState.error = { status: 403, message: 'Forbidden' }; chronicleStartupState.data = null;
+    renderPage(`/patients/patient-1/chronicle${mode === 'response' ? '?action=referral_response&referral_id=synthetic-referral' : ''}`);
+    await waitFor(() => expect(screen.getByTestId('route-action-consumed')).toHaveTextContent('consumed'));
+    expect(chronicleStartupState.calls.length).toBeLessThan(100);
+    expect(screen.queryByTestId('clinical-summary')).not.toBeInTheDocument();
+  });
 })

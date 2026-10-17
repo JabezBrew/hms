@@ -19,6 +19,7 @@ import { useAuth } from '@/lib/auth'
 import { usePatient } from '@/features/patients/hooks/usePatientQueries'
 import { isRustV2ApiMode } from '@/lib/api/v2/runtime'
 import { canUseAdmissionAdvisories } from '@/features/admissions/advisory/access'
+import { canUseAdmissionMoves } from '@/features/admissions/moves/access'
 import { uuid } from '@/features/admissions/advisory/model'
 import {
   useAdmissionCase,
@@ -64,7 +65,7 @@ function getUserCapabilities(user) {
   ])
 }
 
-function AdmissionCaseHeaderActions({ admissionCase, cancelCase, onNavigate, canFollowUp }) {
+function AdmissionCaseHeaderActions({ admissionCase, cancelCase, onNavigate, canFollowUp, canMove }) {
   return (
     <div className="flex flex-wrap gap-2">
       <Button variant="outline" size="sm" onClick={() => onNavigate('/admissions/requests')}>
@@ -72,6 +73,7 @@ function AdmissionCaseHeaderActions({ admissionCase, cancelCase, onNavigate, can
         Admissions
       </Button>
       {canFollowUp && <Button variant="outline" size="sm" onClick={() => onNavigate(`/patients/${encodeURIComponent(admissionCase.patient)}/chronicle?${new URLSearchParams({ action: 'admission_follow_up', admission: admissionCase.id, visit: 'all' }).toString()}`)}>Admission follow-up</Button>}
+      {canMove && <Button variant="outline" size="sm" onClick={() => onNavigate(`/patients/${encodeURIComponent(admissionCase.patient)}/chronicle?${new URLSearchParams({ action: 'admission_move', admission: admissionCase.id, visit: 'all' }).toString()}`)}>{['admitted', 'discharge_pending'].includes(admissionCase.status) ? 'Move bed' : 'Placement history'}</Button>}
       {admissionCase.admission_id && (
         <Button variant="outline" size="sm" onClick={() => onNavigate(`/admissions/${admissionCase.admission_id}`)}>
           Active Stay
@@ -464,6 +466,7 @@ export default function AdmissionCaseDetailPage() {
           <AdmissionCaseHeaderActions
             admissionCase={admissionCase}
             canFollowUp={isRustV2ApiMode() && uuid(admissionCase.id) && uuid(admissionCase.patient) && canUseAdmissionAdvisories(user, user?.accessContext?.patient_visibility?.includes('full_clinical'))}
+            canMove={isRustV2ApiMode() && uuid(admissionCase.id) && uuid(admissionCase.patient) && canUseAdmissionMoves(user, user?.accessContext?.patient_visibility?.includes('full_clinical'))}
             cancelCase={cancelCase}
             onNavigate={navigate}
           />

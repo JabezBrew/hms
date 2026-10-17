@@ -329,18 +329,22 @@ pub struct ChronicleEncounterRead {
     pub status: String,
     pub started_at: DateTime<Utc>,
     pub ended_at: Option<DateTime<Utc>>,
+    pub admission: Option<ChronicleAdmissionRead>,
+    pub admission_link_ambiguous: bool,
 }
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct ChronicleAdmissionRead {
     pub admission_id: Uuid,
+    pub encounter_id: Option<Uuid>,
+    pub placement_revision: i64,
     pub patient_id: Uuid,
     pub ward_id: Uuid,
     pub ward_name: String,
     pub bed_id: Option<Uuid>,
     pub bed_code: Option<String>,
     pub status: String,
-    pub admitted_at: DateTime<Utc>,
+    pub admitted_at: Option<DateTime<Utc>>,
     pub discharged_at: Option<DateTime<Utc>>,
 }
 
@@ -1788,23 +1792,38 @@ async fn patient_chronicle_sections(
 }
 
 const CHRONICLE_STARTUP_SQL: &str = r#"
-WITH patient_encounters AS (
-  SELECT id, patient_id, encounter_type, status, started_at, ended_at
-  FROM encounters
-  WHERE facility_id = $1
-    AND patient_id = $2
-  ORDER BY started_at DESC, id DESC
-  LIMIT 50
+WITH encounter_choices AS MATERIALIZED (
+  SELECT id,patient_id,encounter_type,status,started_at,ended_at
+  FROM encounters WHERE facility_id=$1 AND patient_id=$2
+  ORDER BY started_at DESC,id DESC LIMIT 50
+),
+patient_encounters AS (
+  SELECT e.*, linked.admission, linked.admission_link_ambiguous
+  FROM encounter_choices e
+  LEFT JOIN LATERAL (
+    SELECT CASE WHEN count(*)=1 THEN (jsonb_agg(to_jsonb(exact_case)))->0 ELSE NULL END AS admission,
+           count(*)>1 AS admission_link_ambiguous
+    FROM (
+      SELECT a.id AS admission_id,a.encounter_id,a.patient_id,a.placement_revision,
+             a.ward_id,w.name AS ward_name,a.bed_id,b.bed_code,a.status,
+             CASE WHEN a.status IN ('admitted','discharge_pending','discharged')
+                  THEN a.admitted_at ELSE NULL END AS admitted_at,a.discharged_at
+      FROM admission_cases a
+      JOIN wards w ON w.id=a.ward_id AND w.facility_id=a.facility_id
+      LEFT JOIN beds b ON b.id=a.bed_id AND b.facility_id=a.facility_id AND b.ward_id=a.ward_id
+      WHERE a.facility_id=$1 AND a.patient_id=$2 AND a.encounter_id=e.id
+      ORDER BY a.admitted_at DESC,a.id DESC LIMIT 2
+    ) exact_case
+  ) linked ON true
 ),
 active_encounter AS (
-  SELECT id, patient_id, encounter_type, status, started_at, ended_at
-  FROM patient_encounters
-  WHERE status = 'in_progress'
-  ORDER BY started_at DESC, id DESC
-  LIMIT 1
+  SELECT * FROM patient_encounters WHERE status='in_progress'
+  ORDER BY started_at DESC,id DESC LIMIT 1
 ),
 active_admission AS (
   SELECT admission_cases.id AS admission_id,
+         admission_cases.encounter_id,
+         admission_cases.placement_revision,
          admission_cases.patient_id,
          admission_cases.ward_id,
          wards.name AS ward_name,

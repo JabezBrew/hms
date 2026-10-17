@@ -414,7 +414,7 @@ async fn ward_list_search_filters_server_side_and_stays_facility_scoped() {
 }
 
 #[tokio::test]
-async fn ward_analytics_use_real_admission_intervals_and_facility_scope() {
+async fn ward_analytics_preserves_unknown_imported_attribution_and_facility_scope() {
     let database =
         hms_db::test_support::TestDatabase::create().expect("test database is available");
     let pool = hms_db::connect(database.database_url())
@@ -540,11 +540,13 @@ async fn ward_analytics_use_real_admission_intervals_and_facility_scope() {
         .expect("analytics query succeeds");
 
     assert_eq!(analytics.meta.mode, "rust_v2_aggregates");
+    assert_eq!(analytics.meta.placement_attribution, "partial");
     assert_eq!(analytics.occupancy_trends.len(), 3);
-    assert!((analytics.occupancy_trends[0].occupancy_rate - 50.0).abs() < 0.001);
-    assert!((analytics.occupancy_trends[1].occupancy_rate - 100.0).abs() < 0.001);
-    assert!((analytics.occupancy_trends[2].occupancy_rate - 50.0).abs() < 0.001);
-
+    // Imported episode dates cannot reconstruct the original ward/bed timeline.
+    assert!(analytics
+        .occupancy_trends
+        .iter()
+        .all(|point| point.occupied_bed_days == 0.0 && point.occupancy_rate == Some(0.0)));
     let utilization = analytics
         .ward_utilization
         .iter()
@@ -552,19 +554,37 @@ async fn ward_analytics_use_real_admission_intervals_and_facility_scope() {
         .expect("ward utilization metric exists");
     assert_eq!(utilization.total_beds, 2);
     assert_eq!(utilization.occupied_beds_count, 1);
-    assert!((utilization.occupancy_rate - 66.666).abs() < 0.01);
-    assert!((utilization.bed_days - 4.0).abs() < 0.001);
-    assert!((utilization.turnover_rate.expect("turnover is present") - 0.5).abs() < 0.001);
-    assert!((utilization.avg_los.expect("LOS is present") - 2.0).abs() < 0.001);
-
+    assert_eq!(utilization.bed_days, 0.0);
+    assert_eq!(utilization.turnover_rate, None);
+    assert_eq!(utilization.avg_los, None);
     let admissions = analytics
         .admissions_by_ward
         .iter()
         .find(|metric| metric.ward_id == ward.id)
         .expect("admission metric exists");
-    assert_eq!(admissions.admissions, 2);
-    assert_eq!(admissions.discharges, 1);
-    assert_eq!(admissions.transfers, None);
+    assert_eq!(admissions.admissions, None);
+    assert_eq!(admissions.discharges, None);
+    assert_eq!(admissions.transfers, Some(0));
+    assert!(analytics
+        .length_of_stay
+        .iter()
+        .all(|bucket| bucket.count.is_none() && bucket.percentage.is_none()));
+    let canonical = hms_db::ward::ward_analytics(&pool, facility_id, None, start, end)
+        .await
+        .expect("canonical episode query succeeds");
+    let totals = canonical
+        .facility_episode_totals
+        .expect("unfiltered facility totals exist");
+    assert_eq!((totals.admissions, totals.discharges), (Some(2), Some(1)));
+    assert_eq!(
+        canonical
+            .length_of_stay
+            .iter()
+            .find(|bucket| bucket.range == "0-2 days")
+            .unwrap()
+            .count,
+        Some(1)
+    );
 
     let cross_facility =
         hms_db::ward::ward_analytics(&pool, uuid::Uuid::new_v4(), Some(ward.id), start, end)
@@ -1305,21 +1325,21 @@ async fn discharge_blockers_use_current_admission_context() {
     .await
     .expect("legacy dispense inserts");
 
-    sqlx::query("UPDATE discharge_cases SET status = 'completed', discharged_at = now(), updated_at = now() WHERE id = $1")
-        .bind(prior_discharge.id)
-        .execute(db.pool())
+    hms_db::test_support::ward_lifecycle::clear_discharge_blockers(&db, prior_discharge.id)
         .await
-        .expect("prior discharge completes for test setup");
-    sqlx::query("UPDATE admission_cases SET status = 'discharged', discharged_at = now(), updated_at = now() WHERE id = $1")
-        .bind(prior_admission.id)
-        .execute(db.pool())
+        .expect("prior blockers explicitly cleared");
+    hms_db::ward::complete_discharge(db.pool(), facility_id, prior_discharge.id)
         .await
-        .expect("prior admission marks discharged for test setup");
-    sqlx::query("UPDATE beds SET status = 'available', updated_at = now() WHERE id = $1")
-        .bind(prior_admission.bed_id.expect("prior admission has bed"))
-        .execute(db.pool())
-        .await
-        .expect("prior bed is released for test setup");
+        .expect("prior canonical discharge commits")
+        .expect("prior discharge exists");
+    hms_db::ward::release_cleaned_beds(
+        db.pool(),
+        facility_id,
+        chrono::Utc::now() + chrono::Duration::days(1),
+        100,
+    )
+    .await
+    .expect("synthetic completed cleaning releases prior bed");
 
     let current_visit = hms_db::care::check_in_visit(
         db.pool(),

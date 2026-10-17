@@ -844,7 +844,7 @@ pub async fn provision_demo_seed(
     let mut tx = pool.begin().await?;
     // Demo reseeding deletes a graph, including encounter links. Once notes
     // carry immutable evidence it must use a fresh isolated fixture database.
-    let retained:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM clinical_notes n JOIN patients p ON p.id=n.patient_id AND p.facility_id=n.facility_id JOIN clinical_note_versions v ON v.note_id=n.id AND v.facility_id=n.facility_id WHERE n.facility_id=$1 AND p.patient_code ~ '^DEMO-[0-9]+$')")
+    let retained:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM clinical_notes n JOIN patients p ON p.id=n.patient_id AND p.facility_id=n.facility_id JOIN clinical_note_versions v ON v.note_id=n.id AND v.facility_id=n.facility_id WHERE n.facility_id=$1 AND p.patient_code ~ '^DEMO-[0-9]+$') OR EXISTS(SELECT 1 FROM admission_placements e JOIN patients p ON p.id=e.patient_id AND p.facility_id=e.facility_id WHERE e.facility_id=$1 AND p.patient_code ~ '^DEMO-[0-9]+$') OR EXISTS(SELECT 1 FROM admission_moves e JOIN patients p ON p.id=e.patient_id AND p.facility_id=e.facility_id WHERE e.facility_id=$1 AND p.patient_code ~ '^DEMO-[0-9]+$')")
         .bind(baseline.facility_id).fetch_one(&mut *tx).await?;
     if retained {
         anyhow::bail!("demo_seed_existing_clinical_evidence");
@@ -6131,166 +6131,52 @@ pub async fn provision_performance_seed(
 
     let mut tx = pool.begin().await?;
     let owner_user_id = Uuid::from_u128(OWNER_USER_ID);
-    let default_ward_id = Uuid::from_u128(DEFAULT_WARD_ID);
     let performance_ward_id = Uuid::from_u128(0x51000000000000000000000000000001);
     let main_store_id = Uuid::from_u128(DEFAULT_MAIN_STORE_ID);
     let default_category_id = Uuid::from_u128(DEFAULT_INVENTORY_CATEGORY_MED_ID);
     let default_lab_test_id = Uuid::from_u128(DEFAULT_LAB_TEST_FBC_ID);
     let default_service_price_id = Uuid::from_u128(DEFAULT_PRICE_CONSULTATION_ID);
 
-    sqlx::query(
-        r#"
-        WITH perf_invoices AS (
-            SELECT id
-            FROM invoices
-            WHERE facility_id = $1
-              AND invoice_number ~ '^PERF-[0-9]{8}$'
-        )
-        DELETE FROM payments
-        USING perf_invoices
-        WHERE payments.invoice_id = perf_invoices.id
-          AND payments.facility_id = $1
-        "#,
-    )
-    .bind(baseline.facility_id)
-    .execute(&mut *tx)
-    .await?;
-
-    sqlx::query(
-        r#"
-        WITH perf_patients AS (
-            SELECT id
-            FROM patients
-            WHERE facility_id = $1
-              AND patient_code ~ '^PERF-[0-9]{6}$'
-        )
-        DELETE FROM clinical_notes
-        USING perf_patients
-        WHERE clinical_notes.patient_id = perf_patients.id
-          AND clinical_notes.facility_id = $1
-          AND clinical_notes.title LIKE 'Performance note %'
-        "#,
-    )
-    .bind(baseline.facility_id)
-    .execute(&mut *tx)
-    .await?;
-
-    sqlx::query(
-        r#"
-        WITH perf_patients AS (
-            SELECT id
-            FROM patients
-            WHERE facility_id = $1
-              AND patient_code ~ '^PERF-[0-9]{6}$'
-        )
-        DELETE FROM lab_orders
-        USING perf_patients
-        WHERE lab_orders.patient_id = perf_patients.id
-          AND lab_orders.facility_id = $1
-        "#,
-    )
-    .bind(baseline.facility_id)
-    .execute(&mut *tx)
-    .await?;
-
-    sqlx::query(
-        r#"
-        WITH perf_patients AS (
-            SELECT id
-            FROM patients
-            WHERE facility_id = $1
-              AND patient_code ~ '^PERF-[0-9]{6}$'
-        )
-        DELETE FROM admission_cases
-        USING perf_patients
-        WHERE admission_cases.patient_id = perf_patients.id
-          AND admission_cases.facility_id = $1
-        "#,
-    )
-    .bind(baseline.facility_id)
-    .execute(&mut *tx)
-    .await?;
-
-    sqlx::query(
-        r#"
-        WITH perf_patients AS (
-            SELECT id
-            FROM patients
-            WHERE facility_id = $1
-              AND patient_code ~ '^PERF-[0-9]{6}$'
-        )
-        DELETE FROM invoices
-        USING perf_patients
-        WHERE invoices.patient_id = perf_patients.id
-          AND invoices.facility_id = $1
-          AND invoices.invoice_number ~ '^PERF-[0-9]{8}$'
-        "#,
-    )
-    .bind(baseline.facility_id)
-    .execute(&mut *tx)
-    .await?;
-
-    sqlx::query(
-        r#"
-        WITH perf_items AS (
-            SELECT id
-            FROM inventory_items
-            WHERE facility_id = $1
-              AND code ~ '^PERF-MED-[0-9]{6}$'
-        )
-        DELETE FROM stock_movements
-        USING perf_items
-        WHERE stock_movements.item_id = perf_items.id
-          AND stock_movements.facility_id = $1
-        "#,
-    )
-    .bind(baseline.facility_id)
-    .execute(&mut *tx)
-    .await?;
-
-    sqlx::query(
-        r#"
-        WITH perf_items AS (
-            SELECT id
-            FROM inventory_items
-            WHERE facility_id = $1
-              AND code ~ '^PERF-MED-[0-9]{6}$'
-        )
-        DELETE FROM stock_batches
-        USING perf_items
-        WHERE stock_batches.item_id = perf_items.id
-          AND stock_batches.facility_id = $1
-        "#,
-    )
-    .bind(baseline.facility_id)
-    .execute(&mut *tx)
-    .await?;
-
-    sqlx::query(
-        r#"
-        DELETE FROM patients
-        WHERE facility_id = $1
-          AND patient_code ~ '^PERF-[0-9]{6}$'
-          AND substring(patient_code from 6)::int > $2
-        "#,
-    )
-    .bind(baseline.facility_id)
-    .bind(config.patient_count)
-    .execute(&mut *tx)
-    .await?;
-
-    sqlx::query(
-        r#"
-        DELETE FROM inventory_items
-        WHERE facility_id = $1
-          AND code ~ '^PERF-MED-[0-9]{6}$'
-          AND substring(code from 10)::int > $2
-        "#,
-    )
-    .bind(baseline.facility_id)
-    .bind(config.inventory_item_count)
-    .execute(&mut *tx)
-    .await?;
+    // Fixed synthetic UUID namespaces are global. Serialize seed operators only;
+    // cancellation rolls this transaction back, and a contender waits at most 5s.
+    sqlx::query("SELECT set_config('lock_timeout','5s',true)")
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended('hms.performance_seed.reserved_namespace',0))").execute(&mut *tx).await?;
+    let receipt = serde_json::json!({"version":1,"patient_count":config.patient_count,"chronicled_patient_count":config.chronicled_patient_count,"notes_per_chronicle_patient":config.notes_per_chronicle_patient,"lab_order_count":config.lab_order_count,"inventory_item_count":config.inventory_item_count,"admission_count":config.admission_count,"invoice_count":config.invoice_count});
+    let recorded: Option<serde_json::Value> = sqlx::query_scalar("SELECT metadata FROM audit_events WHERE facility_id=$1 AND resource_type='performance_seed' AND resource_id=$1 AND event_type='performance.seed.provisioned' ORDER BY occurred_at,id LIMIT 1").bind(baseline.facility_id).fetch_optional(&mut *tx).await?;
+    if let Some(recorded) = recorded {
+        ensure!(
+            recorded == receipt,
+            "performance_seed_configuration_changed_use_fresh_database"
+        );
+        // Idempotency confirms the original seed command; it never recreates or
+        // rewrites evidence, a terminal episode, or later user-authored work.
+        tx.commit().await?;
+        return Ok(());
+    }
+    let reserved: bool = sqlx::query_scalar(r#"
+        SELECT EXISTS(SELECT 1 FROM patients WHERE (facility_id=$1 AND patient_code ~ '^PERF-[0-9]{6}$') OR id::text LIKE '31000000-%')
+        OR EXISTS(SELECT 1 FROM patient_contexts WHERE id::text LIKE '32000000-%')
+        OR EXISTS(SELECT 1 FROM clinical_notes WHERE id::text LIKE '61000000-%')
+        OR EXISTS(SELECT 1 FROM wards WHERE id::text LIKE '51000000-%' OR (facility_id=$1 AND code='perf-load'))
+        OR EXISTS(SELECT 1 FROM beds WHERE id::text LIKE '51100000-%')
+        OR EXISTS(SELECT 1 FROM admission_cases WHERE id::text LIKE '52000000-%')
+        OR EXISTS(SELECT 1 FROM nursing_tasks WHERE id::text LIKE '53000000-%')
+        OR EXISTS(SELECT 1 FROM lab_orders WHERE id::text LIKE '71000000-%')
+        OR EXISTS(SELECT 1 FROM lab_specimens WHERE id::text LIKE '72000000-%')
+        OR EXISTS(SELECT 1 FROM lab_results WHERE id::text LIKE '73000000-%')
+        OR EXISTS(SELECT 1 FROM inventory_items WHERE id::text LIKE '81000000-%' OR (facility_id=$1 AND code ~ '^PERF-MED-[0-9]{6}$'))
+        OR EXISTS(SELECT 1 FROM stock_batches WHERE id::text LIKE '82000000-%')
+        OR EXISTS(SELECT 1 FROM stock_movements WHERE id::text LIKE '83000000-%')
+        OR EXISTS(SELECT 1 FROM invoices WHERE id::text LIKE '91000000-%' OR (facility_id=$1 AND invoice_number ~ '^PERF-[0-9]{8}$'))
+        OR EXISTS(SELECT 1 FROM invoice_lines WHERE id::text LIKE '91100000-%')
+        OR EXISTS(SELECT 1 FROM payments WHERE id::text LIKE '91200000-%')
+    "#).bind(baseline.facility_id).fetch_one(&mut *tx).await?;
+    ensure!(
+        !reserved,
+        "performance_seed_existing_synthetic_evidence_use_fresh_database"
+    );
 
     sqlx::query(
         r#"
@@ -6483,14 +6369,6 @@ pub async fn provision_performance_seed(
     )
     .bind(performance_ward_id)
     .bind(baseline.facility_id)
-    .execute(&mut *tx)
-    .await?;
-
-    sqlx::query(
-        "UPDATE beds SET status = 'available', updated_at = now() WHERE facility_id = $1 AND ward_id = $2 AND bed_code ~ '^PERF-[0-9]{4}$'",
-    )
-    .bind(baseline.facility_id)
-    .bind(performance_ward_id)
     .execute(&mut *tx)
     .await?;
 
@@ -7053,12 +6931,7 @@ pub async fn provision_performance_seed(
     .execute(&mut *tx)
     .await?;
 
-    sqlx::query("UPDATE wards SET status = 'active', updated_at = now() WHERE id IN ($1, $2)")
-        .bind(default_ward_id)
-        .bind(performance_ward_id)
-        .execute(&mut *tx)
-        .await?;
-
+    sqlx::query("INSERT INTO audit_events(id,facility_id,actor_user_id,event_type,resource_type,resource_id,metadata) VALUES(gen_random_uuid(),$1,$2,'performance.seed.provisioned','performance_seed',$1,$3)").bind(baseline.facility_id).bind(owner_user_id).bind(receipt).execute(&mut *tx).await?;
     tx.commit().await?;
     Ok(())
 }

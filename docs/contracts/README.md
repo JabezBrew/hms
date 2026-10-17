@@ -367,3 +367,35 @@ a separate fresh acknowledgment may clear its opaque barrier. Current denial,
 authority or context transitions invalidate older proof, including active retries.
 Migration024 requires coordinated runtime/schema/ops deployment; earlier runtime
 rollback is refused. See the checkpoint17 verification and runtime-schema scope.
+
+## Reviewed admission moves and effective task routing
+
+Placement context, eligible destination search, bounded metadata history, exact
+move detail and actor-bound original receipts use an explicit Patient Chronicle
+admission purpose. A reviewed UUID command atomically preserves the episode,
+advances its physical placement revision, closes/opens placement intervals,
+changes bed states, routes every open task and records immutable evidence/audit.
+Source ward or section inactivity alone does not block release from an existing
+consistent occupied placement; all source ownership, interval, scope and current
+authority proofs remain required. Every destination ward/section must be active,
+including resources shared with the source. New admission/reservation/activation
+also retain their own active ward/section eligibility through commit.
+
+The single routing policy clears open-task assignments. An oversized membership
+refuses the whole move. Terminal task evidence and original ward/instruction
+provenance remain unchanged; current lists and decisions use service_ward_id.
+
+Existing placement observations expose an unknown prefix. Known interval
+occupancy stops at one database snapshot timestamp and reports partial coverage;
+unknown attribution and zero-capacity rates remain unavailable rather than zero.
+Current active bed capacity and full requested-range rate denominators are
+explicit bases. Canonical facility episode totals are absent for ward filters.
+
+Current facility/profile/session/network, Full/demographics, admission authority,
+ordinary patient relationship and actual ward scope remain authoritative through
+waits and final database time. Open task routing adds real nursing authority.
+The UI reviews exact source/destination/membership tokens and does not choose a
+destination automatically. Lost-payload saved-state review is manual, single-use
+and invalidated by later denial or scope transitions, including during awaits.
+Migration025 requires coordinated runtime/schema/ops deployment; old024 rollback
+is refused. See checkpoint18 verification for the current acceptance boundary.

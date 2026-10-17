@@ -72,11 +72,15 @@ impl Fixture {
             .admission_case_with_available_bed()
             .await
             .unwrap();
-        sqlx::query("UPDATE admission_cases SET status='admitted' WHERE id=$1")
-            .bind(a.admission.id)
-            .execute(db.pool())
-            .await
-            .unwrap();
+        hms_db::ward::activate_admission_case(
+            db.pool(),
+            db.facility_id(),
+            a.admission.id,
+            db.owner_user_id(),
+        )
+        .await
+        .unwrap()
+        .unwrap();
         let actor = actor(&db, db.owner_user_id()).await;
         Self {
             db,
@@ -230,30 +234,35 @@ async fn task_captured_ward_and_observation_current_ward_filter_before_limit() {
     create_patient_vitals_for_actor(f.db.pool(), f.actor.clone(), f.vitals())
         .await
         .unwrap();
-    sqlx::query("UPDATE admission_cases SET ward_id=$2 WHERE id=$1")
-        .bind(f.admission)
-        .bind(other.ward.id)
-        .execute(f.db.pool())
+    hms_db::test_support::ward_lifecycle::move_admission(&f.db, f.admission, other.bed.id)
         .await
         .unwrap();
+    let routed: (Uuid, Uuid, i64) = sqlx::query_as(
+        "SELECT ward_id,service_ward_id,route_version FROM nursing_tasks WHERE id=$1",
+    )
+    .bind(old.id)
+    .fetch_one(f.db.pool())
+    .await
+    .unwrap();
+    assert_eq!(routed, (f.ward, other.ward.id, 1));
     assert_eq!(
         decide_nursing_task_for_actor(
             f.db.pool(),
-            f.actor.clone(),
+            scoped.clone(),
             old.id,
             NursingTaskStatus::Completed
         )
         .await
         .unwrap_err()
         .downcast_ref(),
-        Some(&NursingError::InvalidContext)
+        Some(&NursingError::WardDenied)
     );
     assert_eq!(
         list_nursing_tasks_for_actor(f.db.pool(), scoped.clone(), &q, None, 10)
             .await
             .unwrap()
             .len(),
-        2
+        0
     );
     let q: PatientVitalsListQuery =
         serde_json::from_value(json!({"patient_id":f.patient})).unwrap();
@@ -268,16 +277,21 @@ async fn task_captured_ward_and_observation_current_ward_filter_before_limit() {
 async fn care_closure_or_transfer_rejects_new_completion_but_allows_cancellation_retirement() {
     let f = Fixture::new().await;
     let task = f.create().await;
+    let discharge = hms_db::test_support::ward_lifecycle::prepare_discharge(&f.db, f.admission)
+        .await
+        .unwrap();
     let mut held = f.db.pool().begin().await.unwrap();
     let pid: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
         .fetch_one(&mut *held)
         .await
         .unwrap();
-    sqlx::query("UPDATE admission_cases SET status='discharged' WHERE id=$1")
-        .bind(f.admission)
-        .execute(&mut *held)
-        .await
-        .unwrap();
+    hms_db::test_support::ward_lifecycle::complete_prepared_discharge_tx(
+        &mut held,
+        f.db.facility_id(),
+        discharge,
+    )
+    .await
+    .unwrap();
     let pool = f.db.pool().clone();
     let actor = f.actor.clone();
     let wait = tokio::spawn(async move {

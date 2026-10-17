@@ -26,6 +26,7 @@ export function TaskActionControls({
   pendingAction,
   className,
   canComplete = true,
+  canCancel = true,
 }) {
   const taskId = getTaskId(task);
   const status = getTaskStatus(task);
@@ -41,7 +42,7 @@ export function TaskActionControls({
       {actions.map((item) => {
         const Icon = item.icon;
         const isPending = pendingAction?.taskId === taskId && pendingAction?.action === item.action;
-        const disabled = Boolean(pendingAction) || typeof onAction !== 'function' || (!canComplete && item.action === 'complete');
+        const disabled = Boolean(pendingAction) || typeof onAction !== 'function' || (!canComplete && item.action === 'complete') || (!canCancel && item.action === 'cancel');
         return (
           <Button
             key={item.action}

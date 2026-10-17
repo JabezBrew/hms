@@ -95,6 +95,25 @@ it('keeps a local unsaved draft without rendering it in the closed Host or claim
   const panel = mount('host'); fireEvent.change(await screen.findByLabelText('Note title'), { target: { value: 'Synthetic unsaved title' } }); fireEvent.change(screen.getByLabelText('Note', { exact: true }), { target: { value: 'SYNTHETIC-UNSAVED-TEXT' } }); expect(screen.queryByRole('button', { name: 'Save Draft' })).not.toBeInTheDocument(); expect(screen.getByText(/Unsaved text stays only/)).toBeInTheDocument();
   panel.update({ open: false }); expect(screen.queryByDisplayValue('SYNTHETIC-UNSAVED-TEXT')).not.toBeInTheDocument(); panel.update({ open: true }); await screen.findByDisplayValue('SYNTHETIC-UNSAVED-TEXT'); expect(writes).toHaveLength(0);
 });
+it('preserves an authorized pure note draft across same-ward bed revisions, then discards it on a ward-context change', async () => {
+  const panel = mount('host', { selectedWardId: ids[21], selectedPlacementRevision: 4 });
+  fireEvent.change(await screen.findByLabelText('Note title'), { target: { value: 'Synthetic long unsaved note' } });
+  fireEvent.change(screen.getByLabelText('Note', { exact: true }), { target: { value: 'SYNTHETIC-SAME-WARD-DRAFT' } });
+  panel.update({ selectedPlacementRevision: 5 });
+  expect(screen.getByLabelText('Note', { exact: true })).toHaveValue('SYNTHETIC-SAME-WARD-DRAFT');
+  panel.update({ selectedWardId: ids[22], selectedPlacementRevision: 6 });
+  await waitFor(() => expect(screen.queryByDisplayValue('SYNTHETIC-SAME-WARD-DRAFT')).not.toBeInTheDocument());
+  expect(writes).toHaveLength(0);
+});
+it('retains exact unknown note intent across same-ward physical change and leaves only opaque recovery after ward loss', async () => {
+  mode = 'lost'; const panel = mount('host', { selectedWardId: ids[21], selectedPlacementRevision: 4 }); const events = await reviewNew();
+  await events.click(screen.getByRole('button', { name: 'Save reviewed note' })); await screen.findByRole('button', { name: 'Retry exact note change' });
+  const original = structuredClone(writes[0]); panel.update({ selectedPlacementRevision: 5 });
+  expect(screen.getByRole('button', { name: 'Retry exact note change' })).toBeEnabled(); expect(screen.getByText('SYNTHETIC-PRIVATE-LOCAL-DRAFT')).toBeInTheDocument();
+  panel.update({ selectedWardId: ids[22], selectedPlacementRevision: 6 });
+  await waitFor(() => expect(screen.queryByRole('button', { name: 'Retry exact note change' })).not.toBeInTheDocument());
+  expect(screen.queryByText('SYNTHETIC-PRIVATE-LOCAL-DRAFT')).not.toBeInTheDocument(); expect(getWriteUncertaintySnapshot().entries).toHaveLength(1); expect(writes).toEqual([original]);
+});
 it('blocks Escape, top close and duplicate save while a real POST is pending', async () => {
   mode = 'pending'; const panel = mount(); const events = await reviewNew(); await events.click(screen.getByRole('button', { name: 'Save reviewed note' })); await waitFor(() => expect(pendingResolve).toBeTypeOf('function')); await events.keyboard('{Escape}'); expect(panel.close).not.toHaveBeenCalled(); await events.click(screen.getAllByRole('button', { name: 'Close', exact: true }).find((button) => !button.disabled)); expect(panel.close).not.toHaveBeenCalled(); expect(writes).toHaveLength(1); await act(async () => pendingResolve()); await screen.findByText(/Note saved/);
 });

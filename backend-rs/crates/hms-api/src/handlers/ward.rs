@@ -1043,19 +1043,20 @@ pub async fn cancel_admission_case(
     responses(
         (status = 200, description = "Admission created", body = ObjectResponse<WardBoardItem>),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
-        (status = 403, description = "Permission denied", body = ApiErrorResponse)
+        (status = 403, description = "Permission denied", body = ApiErrorResponse),
+        (status = 409, description = "Placement unavailable or admission outcome unconfirmed", body = ApiErrorResponse)
     )
 )]
 pub async fn admit_patient(
     State(state): State<AppState>,
-    RequestContext(user): RequestContext,
+    network: crate::extractors::NetworkContext,
     Json(payload): Json<AdmitPatientRequest>,
 ) -> Result<Json<ObjectResponse<WardBoardItem>>, ApiError> {
     Ok(Json(
         state
             .ward_services()
             .admission_cases()
-            .admit_patient(&user, payload)
+            .admit_patient(&network.context, payload, network.authorization_deadline)
             .await?,
     ))
 }

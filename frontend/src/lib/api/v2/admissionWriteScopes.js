@@ -1,3 +1,4 @@
+import { captureMovePlacement, denyMoveRead } from './moveWriteScopes';
 // Loaded only for admission-scoped writes or recovery evidence. These are
 // protocol classifiers, never patient authorization or a fallback write grant.
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -7,6 +8,15 @@ export function classifyAdmissionWriteScope(path, pathParams) {
   if (parts[0] !== 'api' || parts[1] !== 'v2' || parts[2] !== 'patients' || !UUID.test(parts[3]) || parts[4] !== 'chronicle') return null;
   if (parts.length === 6 && parts[5] === 'admission-advisory-cases') return { excludeRead: true };
   if (parts[5] !== 'admissions' || !UUID.test(parts[6])) return null;
+  if (['placement', 'move-destinations', 'moves', 'move-requests'].includes(parts[7])) {
+    const primary = `admission-move:${parts[3]}:${parts[6]}`;
+    const base = { primary, extraReference: primary, family: parts.slice(0, 7).concat('moves').join('/').toLowerCase(), denyRead: denyMoveRead };
+    if (parts.length === 8 && ['placement', 'move-destinations', 'moves'].includes(parts[7])) return { ...base, excludeRead: true, ...(parts[7] === 'placement' ? { captureRead: captureMovePlacement({ patientId: parts[3], caseId: parts[6] }) } : {}), retryTemplate: parts[7] === 'moves' ? `${PREFIX}moves` : null };
+    if (parts.length !== 9 || !UUID.test(parts[8])) return null;
+    if (parts[7] === 'moves') return { ...base, excludeRead: true };
+    if (parts[7] === 'move-requests') return { ...base, receiptRequestId: parts[8], receiptMatches: (response, principal) => response?.data?.client_request_id === parts[8] && response.data.movement?.patient_id === parts[3] && response.data.movement?.admission_case_id === parts[6] && response.data.movement?.recorded_by_user_id === principal?.id };
+    return null;
+  }
   if (parts[7] === 'advisories') {
     const valid = parts.length === 8 || (parts.length === 9 && UUID.test(parts[8])) || (parts.length === 10 && ((parts[8] === 'requests' && UUID.test(parts[9])) || (UUID.test(parts[8]) && parts[9] === 'decision')));
     if (!valid) return null;

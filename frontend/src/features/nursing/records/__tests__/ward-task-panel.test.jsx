@@ -9,7 +9,7 @@ vi.mock('@/features/ward-board/hooks', () => ({ useWardBoardPatient: vi.fn() }))
 const runtime = window.__HMS_RUNTIME_CONFIG__;
 const patient = { patient_id: 'synthetic-patient', admission_id: 'synthetic-admission', patient_name: 'Synthetic patient' };
 const user = { id: 'synthetic-user', adminAccess: { capabilities: ['nursing.task.manage'] }, accessContext: { patient_visibility: ['full_clinical'], features: ['nursing'] } };
-const tasks = Array.from({ length: 13 }, (_, i) => ({ id: `synthetic-task-${i}`, title: `Synthetic nursing task ${i + 1}`, patient_id: patient.patient_id, status: 'open', _action_source: 'nursing_task' }));
+const tasks = Array.from({ length: 13 }, (_, i) => ({ id: `synthetic-task-${i}`, title: `Synthetic nursing task ${i + 1}`, patient_id: patient.patient_id, status: 'open', service_ward_id: 'synthetic-ward', route_version: 0, _action_source: 'nursing_task' }));
 const action = vi.fn();
 function panel(actor = user, network = { confirmed: true, decision: { access_allowed: true, read_only: false } }) { return <AuthContext.Provider value={{ user: actor }}><ReadOnlyModeProvider network={network}><MemoryRouter><ExpandedPatientDetailPanel patient={patient} onTaskAction={action} /></MemoryRouter></ReadOnlyModeProvider></AuthContext.Provider>; }
 beforeEach(() => { window.__HMS_RUNTIME_CONFIG__ = { apiMode: 'rust-v2' }; vi.mocked(useWardBoardPatient).mockReturnValue({ data: { tasks }, isLoading: false, isError: false }); action.mockClear(); });
@@ -29,9 +29,9 @@ it('shows read failure instead of stale cached task text and disables decisions 
   vi.mocked(useWardBoardPatient).mockReturnValue({ data: { tasks }, isLoading: false, isError: true, error: new Error('Synthetic task refresh unavailable') }); view.rerender(panel()); expect(screen.getByText('Synthetic task refresh unavailable')).toBeInTheDocument(); expect(screen.queryByText('Synthetic nursing task 1')).not.toBeInTheDocument();
 });
 
-it('labels a captured earlier ward and offers retirement without treating it as current-ward work', () => {
-  const previousWardTask = { ...tasks[0], ward_id: 'synthetic-previous-ward', admission_case_id: patient.admission_id };
+it('labels a different service ward and offers retirement without treating it as current-ward work', () => {
+  const previousWardTask = { ...tasks[0], ward_id: 'synthetic-previous-ward', service_ward_id: 'synthetic-previous-ward', route_version: 0, admission_case_id: patient.admission_id };
   vi.mocked(useWardBoardPatient).mockReturnValue({ data: { tasks: [previousWardTask] }, isLoading: false, isError: false });
   render(<AuthContext.Provider value={{ user }}><ReadOnlyModeProvider network={{ confirmed: true, decision: { access_allowed: true, read_only: false } }}><MemoryRouter><ExpandedPatientDetailPanel patient={{ ...patient, ward_id: 'synthetic-current-ward' }} onTaskAction={action} /></MemoryRouter></ReadOnlyModeProvider></AuthContext.Provider>);
-  expect(screen.getByText('Recorded for an earlier ward')).toBeInTheDocument(); expect(screen.getByRole('button', { name: 'Complete' })).toBeDisabled(); fireEvent.click(screen.getByRole('button', { name: 'Cancel' })); expect(action).toHaveBeenCalledWith({ taskId: previousWardTask.id, patientId: patient.patient_id, admissionId: patient.admission_id, action: 'cancel' });
+  expect(screen.getByText('Responsibility is in another ward')).toBeInTheDocument(); expect(screen.getByRole('button', { name: 'Complete' })).toBeDisabled(); fireEvent.click(screen.getByRole('button', { name: 'Cancel' })); expect(action).toHaveBeenCalledWith({ taskId: previousWardTask.id, patientId: patient.patient_id, admissionId: patient.admission_id, action: 'cancel' });
 });

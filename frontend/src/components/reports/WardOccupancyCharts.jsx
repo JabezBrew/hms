@@ -156,6 +156,10 @@ function EmptyAnalyticsState({ body, title }) {
 }
 
 function SnapshotNotice({ meta }) {
+  if (meta?.occupancy_basis === 'known_placement_intervals') return <div className="rounded-lg border border-border bg-muted/30 px-4 py-3 text-sm text-muted-foreground">
+    Occupancy and bed days use recorded placement intervals and current active ward capacity. {meta.placement_attribution === 'partial' ? 'Placement history is partial: known bed days and recorded transfers are lower bounds. Unknown ward attribution is shown as Not available; original facility episode totals are reported separately.' : 'Recorded placement history covers this range.'}
+    {meta.observed_through && <span className="mt-1 block">Occupancy measured through {new Date(meta.observed_through).toLocaleString()}. Open placements are not extended into future time. Rates retain the full requested-range denominator and represent known-only coverage.</span>}
+  </div>;
   if (!isRustV2Snapshot(meta)) return null;
 
   return (
@@ -341,29 +345,14 @@ function TrendStatsTable({ occupancyData, rows, selectedWard, wards }) {
   );
 }
 
-export function OccupancyTrendsPanel({
-  analyticsMeta,
-  occupancyData = DEFAULT_EMPTY_ARRAY,
-  utilizationData = DEFAULT_EMPTY_ARRAY,
-  wards = DEFAULT_EMPTY_ARRAY,
-  selectedWard,
-}) {
-  const snapshotRows = useMemo(() => getSnapshotRows(utilizationData), [utilizationData]);
+function OccupancySummaryTiles({ analyticsMeta, snapshotRows, occupancyData, hasTrendData }) {
   const averageOccupancy = getAverage(snapshotRows.map((row) => row.occupancyRate));
-  const occupiedBeds = snapshotRows.reduce((sum, row) => sum + (row.occupiedBeds || 0), 0);
-  const totalBeds = snapshotRows.reduce((sum, row) => sum + (row.totalBeds || 0), 0);
-  const hasTrendData = occupancyData.length > 0;
-  const chartOption = hasTrendData
-    ? buildTrendLineOption({ occupancyData, selectedWard, wards })
-    : buildSnapshotBarOption(snapshotRows, 'Current ward occupancy snapshot');
-
+  const occupiedBeds = snapshotRows.every(row => row.occupiedBeds !== null) ? snapshotRows.reduce((sum, row) => sum + row.occupiedBeds, 0) : null;
+  const totalBeds = snapshotRows.every(row => row.totalBeds !== null) ? snapshotRows.reduce((sum, row) => sum + row.totalBeds, 0) : null;
   return (
-    <div className="space-y-5">
-      <SnapshotNotice meta={analyticsMeta} />
-
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <MetricTile icon={Bed} label="Wards In Scope" value={snapshotRows.length} />
-        <MetricTile icon={Activity} label="Average Occupancy" tone="sky" value={formatPercent(averageOccupancy)} />
+        <MetricTile icon={Activity} label={analyticsMeta?.occupancy_basis ? 'Average known ward rate' : 'Average Occupancy'} meta={analyticsMeta?.occupancy_basis ? 'Mean of available ward rates; unknown rates excluded' : null} tone="sky" value={formatPercent(averageOccupancy)} />
         <MetricTile
           icon={Users}
           label="Occupied Beds"
@@ -376,9 +365,30 @@ export function OccupancyTrendsPanel({
           label="Trend Coverage"
           meta={hasTrendData ? `${occupancyData.length} date points` : 'Current snapshot only'}
           tone={hasTrendData ? 'emerald' : 'amber'}
-          value={hasTrendData ? 'Live' : 'Pending'}
+          value={hasTrendData ? analyticsMeta?.placement_attribution === 'partial' ? 'Partial' : 'Recorded' : 'Pending'}
         />
       </div>
+  );
+}
+
+export function OccupancyTrendsPanel({
+  analyticsMeta,
+  occupancyData = DEFAULT_EMPTY_ARRAY,
+  utilizationData = DEFAULT_EMPTY_ARRAY,
+  wards = DEFAULT_EMPTY_ARRAY,
+  selectedWard,
+}) {
+  const snapshotRows = useMemo(() => getSnapshotRows(utilizationData), [utilizationData]);
+  const hasTrendData = occupancyData.length > 0;
+  const chartOption = hasTrendData
+    ? buildTrendLineOption({ occupancyData, selectedWard, wards })
+    : buildSnapshotBarOption(snapshotRows, 'Current ward occupancy snapshot');
+
+  return (
+    <div className="space-y-5">
+      <SnapshotNotice meta={analyticsMeta} />
+
+      <OccupancySummaryTiles {...{ analyticsMeta, snapshotRows, occupancyData, hasTrendData }} />
 
       <ChartCard
         description={hasTrendData ? 'Historical occupancy rates over time' : 'Current ward capacity from the Rust V2 ward snapshot'}
@@ -454,13 +464,13 @@ function buildLengthOfStayDistributionOption(lengthOfStayData) {
       series: [
         {
           barMaxWidth: 34,
-          data: lengthOfStayData.map((point) => numericValue(point.count) ?? 0),
+          data: lengthOfStayData.map((point) => numericValue(point.count)),
           ...createStableBarStyle({ borderRadius: [4, 4, 0, 0], color: theme.palette[3] }),
           name: 'Patients',
           type: 'bar',
         },
         {
-          data: lengthOfStayData.map((point) => numericValue(point.percentage) ?? 0),
+          data: lengthOfStayData.map((point) => numericValue(point.percentage)),
           lineStyle: { color: theme.palette[0], width: 2 },
           name: 'Percentage',
           smooth: 0.25,
@@ -689,14 +699,14 @@ function buildAdmissionsOption(admissionsByWard, { showTransfers }) {
     const series = [
       {
         barMaxWidth: 28,
-        data: admissionsByWard.map((ward) => numericValue(ward.admissions) ?? 0),
+        data: admissionsByWard.map((ward) => numericValue(ward.admissions)),
         ...createStableBarStyle({ borderRadius: [4, 4, 0, 0], color: theme.palette[3] }),
         name: 'Admissions',
         type: 'bar',
       },
       {
         barMaxWidth: 28,
-        data: admissionsByWard.map((ward) => numericValue(ward.discharges) ?? 0),
+        data: admissionsByWard.map((ward) => numericValue(ward.discharges)),
         ...createStableBarStyle({ borderRadius: [4, 4, 0, 0], color: theme.palette[1] }),
         name: 'Discharges',
         type: 'bar',
@@ -705,7 +715,7 @@ function buildAdmissionsOption(admissionsByWard, { showTransfers }) {
     if (showTransfers) {
       series.push({
         barMaxWidth: 28,
-        data: admissionsByWard.map((ward) => numericValue(ward.transfers) ?? 0),
+        data: admissionsByWard.map((ward) => numericValue(ward.transfers)),
         ...createStableBarStyle({ borderRadius: [4, 4, 0, 0], color: theme.palette[0] }),
         name: 'Transfers',
         type: 'bar',
@@ -751,6 +761,7 @@ function buildAdmissionsOption(admissionsByWard, { showTransfers }) {
 export function AdmissionsPanel({
   admissionsByWard = DEFAULT_EMPTY_ARRAY,
   analyticsMeta,
+  facilityEpisodeTotals = null,
   wards = DEFAULT_EMPTY_ARRAY,
 }) {
   const showTransfers = !hasUnavailableMetric(analyticsMeta, 'transfers')
@@ -771,6 +782,10 @@ export function AdmissionsPanel({
   return (
     <div className="space-y-5">
       <SnapshotNotice meta={analyticsMeta} />
+      {facilityEpisodeTotals && <div className="grid gap-3 sm:grid-cols-2" aria-label="Original facility episode totals">
+        <MetricTile icon={Users} label="Facility admissions" value={formatNumber(facilityEpisodeTotals.admissions)} meta={analyticsMeta?.partial_metrics?.includes('facility_episode_totals.admissions') ? 'Partial: recorded original episodes in the requested range' : 'Original episodes; independent of ward attribution'} />
+        <MetricTile icon={Users} label="Facility discharges" value={formatNumber(facilityEpisodeTotals.discharges)} meta={analyticsMeta?.partial_metrics?.includes('facility_episode_totals.discharges') ? 'Partial: recorded original episodes in the requested range' : 'Original episodes; independent of ward attribution'} />
+      </div>}
       <ChartCard title="Admissions, Discharges, and Transfers by Ward">
         <HmsEChart
           ariaLabel="Admissions discharges and transfers by ward chart"
@@ -794,10 +809,11 @@ export function AdmissionsPanel({
             </TableHeader>
             <TableBody>
               {admissionsByWard.map((ward) => {
-                const netChange = (ward.admissions || 0) - (ward.discharges || 0);
+                const admissions = numericValue(ward.admissions), discharges = numericValue(ward.discharges);
+                const netChange = admissions !== null && discharges !== null ? admissions - discharges : null;
                 const matchingWard = wards.find((item) => item.name === ward.ward);
                 const totalBeds = numericValue(matchingWard?.total_beds);
-                const admissionRate = totalBeds ? ward.admissions / totalBeds : null;
+                const admissionRate = totalBeds && admissions !== null ? admissions / totalBeds : null;
 
                 return (
                   <TableRow key={ward.ward}>
@@ -808,7 +824,7 @@ export function AdmissionsPanel({
                       {hasUnavailableMetric(analyticsMeta, 'transfers') ? 'Not available' : formatNumber(ward.transfers)}
                     </TableCell>
                     <TableCell className={cn(netChange > 0 && 'text-emerald-700', netChange < 0 && 'text-rose-700')}>
-                      {netChange > 0 ? `+${netChange}` : netChange}
+                      {netChange === null ? 'Not available' : netChange > 0 ? `+${netChange}` : netChange}
                     </TableCell>
                     <TableCell>{formatNumber(admissionRate)}</TableCell>
                   </TableRow>

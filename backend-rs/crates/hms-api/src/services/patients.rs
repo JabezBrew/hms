@@ -106,18 +106,22 @@ pub struct PatientChronicleEncounterSummary {
     pub status: String,
     pub started_at: DateTime<Utc>,
     pub ended_at: Option<DateTime<Utc>>,
+    pub admission: Option<PatientChronicleAdmissionSummary>,
+    pub admission_link_ambiguous: bool,
 }
 
 #[derive(Clone, Debug, Serialize, ToSchema)]
 pub struct PatientChronicleAdmissionSummary {
     pub admission_id: Uuid,
+    pub encounter_id: Option<Uuid>,
+    pub placement_revision: i64,
     pub patient_id: Uuid,
     pub ward_id: Uuid,
     pub ward_name: String,
     pub bed_id: Option<Uuid>,
     pub bed_code: Option<String>,
     pub status: String,
-    pub admitted_at: DateTime<Utc>,
+    pub admitted_at: Option<DateTime<Utc>>,
     pub discharged_at: Option<DateTime<Utc>>,
 }
 
@@ -1573,6 +1577,8 @@ fn patient_chronicle_encounter_from_read(
         status: read.status,
         started_at: read.started_at,
         ended_at: read.ended_at,
+        admission: read.admission.map(patient_chronicle_admission_from_read),
+        admission_link_ambiguous: read.admission_link_ambiguous,
     }
 }
 
@@ -1581,6 +1587,8 @@ fn patient_chronicle_admission_from_read(
 ) -> PatientChronicleAdmissionSummary {
     PatientChronicleAdmissionSummary {
         admission_id: read.admission_id,
+        encounter_id: read.encounter_id,
+        placement_revision: read.placement_revision,
         patient_id: read.patient_id,
         ward_id: read.ward_id,
         ward_name: read.ward_name,

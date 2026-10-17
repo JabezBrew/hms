@@ -181,6 +181,10 @@ export function adaptV2NursingTask(item = {}) {
   const taskInstruction = item.instruction || item.instructions || '';
   return {
     ...item,
+    origin_ward_id: item.ward_id,
+    ward: item.service_ward_id,
+    service_ward_id: item.service_ward_id,
+    route_version: item.route_version,
     admission: item.admission_case_id,
     admission_case_id: item.admission_case_id,
     patient: item.patient_id,

@@ -124,11 +124,19 @@ async fn ward_admission_and_nursing_workflows_are_patient_access_scoped() {
         ward_analytics_body["data"]["meta"]["mode"],
         "rust_v2_aggregates"
     );
-    assert!(ward_analytics_body["data"]["meta"]["unavailable_metrics"]
+    assert!(!ward_analytics_body["data"]["meta"]["unavailable_metrics"]
         .as_array()
         .expect("unavailable metrics exist")
         .iter()
         .any(|metric| metric == "transfers"));
+    let movement_metrics = ward_analytics_body["data"]["admissions_by_ward"]
+        .as_array()
+        .expect("ward episode metrics exist");
+    assert!(!movement_metrics.is_empty());
+    assert!(movement_metrics
+        .iter()
+        .all(|metric| metric["transfers"].as_i64() == Some(0)));
+    assert!(ward_analytics_body["data"]["meta"]["partial_metrics"].is_array());
     assert!(
         ward_analytics_body["data"]["occupancy_trends"]
             .as_array()

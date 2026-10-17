@@ -1,4 +1,4 @@
-import { render } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
@@ -83,6 +83,18 @@ function resolveOption(instance) {
 }
 
 describe('WardOccupancyCharts', () => {
+  it('keeps unknown ward counts and LOS as chart gaps and never derives a net change from them', () => {
+    render(<LengthOfStayPanel analyticsMeta={{ mode: 'rust_v2_aggregates' }} lengthOfStayData={[{ range: 'Unknown', count: null, percentage: null }]} />);
+    render(<AdmissionsPanel admissionsByWard={[{ ward: 'Historical ward', admissions: null, discharges: 2, transfers: 0 }]} analyticsMeta={{ mode: 'rust_v2_aggregates', placement_attribution: 'partial', partial_metrics: ['admissions_by_ward.admissions'] }} wards={[{ name: 'Historical ward', total_beds: 10 }]} />);
+    const los = resolveOption(chartMock.instances.find(value => value.ariaLabel === 'Length of stay distribution chart'));
+    const admissions = resolveOption(chartMock.instances.find(value => value.ariaLabel === 'Admissions discharges and transfers by ward chart'));
+    expect(los.series.map(value => value.data)).toEqual([[null], [null]]);
+    expect(admissions.series.map(value => value.data)).toEqual([[null], [2], [0]]);
+    const row = screen.getByText('Historical ward').closest('tr');
+    expect(within(row).getAllByText('Not available')).toHaveLength(3);
+    expect(within(row).queryByText('-2')).toBeNull();
+  });
+
   it('keeps line-only trend charts on axis hover for time/category comparison', () => {
     render(
       <OccupancyTrendsPanel

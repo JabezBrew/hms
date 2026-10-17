@@ -4,6 +4,7 @@ use uuid::Uuid;
 mod admin;
 pub mod admission_advisories;
 mod admission_cases;
+pub mod admission_moves;
 mod analytics;
 mod bed_management;
 mod discharge_cases;
@@ -16,6 +17,7 @@ mod observations_monitoring;
 pub mod patient_handover;
 pub(crate) mod prn;
 mod staff_assignments;
+pub(crate) mod task_routing;
 pub mod treatment_courses;
 mod ward_stock;
 
@@ -25,10 +27,11 @@ pub use admin::{
     WardSectionUpdate, WardUpdate,
 };
 pub use admission_cases::{
-    activate_admission_case, admit_patient, cancel_admission_case,
+    activate_admission_case, admit_patient, admit_patient_authorized, cancel_admission_case,
     cancel_admission_case_authorized, create_admission_case, get_admission_case,
     get_admission_context, get_ward_board_admission, list_admission_cases, list_ward_board,
-    reserve_admission_bed, AdmissionContext, NewAdmission, NewAdmissionCase,
+    reserve_admission_bed, AdmissionContext, AdmissionPlacementRejected, NewAdmission,
+    NewAdmissionCase,
 };
 pub use analytics::ward_analytics;
 pub use bed_management::{

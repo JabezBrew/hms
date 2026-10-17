@@ -45,6 +45,9 @@ function numberFrom(value, fallback = 0) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
 }
+function nullableMetric(value) {
+  return value === null || value === undefined || value === '' ? null : numberFrom(value, null);
+}
 
 function adaptV2Ward(ward) {
   const totalBeds = numberFrom(ward.active_bed_count);
@@ -76,6 +79,7 @@ function adaptV2Ward(ward) {
 }
 
 function adaptV2Bed(bed) {
+  if (Object.hasOwn(bed, 'occupancy_start_known') && typeof bed.occupancy_start_known !== 'boolean') throw new Error('Bed placement start evidence could not be confirmed.');
   const model = {
     ...bed,
     bed_number: bed.bed_number || bed.bed_code,
@@ -163,6 +167,13 @@ function adaptV2WardBoardAdmission(item = {}) {
 
 function adaptV2WardAnalytics(response = {}) {
   const data = response?.data || response || {};
+  if (data.meta?.occupancy_basis === 'known_placement_intervals'
+    && (data.meta.capacity_basis !== 'current_active_ward_nonclosed_beds'
+      || !['complete', 'partial'].includes(data.meta.placement_attribution)
+      || typeof data.meta.observed_through !== 'string' || !data.meta.observed_through.includes('T') || !Number.isFinite(Date.parse(data.meta.observed_through))
+      || !Array.isArray(data.meta.partial_metrics) || data.meta.partial_metrics.length > 20 || data.meta.partial_metrics.some(value => typeof value !== 'string'))) {
+    throw new Error('Ward placement analytics metadata could not be confirmed. Refresh the report before using its figures.');
+  }
   const occupancyByDate = new Map();
   const wardNameIds = new Map();
   for (const point of data.occupancy_trends || []) {
@@ -179,6 +190,7 @@ function adaptV2WardAnalytics(response = {}) {
       date,
       __occupiedBedDays: 0,
       __totalBeds: 0,
+      __capacityKnown: true,
     };
     const wardName = point.ward || 'Ward';
     const wardLabel = wardNameIds.get(wardName)?.size > 1 && point.ward_id
@@ -188,37 +200,42 @@ function adaptV2WardAnalytics(response = {}) {
       ...(row.__wardLabels || {}),
       [point.ward_id || wardName]: wardLabel,
     };
-    row[wardLabel] = numberFrom(point.occupancy_rate);
+    row[wardLabel] = nullableMetric(point.occupancy_rate);
     row.__occupiedBedDays += numberFrom(point.occupied_bed_days);
     row.__totalBeds += numberFrom(point.total_beds);
+    row.__capacityKnown = row.__capacityKnown && nullableMetric(point.total_beds) !== null && nullableMetric(point.occupied_bed_days) !== null;
     occupancyByDate.set(date, row);
   }
 
   const occupancyTrends = [...occupancyByDate.values()].map((row) => {
-    const { __occupiedBedDays, __totalBeds, ...chartRow } = row;
-    chartRow.Overall = __totalBeds > 0 ? (__occupiedBedDays / __totalBeds) * 100 : 0;
+    const { __occupiedBedDays, __totalBeds, __capacityKnown, ...chartRow } = row;
+    chartRow.Overall = __capacityKnown && __totalBeds > 0 ? (__occupiedBedDays / __totalBeds) * 100 : null;
     return chartRow;
   });
 
   return {
     meta: data.meta || null,
+    facility_episode_totals: data.facility_episode_totals ? {
+      admissions: nullableMetric(data.facility_episode_totals.admissions),
+      discharges: nullableMetric(data.facility_episode_totals.discharges),
+    } : null,
     occupancy_trends: occupancyTrends,
     length_of_stay: Array.isArray(data.length_of_stay) ? data.length_of_stay : [],
     ward_utilization: (data.ward_utilization || []).map((ward) => ({
       ward_id: ward.ward_id,
       ward: ward.ward,
-      occupancy_rate: numberFrom(ward.occupancy_rate),
-      occupied_beds_count: numberFrom(ward.occupied_beds_count),
-      total_beds: numberFrom(ward.total_beds),
+      occupancy_rate: nullableMetric(ward.occupancy_rate),
+      occupied_beds_count: nullableMetric(ward.occupied_beds_count),
+      total_beds: nullableMetric(ward.total_beds),
       turnover_rate: ward.turnover_rate ?? null,
       avg_los: ward.avg_los ?? null,
-      bed_days: numberFrom(ward.bed_days),
+      bed_days: nullableMetric(ward.bed_days),
     })),
     admissions_by_ward: (data.admissions_by_ward || []).map((ward) => ({
       ward_id: ward.ward_id,
       ward: ward.ward,
-      admissions: numberFrom(ward.admissions),
-      discharges: numberFrom(ward.discharges),
+      admissions: nullableMetric(ward.admissions),
+      discharges: nullableMetric(ward.discharges),
       transfers: ward.transfers ?? null,
     })),
   };
@@ -911,10 +928,8 @@ export const wardsApi = {
    * @returns {Promise<Array>} List of transfers
    */
   getTransfers: async (params = {}) => {
+    if (isRustV2ApiMode()) throw new Error('Rust V2 ward transfers are retired. Review recorded same-admission moves in Patient Chronicle.');
     try {
-      if (isRustV2ApiMode()) {
-        return [];
-      }
       const queryString = new URLSearchParams(params).toString();
       const endpoint = `/wards/transfers/${queryString ? `?${queryString}` : ''}`;
       return await apiClient.get(endpoint);
@@ -929,10 +944,8 @@ export const wardsApi = {
    * @returns {Promise<Object>} Created transfer data
    */
   createTransfer: async (data) => {
+    if (isRustV2ApiMode()) throw new Error('Rust V2 ward transfers are retired. Use Move admission bed in Patient Chronicle with an exact reviewed destination.');
     try {
-      if (isRustV2ApiMode()) {
-        return await rustV2Unsupported('ward transfers');
-      }
       return await apiClient.post('/wards/transfers/', data);
     } catch (error) {
       if (isRustV2ApiMode()) {
@@ -982,6 +995,7 @@ export const wardsApi = {
       const endpoint = `/wards/wards/analytics/${queryString ? `?${queryString}` : ''}`;
       return await apiClient.get(endpoint);
     } catch (error) {
+      if (isRustV2ApiMode()) throw error;
       throw new Error(handleApiError(error, 'Failed to fetch ward analytics'));
     }
   },

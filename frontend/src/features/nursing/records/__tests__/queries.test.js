@@ -5,7 +5,7 @@ import { nursingRecordsCacheScope } from '../queries';
 
 const originalFetch = globalThis.fetch;
 const originalRuntime = window.__HMS_RUNTIME_CONFIG__;
-const task = (id, extra = {}) => ({ id, patient_id: 'synthetic-patient', admission_case_id: 'synthetic-admission', ward_id: 'synthetic-ward', task_type: 'observation', status: 'open', due_at: '2026-10-31T12:00:00Z', ...extra });
+const task = (id, extra = {}) => ({ id, patient_id: 'synthetic-patient', admission_case_id: 'synthetic-admission', ward_id: 'synthetic-ward', service_ward_id: 'synthetic-ward', route_version: 0, task_type: 'observation', status: 'open', due_at: '2026-10-31T12:00:00Z', ...extra });
 const vital = (id, extra = {}) => ({ id, patient_id: 'synthetic-patient', admission_case_id: 'synthetic-admission', recorded_at: '2020-01-01T12:00:00Z', pulse: 80, ...extra });
 const page = (data, cursor = null) => new Response(JSON.stringify({ data, page: { has_next: Boolean(cursor), next_cursor: cursor } }), { status: 200, headers: { 'content-type': 'application/json' } });
 
@@ -15,7 +15,7 @@ beforeEach(() => {
 });
 afterEach(() => { __resetV2ApiClientForTests(); globalThis.fetch = originalFetch; window.__HMS_RUNTIME_CONFIG__ = originalRuntime; });
 
-it('sends task patient, admission, captured ward, type, state and UTC day filters before following cursors', async () => {
+it('sends task patient, admission, effective service ward, type, state and UTC day filters before following cursors', async () => {
   fetch.mockResolvedValueOnce(page([task('first')], 'next')).mockResolvedValueOnce(page([task('second')]));
   const rows = await getV2NursingTasks({ patient: 'synthetic-patient', admission: 'synthetic-admission', ward: 'synthetic-ward', status: 'pending', task_type: 'observation', date: '2026-10-31', limit: 1 });
   expect(rows.map((row) => row.id)).toEqual(['first', 'second']);

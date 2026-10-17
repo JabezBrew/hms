@@ -49,6 +49,7 @@ function adaptV2AdmissionCase(item) {
     requested_bed: item.bed_id,
     requested_bed_label: requestedBedLabel,
     status: item.status,
+    placement_revision: item.placement_revision,
     requested_at: item.created_at,
     ready_for_activation_at: item.status === 'ready_for_activation' ? item.created_at : null,
     admission_source: 'direct',

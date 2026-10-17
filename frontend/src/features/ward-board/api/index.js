@@ -216,7 +216,7 @@ async function getV2PatientBoardDetail(patientId, options = {}) {
     nursingTaskQuery({ patient_id: patientId, admission_case_id: options.admissionId, descending: true }),
     'tasks', { signal: options.signal });
   return { id: patientId, patient_id: patientId, tasks: rows.map(adaptV2NursingTask),
-    tasks_complete: true, task_scope: 'authorized_captured_wards' };
+    tasks_complete: true, task_scope: 'authorized_service_wards' };
 }
 
 function normalizeV2BoardResponse(response, params = {}) {

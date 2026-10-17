@@ -14,8 +14,10 @@ gates, API and worker are drained and verified stopped before migration. Python
 actual DB schema compatibility gates apply even to `--skip-migrations` recovery.
 Migration 202610170023 cannot use checkpoint 12 binaries as an automatic runtime
 rollback. Migration202610170024 additionally requires the governed-referral
-runtime: an old023 artifact cannot be restored after024. API and worker refuse
-startup unless the actual schema probe confirms024 and its required guards;
+runtime: an old023 artifact cannot be restored after024. Migration202610170025
+additionally requires the placement/routing runtime: old024 artifacts cannot be
+restored after025. API and worker refuse startup unless the actual schema probe
+confirms025, coherent committed checksums, placement/routing layout and guards;
 skip-migration recovery cannot bypass this. Use a reviewed compatible forward
 artifact or separately reviewed database restoration. See the [schema compatibility contract](../../docs/v2/2026-10-17-runtime-schema-compatibility-scope.md).
 All supported host deploy entrypoints share the private kernel lease at

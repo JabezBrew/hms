@@ -738,10 +738,20 @@ async fn fluid_current_ward_scope_is_before_pages_and_complete_scalar_and_rich_a
             .is::<nursing_access::NursingError>()
     );
     // Current admission ward is authoritative for old unsnapshotted observations.
-    sqlx::query("UPDATE admission_cases SET ward_id=$2 WHERE id=$1")
-        .bind(f.admission)
-        .bind(other_ward)
-        .execute(f.db.pool())
+    let destination = create_bed(
+        f.db.pool(),
+        NewBed {
+            id: Uuid::new_v4(),
+            facility_id: f.db.facility_id(),
+            ward_id: other_ward,
+            section_id: None,
+            bed_code: "SYNTHETIC-DESTINATION".into(),
+            actor_user_id: f.db.owner_user_id(),
+        },
+    )
+    .await
+    .unwrap();
+    hms_db::test_support::ward_lifecycle::move_admission(&f.db, f.admission, destination.id)
         .await
         .unwrap();
     assert_eq!(
@@ -840,16 +850,21 @@ async fn fluid_new_entry_wait_rejects_closed_admission_but_exact_saved_replay_su
     let saved = create_fluid_observation(f.db.pool(), f.actor(), f.patient, input.clone())
         .await
         .unwrap();
+    let discharge = hms_db::test_support::ward_lifecycle::prepare_discharge(&f.db, f.admission)
+        .await
+        .unwrap();
     let mut held = f.db.pool().begin().await.unwrap();
     let pid: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
         .fetch_one(&mut *held)
         .await
         .unwrap();
-    sqlx::query("UPDATE admission_cases SET status='discharged' WHERE id=$1")
-        .bind(f.admission)
-        .execute(&mut *held)
-        .await
-        .unwrap();
+    hms_db::test_support::ward_lifecycle::complete_prepared_discharge_tx(
+        &mut held,
+        f.db.facility_id(),
+        discharge,
+    )
+    .await
+    .unwrap();
     let pool = f.db.pool().clone();
     let proof = f.actor();
     let patient = f.patient;

@@ -166,6 +166,7 @@ const PatientIdentityHero = ({
   onViewMedicationCourses,
   onViewPatientHandover,
   onViewAdmissionFollowUp,
+  onMoveAdmission,
   onViewMedicationHistory,
   onRecordFluids,
   onStartWardRound,
@@ -213,6 +214,7 @@ const PatientIdentityHero = ({
         onViewMedicationCourses,
         onViewPatientHandover,
         onViewAdmissionFollowUp,
+        onMoveAdmission,
       }}
       className={className}
       clinicalContext={{

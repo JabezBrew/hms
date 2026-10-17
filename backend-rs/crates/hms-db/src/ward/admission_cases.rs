@@ -45,6 +45,7 @@ pub struct NewAdmissionCase {
 
 #[derive(Clone, Debug, FromRow)]
 struct WardBoardRow {
+    placement_revision: i64,
     admission_id: Uuid,
     patient_id: Uuid,
     patient_code: String,
@@ -77,6 +78,7 @@ struct WardBoardRow {
 
 #[derive(Clone, Debug, FromRow)]
 struct AdmissionCaseRow {
+    placement_revision: i64,
     id: Uuid,
     patient_id: Uuid,
     encounter_id: Option<Uuid>,
@@ -355,20 +357,40 @@ pub async fn reserve_admission_bed(
 
     let bed_id = match requested_bed_id.or(case.bed_id) {
         Some(bed_id) => {
-            let locked_bed =
-                lock_available_bed(&mut transaction, facility_id, case.ward_id, Some(bed_id))
-                    .await?;
+            let locked_bed = lock_available_bed(
+                &mut transaction,
+                facility_id,
+                case.ward_id,
+                Some(bed_id),
+                Some(case.id),
+            )
+            .await?;
             if locked_bed.is_none() {
                 return Ok(None);
             }
             Some(bed_id)
         }
-        None => lock_available_bed(&mut transaction, facility_id, case.ward_id, None).await?,
+        None => {
+            lock_available_bed(
+                &mut transaction,
+                facility_id,
+                case.ward_id,
+                None,
+                Some(case.id),
+            )
+            .await?
+        }
     };
 
     let Some(bed_id) = bed_id else {
         return Ok(None);
     };
+
+    if let Some(old_bed) = case.bed_id.filter(|id| *id != bed_id) {
+        observe_db_query("ward.admission_cases.reserve.release_previous", sqlx::query(
+            "UPDATE beds SET status='available',updated_at=clock_timestamp() WHERE facility_id=$1 AND id=$2 AND status='reserved'"
+        ).bind(facility_id).bind(old_bed).execute(&mut *transaction)).await?;
+    }
 
     observe_db_query(
         "ward.admission_cases.reserve.mark_bed_reserved",
@@ -396,6 +418,7 @@ pub async fn reserve_admission_bed(
             r#"
         UPDATE admission_cases
         SET bed_id = $1,
+            placement_revision = placement_revision + CASE WHEN bed_id IS DISTINCT FROM $1 THEN 1 ELSE 0 END,
             attending_user_id = $2,
             updated_at = now()
         WHERE facility_id = $3
@@ -449,38 +472,24 @@ pub async fn activate_admission_case(
         return Ok(None);
     }
 
-    let bed_id = match case.bed_id {
-        Some(bed_id) => {
-            let status = observe_db_query(
-                "ward.admission_cases.activate.select_bed_status",
-                sqlx::query_scalar::<_, String>(
-                    r#"
-                SELECT status
-                FROM beds
-                WHERE facility_id = $1
-                  AND ward_id = $2
-                  AND id = $3
-                FOR UPDATE
-                "#,
-                )
-                .bind(facility_id)
-                .bind(case.ward_id)
-                .bind(bed_id)
-                .fetch_optional(&mut *transaction),
-            )
-            .await?;
-            match status.as_deref() {
-                Some("available") | Some("reserved") => Some(bed_id),
-                _ => return Ok(None),
-            }
-        }
-        None => lock_available_bed(&mut transaction, facility_id, case.ward_id, None).await?,
-    };
+    let bed_id = lock_available_bed(
+        &mut transaction,
+        facility_id,
+        case.ward_id,
+        case.bed_id,
+        Some(case.id),
+    )
+    .await?;
 
     let Some(bed_id) = bed_id else {
         return Ok(None);
     };
 
+    let at: DateTime<Utc> = observe_db_query(
+        "ward.admission_cases.activate.clock",
+        sqlx::query_scalar("SELECT clock_timestamp()").fetch_one(&mut *transaction),
+    )
+    .await?;
     observe_db_query(
         "ward.admission_cases.activate.mark_bed_occupied",
         sqlx::query(
@@ -508,9 +517,10 @@ pub async fn activate_admission_case(
         UPDATE admission_cases
         SET bed_id = $1,
             status = $2,
-            admitted_at = now(),
+            admitted_at = $6,
+            placement_revision = placement_revision + 1,
             attending_user_id = $3,
-            updated_at = now()
+            updated_at = $6
         WHERE facility_id = $4
           AND id = $5
         "#,
@@ -520,10 +530,12 @@ pub async fn activate_admission_case(
         .bind(actor_user_id)
         .bind(facility_id)
         .bind(case.id)
+        .bind(at)
         .execute(&mut *transaction),
     )
     .await?;
 
+    super::admission_moves::open_activation_tx(&mut transaction, facility_id, case.id, at).await?;
     transaction.commit().await?;
     optional_admission_case_by_id(pool, facility_id, case.id).await
 }
@@ -650,87 +662,112 @@ async fn cancel_admission_case_inner(
     optional_admission_case_by_id(pool, facility_id, case.id).await
 }
 
+#[derive(Clone, Copy, Debug)]
+pub struct AdmissionPlacementRejected;
+impl std::fmt::Display for AdmissionPlacementRejected {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("The requested admission placement is unavailable.")
+    }
+}
+impl std::error::Error for AdmissionPlacementRejected {}
 pub async fn admit_patient(
     pool: &PgPool,
     admission: NewAdmission,
 ) -> anyhow::Result<WardBoardItem> {
+    admit_patient_inner(pool, admission, None).await
+}
+pub async fn admit_patient_authorized(
+    pool: &PgPool,
+    admission: NewAdmission,
+    actor: super::admission_advisories::AdmissionClosureActor,
+) -> anyhow::Result<WardBoardItem> {
+    admit_patient_inner(pool, admission, Some(actor)).await
+}
+async fn admit_patient_inner(
+    pool: &PgPool,
+    admission: NewAdmission,
+    mut actor: Option<super::admission_advisories::AdmissionClosureActor>,
+) -> anyhow::Result<WardBoardItem> {
     let mut transaction = pool.begin().await?;
-    let bed_id = match admission.bed_id {
-        Some(bed_id) => Some(bed_id),
-        None => {
-            observe_db_query(
-                "ward.admission_cases.admit.select_available_bed",
-                sqlx::query_scalar::<_, Uuid>(
-                    r#"
-            SELECT id
-            FROM beds
-            WHERE facility_id = $1
-              AND ward_id = $2
-              AND status = $3
-            ORDER BY created_at ASC, id ASC
-            LIMIT 1
-            FOR UPDATE SKIP LOCKED
-            "#,
-                )
-                .bind(admission.facility_id)
-                .bind(admission.ward_id)
-                .bind(codec::encode(BedStatus::Available)?)
-                .fetch_optional(&mut *transaction),
-            )
-            .await?
+    if let Some(actor) = actor.as_mut() {
+        if actor.facility_id != admission.facility_id || actor.user_id != admission.actor_user_id {
+            return Err(AdmissionPlacementRejected.into());
         }
-    };
-
-    observe_db_query(
-        "ward.admission_cases.admit.insert_admission",
-        sqlx::query(
-            r#"
-        INSERT INTO admission_cases (
-            id,
-            facility_id,
-            patient_id,
-            ward_id,
-            bed_id,
-            status,
-            attending_user_id,
-            created_by_user_id
-        )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $7)
-        "#,
-        )
-        .bind(admission.id)
-        .bind(admission.facility_id)
-        .bind(admission.patient_id)
-        .bind(admission.ward_id)
-        .bind(bed_id)
-        .bind(codec::encode(AdmissionStatus::Admitted)?)
-        .bind(admission.actor_user_id)
-        .execute(&mut *transaction),
+        super::admission_advisories::verify_closure(&mut transaction, actor).await?;
+        let (allowed,boundary):(bool,Option<DateTime<Utc>>)=observe_db_query("ward.admission_cases.admit.authority",sqlx::query_as(r#"
+        WITH point AS MATERIALIZED(SELECT clock_timestamp() at),effective AS(
+          SELECT permission_code FROM user_permissions WHERE user_id=$2
+          UNION SELECT p.permission_code FROM permission_assignments p CROSS JOIN point n WHERE p.facility_id=$1 AND p.grantee_user_id=$2 AND p.scope_type='facility' AND p.scope_id IS NULL AND p.status='active' AND p.starts_at<=n.at AND (p.ends_at IS NULL OR p.ends_at>n.at)
+          UNION SELECT d.permission_code FROM delegations d CROSS JOIN point n WHERE d.facility_id=$1 AND d.delegate_user_id=$2 AND d.status='active' AND d.starts_at<=n.at AND (d.ends_at IS NULL OR d.ends_at>n.at))
+        SELECT EXISTS(SELECT 1 FROM effective WHERE permission_code='admission.manage')
+          AND EXISTS(SELECT 1 FROM effective WHERE permission_code='patient.demographics.view')
+          AND EXISTS(SELECT 1 FROM user_patient_visibility WHERE user_id=$2 AND visibility='demographics')
+          AND (SELECT count(*) FROM user_features WHERE user_id=$2 AND feature_key IN('patients','admissions'))=2,
+          (SELECT min(boundary) FROM user_authority_boundaries b CROSS JOIN LATERAL(VALUES(b.starts_at),(b.ends_at)) v(boundary) CROSS JOIN point n WHERE b.facility_id=$1 AND b.user_id=$2 AND boundary>n.at)
+        "#).bind(admission.facility_id).bind(actor.user_id).fetch_one(&mut *transaction)).await?;
+        if !allowed {
+            return Err(super::admission_advisories::AdvisoryError::AuthorityExpired.into());
+        }
+        if let Some(boundary) = boundary {
+            actor.authorization.valid_until = actor.authorization.valid_until.min(boundary);
+        }
+    }
+    // Keep the existing intake visibility policy; moves use a separate historical purpose.
+    let patient: Option<Uuid> = observe_db_query(
+        "ward.admission_cases.admit.patient",
+        sqlx::query_scalar("SELECT id FROM patients WHERE facility_id=$1 AND id=$2 FOR SHARE")
+            .bind(admission.facility_id)
+            .bind(admission.patient_id)
+            .fetch_optional(&mut *transaction),
     )
     .await?;
-
-    if let Some(bed_id) = bed_id {
-        observe_db_query(
-            "ward.admission_cases.admit.mark_bed_occupied",
-            sqlx::query(
-                r#"
-            UPDATE beds
-            SET status = $1,
-                updated_at = now()
-            WHERE facility_id = $2
-              AND ward_id = $3
-              AND id = $4
-            "#,
-            )
-            .bind(codec::encode(BedStatus::Occupied)?)
-            .bind(admission.facility_id)
-            .bind(admission.ward_id)
-            .bind(bed_id)
-            .execute(&mut *transaction),
+    if patient.is_none() {
+        return Err(AdmissionPlacementRejected.into());
+    }
+    let ward: Option<Uuid> = observe_db_query(
+        "ward.admission_cases.admit.ward",
+        sqlx::query_scalar(
+            "SELECT id FROM wards WHERE facility_id=$1 AND id=$2 AND status='active' FOR SHARE",
+        )
+        .bind(admission.facility_id)
+        .bind(admission.ward_id)
+        .fetch_optional(&mut *transaction),
+    )
+    .await?;
+    if ward.is_none() {
+        return Err(AdmissionPlacementRejected.into());
+    }
+    // Lock a real eligible bed before inserting its owner (and before the owner index).
+    let bed_id = lock_available_bed(
+        &mut transaction,
+        admission.facility_id,
+        admission.ward_id,
+        admission.bed_id,
+        None,
+    )
+    .await?;
+    if admission.bed_id.is_some() && bed_id.is_none() {
+        return Err(AdmissionPlacementRejected.into());
+    }
+    let at: DateTime<Utc> = observe_db_query(
+        "ward.admission_cases.admit.clock",
+        sqlx::query_scalar("SELECT clock_timestamp()").fetch_one(&mut *transaction),
+    )
+    .await?;
+    observe_db_query("ward.admission_cases.admit.insert_admission",sqlx::query("INSERT INTO admission_cases(id,facility_id,patient_id,ward_id,bed_id,status,attending_user_id,created_by_user_id,admitted_at,placement_revision) VALUES($1,$2,$3,$4,$5,'admitted',$6,$6,$7,$8)").bind(admission.id).bind(admission.facility_id).bind(admission.patient_id).bind(admission.ward_id).bind(bed_id).bind(admission.actor_user_id).bind(at).bind(if bed_id.is_some(){1_i64}else{0}).execute(&mut *transaction)).await?;
+    if let Some(bed) = bed_id {
+        observe_db_query("ward.admission_cases.admit.mark_bed_occupied",sqlx::query("UPDATE beds SET status='occupied',cleaning_due_at=NULL,updated_at=$3 WHERE facility_id=$1 AND id=$2").bind(admission.facility_id).bind(bed).bind(at).execute(&mut *transaction)).await?;
+        super::admission_moves::open_activation_tx(
+            &mut transaction,
+            admission.facility_id,
+            admission.id,
+            at,
         )
         .await?;
     }
-
+    if let Some(actor) = actor.as_ref() {
+        super::admission_advisories::closure_deadline(&mut transaction, actor).await?;
+    }
     transaction.commit().await?;
     ward_board_item_by_admission(pool, admission.facility_id, admission.id).await
 }
@@ -748,6 +785,7 @@ fn ward_board_query() -> QueryBuilder<'static, Postgres> {
                beds.bed_code,
                admission_cases.status AS admission_status,
                admission_cases.admitted_at,
+               admission_cases.placement_revision,
                COALESCE(task_counts.open_nursing_task_count, 0) AS open_nursing_task_count,
                COALESCE(task_counts.overdue_nursing_task_count, 0) AS overdue_nursing_task_count,
                task_counts.next_nursing_task_due_at,
@@ -1020,6 +1058,7 @@ fn ward_board_list_query() -> QueryBuilder<'static, Postgres> {
                    visit_id,
                    status,
                    admitted_at,
+                   placement_revision,
                    updated_at,
                    CASE
                        WHEN EXISTS (
@@ -1185,6 +1224,7 @@ fn ward_board_list_query() -> QueryBuilder<'static, Postgres> {
                    visit_id,
                    status,
                    admitted_at,
+                   placement_revision,
                    updated_at,
                    attention_rank
             FROM ranked_admissions admission_cases
@@ -1205,6 +1245,7 @@ fn ward_board_list_select() -> &'static str {
                beds.bed_code,
                admission_cases.status AS admission_status,
                admission_cases.admitted_at,
+               admission_cases.placement_revision,
                COALESCE(task_counts.open_nursing_task_count, 0) AS open_nursing_task_count,
                COALESCE(task_counts.overdue_nursing_task_count, 0) AS overdue_nursing_task_count,
                task_counts.next_nursing_task_due_at,
@@ -1536,7 +1577,8 @@ fn admission_case_query() -> QueryBuilder<'static, Postgres> {
                    THEN admission_cases.admitted_at
                    ELSE NULL
                END AS admitted_at,
-               admission_cases.discharged_at
+               admission_cases.discharged_at,
+               admission_cases.placement_revision
         FROM admission_cases
         JOIN patients
           ON patients.id = admission_cases.patient_id
@@ -1592,56 +1634,120 @@ async fn optional_admission_case_by_id(
     row.map(admission_case_from_row).transpose()
 }
 
+#[derive(FromRow)]
+struct LockedAdmissionBed {
+    id: Uuid,
+    section_id: Option<Uuid>,
+}
+
 async fn lock_available_bed(
     transaction: &mut Transaction<'_, Postgres>,
     facility_id: Uuid,
     ward_id: Uuid,
     bed_id: Option<Uuid>,
+    owner_case_id: Option<Uuid>,
 ) -> anyhow::Result<Option<Uuid>> {
-    match bed_id {
-        Some(bed_id) => observe_db_query(
-            "ward.admission_cases.lock_requested_bed",
-            sqlx::query_scalar::<_, Uuid>(
-                r#"
-            SELECT id
+    // All canonical placement producers retain the same order: ward, bed,
+    // then its actual section. Section administration never locks a bed.
+    let ward: Option<Uuid> = observe_db_query(
+        "ward.admission_cases.placement.active_ward",
+        sqlx::query_scalar(
+            "SELECT id FROM wards WHERE facility_id=$1 AND id=$2 AND status='active' FOR SHARE",
+        )
+        .bind(facility_id)
+        .bind(ward_id)
+        .fetch_optional(&mut **transaction),
+    )
+    .await?;
+    if ward.is_none() {
+        return Ok(None);
+    }
+    let bed = match bed_id {
+        Some(bed_id) => {
+            observe_db_query(
+                "ward.admission_cases.lock_requested_bed",
+                sqlx::query_as::<_, LockedAdmissionBed>(
+                    r#"
+            SELECT id, section_id
             FROM beds
             WHERE facility_id = $1
               AND ward_id = $2
               AND id = $3
-              AND status = $4
+              AND (status='available' OR (status='reserved' AND EXISTS(
+                SELECT 1 FROM admission_cases own
+                WHERE own.id=$4 AND own.facility_id=beds.facility_id
+                  AND own.ward_id=beds.ward_id AND own.bed_id=beds.id
+                  AND own.status='ready_for_activation')))
+              AND NOT EXISTS(
+                SELECT 1 FROM admission_cases a
+                WHERE a.facility_id=beds.facility_id AND a.bed_id=beds.id
+                  AND a.status IN('ready_for_activation','admitted','discharge_pending')
+                  AND ($4::uuid IS NULL OR a.id<>$4))
             FOR UPDATE
             "#,
+                )
+                .bind(facility_id)
+                .bind(ward_id)
+                .bind(bed_id)
+                .bind(owner_case_id)
+                .fetch_optional(&mut **transaction),
             )
-            .bind(facility_id)
-            .bind(ward_id)
-            .bind(bed_id)
-            .bind(codec::encode(BedStatus::Available)?)
-            .fetch_optional(&mut **transaction),
-        )
-        .await
-        .map_err(Into::into),
-        None => observe_db_query(
-            "ward.admission_cases.lock_first_available_bed",
-            sqlx::query_scalar::<_, Uuid>(
-                r#"
-            SELECT id
+            .await?
+        }
+        None => {
+            observe_db_query(
+                "ward.admission_cases.lock_first_available_bed",
+                sqlx::query_as::<_, LockedAdmissionBed>(
+                    r#"
+            SELECT id, section_id
             FROM beds
             WHERE facility_id = $1
               AND ward_id = $2
-              AND status = $3
+              AND status='available'
+              AND NOT EXISTS(
+                SELECT 1 FROM admission_cases a
+                WHERE a.facility_id=beds.facility_id AND a.bed_id=beds.id
+                  AND a.status IN('ready_for_activation','admitted','discharge_pending')
+                  AND ($3::uuid IS NULL OR a.id<>$3))
+              AND (section_id IS NULL OR EXISTS(
+                SELECT 1 FROM ward_sections s
+                WHERE s.id=beds.section_id AND s.facility_id=beds.facility_id
+                  AND s.ward_id=beds.ward_id AND s.status='active'))
             ORDER BY created_at ASC, id ASC
             LIMIT 1
             FOR UPDATE SKIP LOCKED
             "#,
+                )
+                .bind(facility_id)
+                .bind(ward_id)
+                .bind(owner_case_id)
+                .fetch_optional(&mut **transaction),
+            )
+            .await?
+        }
+    };
+    let Some(bed) = bed else {
+        return Ok(None);
+    };
+    // This is a fresh statement after the bed lock, not an EXISTS evaluated
+    // before its wait. The locked bed also retains the reviewed section ID.
+    if let Some(section_id) = bed.section_id {
+        let section: Option<Uuid> = observe_db_query(
+            "ward.admission_cases.placement.active_section",
+            sqlx::query_scalar(
+                "SELECT id FROM ward_sections WHERE facility_id=$1 AND ward_id=$2 AND id=$3 AND status='active' FOR SHARE",
             )
             .bind(facility_id)
             .bind(ward_id)
-            .bind(codec::encode(BedStatus::Available)?)
+            .bind(section_id)
             .fetch_optional(&mut **transaction),
         )
-        .await
-        .map_err(Into::into),
+        .await?;
+        if section.is_none() {
+            return Ok(None);
+        }
     }
+    Ok(Some(bed.id))
 }
 
 #[derive(Clone, Debug, FromRow)]
@@ -1664,6 +1770,7 @@ struct AdmissionContextStatusRow {
 
 fn ward_board_from_row(row: WardBoardRow) -> anyhow::Result<WardBoardItem> {
     Ok(WardBoardItem {
+        placement_revision: row.placement_revision,
         admission_id: row.admission_id,
         patient_id: row.patient_id,
         patient_code: row.patient_code,
@@ -1897,6 +2004,7 @@ fn push_monitoring_filter(
 
 fn admission_case_from_row(row: AdmissionCaseRow) -> anyhow::Result<AdmissionCaseListItem> {
     Ok(AdmissionCaseListItem {
+        placement_revision: row.placement_revision,
         id: row.id,
         patient_id: row.patient_id,
         encounter_id: row.encounter_id,

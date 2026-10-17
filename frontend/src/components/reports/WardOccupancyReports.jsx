@@ -18,6 +18,7 @@ import { useUrlEnumParam } from '@/shared/hooks/useUrlEnumParam';
 import format from 'date-fns/format';
 import subDays from 'date-fns/subDays';
 import DeferredMount from '@/components/ui/DeferredMount';
+import { buildWardOccupancyCsv } from './wardOccupancyCsv';
 
 const OccupancyTrendsPanel = lazy(() =>
   import('./WardOccupancyCharts').then((module) => ({ default: module.OccupancyTrendsPanel }))
@@ -38,6 +39,7 @@ const EMPTY_ANALYTICS = {
   lengthOfStayData: [],
   utilizationData: [],
   admissionsByWard: [],
+  facilityEpisodeTotals: null,
 };
 const WARD_REPORT_TABS = ['occupancy', 'los', 'utilization', 'admissions'];
 
@@ -73,108 +75,8 @@ function normalizeAnalytics(analyticsData = {}) {
     lengthOfStayData: analyticsData.length_of_stay || [],
     utilizationData: analyticsData.ward_utilization || [],
     admissionsByWard: analyticsData.admissions_by_ward || [],
+    facilityEpisodeTotals: analyticsData.facility_episode_totals || null,
   };
-}
-
-function csvCell(value) {
-  const text = String(value ?? '');
-  const safeText = /^[=+\-@]/.test(text) ? `'${text}` : text;
-  return `"${safeText.replace(/"/g, '""')}"`;
-}
-
-function isUnavailableMetric(analyticsMeta, metric) {
-  return analyticsMeta?.unavailable_metrics?.includes(metric) || false;
-}
-
-function csvMetric(value, unavailable = false) {
-  if (unavailable || value === null || value === undefined || value === '') {
-    return 'Not available';
-  }
-
-  return value;
-}
-
-function trendLabelForWard(day, ward) {
-  return day?.__wardLabels?.[ward.id] || ward.name;
-}
-
-function trendValueForWard(day, ward) {
-  return day?.[trendLabelForWard(day, ward)] || 0;
-}
-
-function buildWardOccupancyCsv({
-  admissionsByWard,
-  analyticsMeta,
-  dateRange,
-  occupancyData,
-  selectedWard,
-  utilizationData,
-  wards,
-}) {
-  const lines = [
-    'Ward Occupancy Report',
-    `Date Range: ${format(dateRange.start, 'MMM dd, yyyy')} - ${format(dateRange.end, 'MMM dd, yyyy')}`,
-    ...(analyticsMeta?.mode === 'rust_v2_snapshot'
-      ? ['Mode: Rust V2 live capacity snapshot; historical aggregate analytics unavailable']
-      : []),
-    ...(analyticsMeta?.mode === 'rust_v2_aggregates'
-      ? ['Mode: Rust V2 ward analytics aggregates']
-      : []),
-    '',
-    'Occupancy Trends',
-  ];
-
-  if (selectedWard === 'all') {
-    const firstDay = occupancyData[0] || {};
-    lines.push(['Date', ...wards.map((ward) => trendLabelForWard(firstDay, ward)), 'Overall'].map(csvCell).join(','));
-  } else {
-    const ward = wards.find((item) => item.id === selectedWard);
-    const firstDay = occupancyData[0] || {};
-    lines.push(['Date', ward ? trendLabelForWard(firstDay, ward) : 'Ward'].map(csvCell).join(','));
-  }
-
-  occupancyData.forEach((day) => {
-    if (selectedWard === 'all') {
-      lines.push([day.date, ...wards.map((ward) => trendValueForWard(day, ward)), day.Overall || 0].map(csvCell).join(','));
-      return;
-    }
-
-    const ward = wards.find((item) => item.id === selectedWard);
-    lines.push([day.date, ward ? trendValueForWard(day, ward) : 0].map(csvCell).join(','));
-  });
-
-  lines.push(
-    '',
-    'Ward Utilization',
-    ['Ward', 'Occupancy Rate (%)', 'Occupied Beds', 'Total Beds', 'Turnover Rate', 'Avg LOS (days)', 'Bed Days'].map(csvCell).join(',')
-  );
-  utilizationData.forEach((ward) => {
-    lines.push([
-      ward.ward,
-      csvMetric(ward.occupancy_rate),
-      csvMetric(ward.occupied_beds_count),
-      csvMetric(ward.total_beds),
-      csvMetric(ward.turnover_rate, isUnavailableMetric(analyticsMeta, 'turnover_rate')),
-      csvMetric(ward.avg_los, isUnavailableMetric(analyticsMeta, 'avg_los') || isUnavailableMetric(analyticsMeta, 'length_of_stay')),
-      csvMetric(ward.bed_days, isUnavailableMetric(analyticsMeta, 'bed_days') || isUnavailableMetric(analyticsMeta, 'length_of_stay')),
-    ].map(csvCell).join(','));
-  });
-
-  lines.push(
-    '',
-    'Admissions, Discharges, and Transfers',
-    ['Ward', 'Admissions', 'Discharges', 'Transfers'].map(csvCell).join(',')
-  );
-  admissionsByWard.forEach((ward) => {
-    lines.push([
-      ward.ward,
-      ward.admissions,
-      ward.discharges,
-      csvMetric(ward.transfers, isUnavailableMetric(analyticsMeta, 'transfers')),
-    ].map(csvCell).join(','));
-  });
-
-  return lines.join('\n');
 }
 
 function useWardOccupancyReport(selectedWard, dateRange) {
@@ -191,8 +93,7 @@ function useWardOccupancyReport(selectedWard, dateRange) {
 
         const wards = Array.isArray(wardsResponse) ? wardsResponse : wardsResponse.results || [];
         dispatch({ type: 'wards-loaded', wards });
-      } catch (err) {
-        console.error('Error fetching wards:', err);
+      } catch {
         if (!cancelled) {
           dispatch({ type: 'failed', message: 'Failed to load wards data. Please try again.' });
         }
@@ -223,8 +124,7 @@ function useWardOccupancyReport(selectedWard, dateRange) {
         if (!cancelled) {
           dispatch({ type: 'analytics-loaded', analytics: normalizeAnalytics(analyticsData) });
         }
-      } catch (err) {
-        console.error('Error fetching analytics:', err);
+      } catch {
         if (!cancelled) {
           dispatch({ type: 'failed', message: 'Failed to load analytics data. Please try again.' });
         }
@@ -359,6 +259,7 @@ function ChartTab({ children, value }) {
 function ReportTabs({
   admissionsByWard,
   analyticsMeta,
+  facilityEpisodeTotals,
   lengthOfStayData,
   occupancyData,
   selectedWard,
@@ -412,7 +313,7 @@ function ReportTabs({
         <UtilizationPanel analyticsMeta={analyticsMeta} utilizationData={utilizationData} />
       </ChartTab>
       <ChartTab value="admissions">
-        <AdmissionsPanel admissionsByWard={admissionsByWard} analyticsMeta={analyticsMeta} wards={wards} />
+        <AdmissionsPanel admissionsByWard={admissionsByWard} analyticsMeta={analyticsMeta} facilityEpisodeTotals={facilityEpisodeTotals} wards={wards} />
       </ChartTab>
     </Tabs>
   );
@@ -428,6 +329,7 @@ export function WardOccupancyReports() {
     admissionsByWard,
     analyticsMeta,
     analyticsLoading,
+    facilityEpisodeTotals,
     error,
     lengthOfStayData,
     occupancyData,
@@ -446,6 +348,7 @@ export function WardOccupancyReports() {
         admissionsByWard,
         analyticsMeta,
         dateRange,
+        facilityEpisodeTotals,
         occupancyData,
         selectedWard,
         utilizationData,
@@ -461,8 +364,7 @@ export function WardOccupancyReports() {
       link.click();
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
-    } catch (err) {
-      console.error('Error exporting report:', err);
+    } catch {
       alert('Failed to export report. Please try again.');
     }
   };
@@ -493,6 +395,7 @@ export function WardOccupancyReports() {
         <ReportTabs
           admissionsByWard={admissionsByWard}
           analyticsMeta={analyticsMeta}
+          facilityEpisodeTotals={facilityEpisodeTotals}
           lengthOfStayData={lengthOfStayData}
           occupancyData={occupancyData}
           selectedWard={selectedWard}

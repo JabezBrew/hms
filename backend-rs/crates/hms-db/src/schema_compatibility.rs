@@ -2,10 +2,14 @@
 use crate::PgPool;
 use sqlx::{migrate::Migrate, Acquire};
 
+mod ward_moves;
+
 pub const TREATMENT_WINDOWS_BREAKING_EPOCH: i64 = 202610170023;
 /// Earlier runtimes expose protected response bodies and bypass governed writes.
 pub const REFERRAL_RESPONSES_BREAKING_EPOCH: i64 = 202610170024;
-pub const REQUIRED_RUNTIME_SCHEMA_EPOCH: i64 = REFERRAL_RESPONSES_BREAKING_EPOCH;
+/// Earlier runtimes bypass placement evidence and effective nursing-task routing.
+pub const ADMISSION_MOVES_BREAKING_EPOCH: i64 = 202610170025;
+pub const REQUIRED_RUNTIME_SCHEMA_EPOCH: i64 = ADMISSION_MOVES_BREAKING_EPOCH;
 
 /// This once-per-process startup gate is separate from cheap health probes.
 pub async fn require_runtime_schema(pool: &PgPool) -> anyhow::Result<()> {
@@ -136,6 +140,7 @@ pub async fn committed_breaking_epoch(pool: &PgPool) -> anyhow::Result<i64> {
         }
         _ => anyhow::bail!("Database schema compatibility could not be confirmed."),
     };
+    let epoch = ward_moves::committed_epoch(&mut tx, history, epoch).await?;
     Migrate::unlock(&mut *tx).await?;
     tx.commit().await?;
     Ok(epoch)

@@ -11,6 +11,7 @@ use hms_domain::deployment::DeploymentProfile;
 use hms_domain::patients::{PatientRecord, Sex};
 use hms_domain::ward::{AdmissionCaseListItem, BedListItem, WardListItem, WardSectionListItem};
 use uuid::Uuid;
+pub mod ward_lifecycle;
 
 static SHARED_DATABASE: OnceLock<Mutex<Option<TestDatabase>>> = OnceLock::new();
 

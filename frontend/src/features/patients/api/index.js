@@ -69,8 +69,14 @@ function adaptEncounter(encounter) {
   if (!encounter) {
     return null
   }
+  const linkedAdmission = encounter.admission_link_ambiguous === true ? null : adaptAdmission(encounter.admission)
+  if (linkedAdmission && (linkedAdmission.patient_id !== encounter.patient_id || linkedAdmission.encounter_id !== encounter.id)) {
+    throw new Error('The selected encounter admission could not be confirmed.')
+  }
   return {
     ...encounter,
+    admission: linkedAdmission,
+    ...(linkedAdmission ? { admission_id: linkedAdmission.admission_id } : encounter.admission_link_ambiguous === true ? { admission_id: null } : {}),
     status: normalizeStatus(encounter.status),
     type: encounter.encounter_type,
     start_time: encounter.started_at,

@@ -17,7 +17,7 @@ runtime's maximum reviewed breaking-schema epoch. An older artifact without the
 declaration supports epoch zero. A migration filename is never evidence that an
 artifact's code is compatible. The shell guard checks the explicit declaration
 against both the actual database and the candidate's known breaking migration.
-The current runtime requires024: a declaration of024 with its required
+The current runtime requires025: a declaration of025 with its required
 migration omitted is an invalid artifact, not an epoch-zero candidate. A fresh
 post-migration probe must report the required epoch before any API or worker is
 started. `--skip-migrations` cannot bypass either the minimum or maximum check.
@@ -31,7 +31,31 @@ It must remain stopped after024 commits. The probe validates embedded023/024
 checksums, success and required columns/enabled guards, rather than trusting a
 table name or a declaration alone. API and worker run an eight-second bounded
 gate once before provisioning/listen or worker metrics readiness; this is separate
-from cheap health probes. Actual old023 startup refuses, while024 starts normally.
+from cheap health probes. The new epoch024 runtime refuses an epoch023 schema before startup and accepts
+the required epoch024 schema. Older binaries are not assumed to recognize
+migrations introduced after their build.
+
+## Breaking placement and task-routing boundary
+
+Migration202610170025 adds immutable placement intervals, move revisions/receipts
+and effective nursing-task routing. Earlier024 code neither maintains those
+intervals nor respects the effective service ward. It must remain stopped after
+025 commits. The current runtime requires025 before provisioning or readiness.
+The same bounded read-only migration-lock probe validates coherent embedded
+023/024/025 checksums, committed success, required layout, enabled deferred
+consistency guards and the reviewed index keys. It does not certify arbitrary
+SQL function bodies or every possible operator alteration.
+
+The recovered local ops suite passes156 cases with four existing opt-in skips.
+Two subprocess fixture deadlines expired during concurrent local compilation.
+The test harness now allows30 seconds for process startup overhead while its
+fake-clock assertions retain the actual deployment deadline checks. The complete
+rerun passes with unchanged production shell sources. Actual025 schema gates pass16 cases: database6, migrator6, API2
+and worker2. Essential lost/renamed column controls and an actual copied CLI
+refuse incomplete layouts; the new epoch025 runtime refuses an epoch024 schema
+before provisioning/readiness.
+These focused results supersede older023/024 counts below. Native release and
+live deployment acceptance remain separate; declarations do not establish them.
 
 ## Single-host deployment lease
 
@@ -93,7 +117,7 @@ No unrelated containers are stopped, pruned or removed.
 
 Before any rollback tree move or runtime restart, the installer probes with the
 candidate image's `hms-migrator schema-compatibility` command. It emits exactly
-one decimal epoch, currently `0`, `202610170023` or `202610170024`. It creates no schema,
+one decimal epoch: `0`, `202610170023`, `202610170024` or `202610170025`. It creates no schema,
 identities, policy or audit data. The DB helper uses a read-only transaction,
 bounded statement/lock/idle waits and SQLx's actual migration advisory lock. Its
 dedicated connection closes on every path, including cancellation, so a session

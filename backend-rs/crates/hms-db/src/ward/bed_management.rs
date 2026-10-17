@@ -48,6 +48,8 @@ struct BedMapBedRow {
     bed_code: String,
     status: String,
     occupied_since: Option<DateTime<Utc>>,
+    occupancy_observed_at: Option<DateTime<Utc>>,
+    occupancy_start_known: bool,
 }
 
 #[derive(Clone, Debug, FromRow)]
@@ -134,17 +136,22 @@ pub async fn get_ward_bed_map(
                beds.section_id,
                beds.bed_code,
                beds.status,
-               active_admission.occupied_since
+               CASE WHEN current_placement.start_known THEN current_placement.started_at END AS occupied_since,
+               current_placement.started_at AS occupancy_observed_at,
+               COALESCE(current_placement.start_known,false) AS occupancy_start_known
         FROM beds
         LEFT JOIN LATERAL (
-            SELECT admission_cases.admitted_at AS occupied_since
-            FROM admission_cases
-            WHERE admission_cases.facility_id = beds.facility_id
-              AND admission_cases.bed_id = beds.id
-              AND admission_cases.status IN ('admitted', 'discharge_pending')
-            ORDER BY admission_cases.admitted_at DESC, admission_cases.id DESC
-            LIMIT 1
-        ) active_admission ON true
+            SELECT placement.started_at,
+                   (placement.origin IN ('activation','move') AND NOT placement.legacy_unknown_prefix) AS start_known
+            FROM admission_placements placement
+            JOIN admission_cases admission
+              ON admission.facility_id=placement.facility_id AND admission.id=placement.admission_case_id
+             AND admission.patient_id=placement.patient_id AND admission.ward_id=placement.ward_id
+             AND admission.bed_id=placement.bed_id AND admission.placement_revision=placement.placement_revision
+            WHERE placement.facility_id=beds.facility_id AND placement.bed_id=beds.id
+              AND placement.ward_id=beds.ward_id AND placement.ended_at IS NULL
+              AND admission.status IN ('admitted','discharge_pending') AND beds.status='occupied'
+        ) current_placement ON true
         WHERE beds.facility_id = $1
           AND beds.ward_id = $2
         ORDER BY beds.created_at ASC, beds.id ASC
@@ -454,6 +461,8 @@ fn bed_map_bed_from_row(row: BedMapBedRow) -> anyhow::Result<WardBedMapBed> {
         bed_code: row.bed_code,
         status: codec::decode(&row.status)?,
         occupied_since: row.occupied_since,
+        occupancy_observed_at: row.occupancy_observed_at,
+        occupancy_start_known: row.occupancy_start_known,
     })
 }
 

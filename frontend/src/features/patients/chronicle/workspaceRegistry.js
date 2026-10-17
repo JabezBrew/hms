@@ -22,6 +22,7 @@ export const chronicleWorkspaceIds = Object.freeze([
   'fluids',
   'handover',
   'admissionAdvisory',
+  'admissionMove',
   'trends',
   'insurance',
   'wardRound',
@@ -46,6 +47,7 @@ export const chronicleWorkspaceLoaders = Object.freeze({
   fluids: () => import('@/components/chronicle/AddFluidBalanceSlideOver'),
   handover: () => import('@/features/nursing/handover/PatientHandoverPanel'),
   admissionAdvisory: () => import('@/features/admissions/advisory/AdmissionAdvisoryPanel'),
+  admissionMove: () => import('@/features/admissions/moves/AdmissionMovePanel'),
   trends: () => import('@/components/chronicle/TrendReviewSlideOver'),
   insurance: () => import('@/components/chronicle/PatientInsuranceSlideOver'),
   wardRound: () => import('@/components/chronicle/WardRoundSlideOver'),
@@ -141,6 +143,8 @@ export function buildChronicleWorkspaceProps(workspaceId, context) {
   } = context;
 
   switch (workspaceId) {
+    case 'admissionMove':
+      return { open: true, onClose, patient, selectedAdmissionId: selectedAdmissionId || null, requestedAdmissionId: context.requestedMoveAdmissionId || null, allHistory: chronicleAllHistory === true, placementRevision: !context.requestedMoveAdmissionId || context.requestedMoveAdmissionId === selectedAdmissionId ? context.selectedPlacementRevision ?? null : null, onMoved: context.onAdmissionMoved };
     case 'copilot':
       return {
         open: true,

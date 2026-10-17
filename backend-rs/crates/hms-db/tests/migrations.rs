@@ -153,10 +153,58 @@ async fn performance_seed_is_synthetic_scoped_and_idempotent() {
     provision_performance_seed(&pool, &baseline, seed)
         .await
         .expect("performance seed provisions");
+    let placement_before: serde_json::Value = sqlx::query_scalar("SELECT COALESCE(jsonb_agg(to_jsonb(e) ORDER BY e.id),'[]'::jsonb) FROM admission_placements e JOIN patients p ON p.id=e.patient_id WHERE e.facility_id=$1 AND p.patient_code ~ '^PERF-[0-9]{6}$'").bind(baseline.facility_id).fetch_one(&pool).await.unwrap();
+    sqlx::query("UPDATE patients SET first_name='Synthetic edited name' WHERE facility_id=$1 AND patient_code='PERF-000001'").bind(baseline.facility_id).execute(&pool).await.unwrap();
+    let user_note = uuid::Uuid::new_v4();
+    let patient_id = sqlx::query_scalar(
+        "SELECT id FROM patients WHERE facility_id=$1 AND patient_code='PERF-000001'",
+    )
+    .bind(baseline.facility_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    hms_db::clinical::create_note(
+        &pool,
+        hms_db::clinical::NewClinicalNote {
+            id: user_note,
+            facility_id: baseline.facility_id,
+            patient_id,
+            encounter_id: None,
+            note_type: hms_domain::clinical::ClinicalNoteType::DoctorNote,
+            title: "Synthetic user-authored note".into(),
+            body: "Synthetic preserved narrative".into(),
+            actor_user_id: uuid::Uuid::from_u128(hms_db::provision::OWNER_USER_ID),
+        },
+    )
+    .await
+    .expect("later user note uses the persisted note and immutable version shape");
     provision_performance_seed(&pool, &baseline, seed)
         .await
         .expect("performance seed is idempotent");
 
+    let placement_after: serde_json::Value = sqlx::query_scalar("SELECT COALESCE(jsonb_agg(to_jsonb(e) ORDER BY e.id),'[]'::jsonb) FROM admission_placements e JOIN patients p ON p.id=e.patient_id WHERE e.facility_id=$1 AND p.patient_code ~ '^PERF-[0-9]{6}$'").bind(baseline.facility_id).fetch_one(&pool).await.unwrap();
+    assert!(
+        placement_before == placement_after,
+        "all immutable placement bytes survive reseeding"
+    );
+    let user_preserved: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM clinical_notes WHERE id=$1) AND EXISTS(SELECT 1 FROM patients WHERE facility_id=$2 AND patient_code='PERF-000001' AND first_name='Synthetic edited name')").bind(user_note).bind(baseline.facility_id).fetch_one(&pool).await.unwrap();
+    assert!(
+        user_preserved,
+        "later synthetic user work remains unchanged"
+    );
+    let changed = PerformanceSeedConfig {
+        patient_count: 13,
+        ..seed
+    };
+    assert_eq!(
+        provision_performance_seed(&pool, &baseline, changed)
+            .await
+            .unwrap_err()
+            .to_string(),
+        "performance_seed_configuration_changed_use_fresh_database"
+    );
+    let receipts: i64 = sqlx::query_scalar("SELECT count(*) FROM audit_events WHERE facility_id=$1 AND event_type='performance.seed.provisioned'").bind(baseline.facility_id).fetch_one(&pool).await.unwrap();
+    assert_eq!(receipts, 1);
     let perf_patient_count = sqlx::query_scalar::<_, i64>(
         "SELECT count(*) FROM patients WHERE facility_id = $1 AND patient_code ~ '^PERF-[0-9]{6}$'",
     )
@@ -238,4 +286,95 @@ async fn performance_seed_is_synthetic_scoped_and_idempotent() {
     assert_eq!(inventory_item_count, i64::from(seed.inventory_item_count));
     assert_eq!(admission_count, i64::from(seed.admission_count));
     assert_eq!(invoice_count, i64::from(seed.invoice_count));
+}
+
+#[tokio::test]
+async fn performance_seed_refuses_unreceipted_namespace_and_preserves_existing_patient() {
+    let db = hms_db::test_support::TestDb::hospital().await.unwrap();
+    let baseline = BaselineProvisioning::hms_local(DeploymentProfile::Hospital);
+    let existing = db
+        .scenario("unreceipted-performance")
+        .registered_patient()
+        .await
+        .unwrap();
+    sqlx::query("UPDATE patients SET patient_code='PERF-000001' WHERE id=$1")
+        .bind(existing.id)
+        .execute(db.pool())
+        .await
+        .unwrap();
+    let config = PerformanceSeedConfig {
+        patient_count: 2,
+        chronicled_patient_count: 0,
+        notes_per_chronicle_patient: 0,
+        lab_order_count: 0,
+        inventory_item_count: 0,
+        admission_count: 0,
+        invoice_count: 0,
+    };
+    assert_eq!(
+        provision_performance_seed(db.pool(), &baseline, config)
+            .await
+            .unwrap_err()
+            .to_string(),
+        "performance_seed_existing_synthetic_evidence_use_fresh_database"
+    );
+    let count: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM patients WHERE id=$1 AND patient_code='PERF-000001'",
+    )
+    .bind(existing.id)
+    .fetch_one(db.pool())
+    .await
+    .unwrap();
+    assert_eq!(count, 1);
+}
+#[tokio::test]
+async fn performance_seed_concurrent_same_config_has_one_receipt_and_bounded_lock_wait() {
+    let db = hms_db::test_support::TestDb::hospital().await.unwrap();
+    let baseline = BaselineProvisioning::hms_local(DeploymentProfile::Hospital);
+    let config = PerformanceSeedConfig {
+        patient_count: 2,
+        chronicled_patient_count: 0,
+        notes_per_chronicle_patient: 0,
+        lab_order_count: 0,
+        inventory_item_count: 0,
+        admission_count: 1,
+        invoice_count: 0,
+    };
+    let mut held = db.pool().begin().await.unwrap();
+    sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended('hms.performance_seed.reserved_namespace',0))").execute(&mut *held).await.unwrap();
+    let failed = tokio::time::timeout(
+        std::time::Duration::from_secs(8),
+        provision_performance_seed(db.pool(), &baseline, config),
+    )
+    .await
+    .expect("actual seed lock wait is bounded");
+    assert!(failed.is_err(), "competing seed must respect lock_timeout");
+    let holder: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
+        .fetch_one(&mut *held)
+        .await
+        .unwrap();
+    let pool = db.pool().clone();
+    let canceled_baseline = baseline.clone();
+    let canceled =
+        tokio::spawn(
+            async move { provision_performance_seed(&pool, &canceled_baseline, config).await },
+        );
+    tokio::time::timeout(std::time::Duration::from_secs(3), async {
+        loop {
+            let blocked: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE datname=current_database() AND $1=ANY(pg_blocking_pids(pid)))").bind(holder).fetch_one(db.pool()).await.unwrap();
+            if blocked { break; }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+    }).await.expect("actual seed waits for the held publication lock");
+    canceled.abort();
+    assert!(canceled.await.unwrap_err().is_cancelled());
+    held.rollback().await.unwrap();
+    let (first, second) = tokio::join!(
+        provision_performance_seed(db.pool(), &baseline, config),
+        provision_performance_seed(db.pool(), &baseline, config)
+    );
+    first.unwrap();
+    second.unwrap();
+    let counts: (i64,i64) = sqlx::query_as("SELECT (SELECT count(*) FROM audit_events WHERE facility_id=$1 AND event_type='performance.seed.provisioned'),(SELECT count(*) FROM patients WHERE facility_id=$1 AND patient_code ~ '^PERF-[0-9]{6}$')").bind(baseline.facility_id).fetch_one(db.pool()).await.unwrap();
+    assert_eq!(counts, (1, 2));
 }

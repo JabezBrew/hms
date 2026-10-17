@@ -8,7 +8,7 @@ import MobileWorkspaceContextDock from '@/features/patients/components/MobileWor
 const chronicleWorkspaceComponents = Object.freeze(Object.fromEntries(
   Object.entries(chronicleWorkspaceLoaders).map(([id, loader]) => [id, lazy(loader)]),
 ));
-const retainedIds = ['fluids', 'handover', 'note', 'noteTemplatePreview', 'admissionAdvisory', 'medicationCourses', 'referralResponse'];
+const retainedIds = ['fluids', 'handover', 'note', 'noteTemplatePreview', 'admissionAdvisory', 'admissionMove', 'medicationCourses', 'referralResponse'];
 function useRetainedClinicalWorkspaces(activeWorkspace, context) {
   const [visited, setVisited] = useState([]);
   const active = isRustV2ApiMode() && retainedIds.includes(activeWorkspace)
@@ -40,7 +40,7 @@ const ChronicleWorkspaceHost = ({ activeWorkspace, workspaceContext }) => {
   if (!denied && !retained.length && !props) return null;
   return <Suspense fallback={null}>
     {denied && <DeniedWorkspace onClose={workspaceContext.onClose} />}
-    {retained.map((id) => <RetainedWorkspace key={id} id={id} activeWorkspace={activeWorkspace} context={workspaceContext} />)}
+    {retained.map((id) => <RetainedWorkspace key={id === 'admissionMove' ? id : `${id}:${workspaceContext.selectedWardId || ''}`} id={id} activeWorkspace={activeWorkspace} context={workspaceContext} />)}
     {Component && props && <Component {...props} />}
     {activeWorkspace && !denied && <MobileWorkspaceContextDock key={activeWorkspace} activeWorkspace={activeWorkspace} context={workspaceContext.mobileContext} />}
   </Suspense>;

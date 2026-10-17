@@ -22,18 +22,22 @@ function shapePatientForChronicle({ patient, rustV2ActiveAdmission, rustV2Active
   }
 
   const localData = patient.local_data || {};
+  const authoritative = Number.isSafeInteger(rustV2ActiveAdmission?.placement_revision) && rustV2ActiveAdmission.placement_revision >= 0;
+  const wardId = authoritative ? rustV2ActiveAdmission.ward_id ?? null : patient.current_ward_id || rustV2ActiveAdmission?.ward_id || null;
+  const ward = authoritative ? rustV2ActiveAdmission.ward_name ?? null : patient.current_ward || rustV2ActiveAdmission?.ward_name || null;
+  const bed = authoritative ? rustV2ActiveAdmission.bed_code ?? rustV2ActiveAdmission.bed_number ?? null : patient.current_bed || rustV2ActiveAdmission?.bed_code || rustV2ActiveAdmission?.bed_number || null;
   return {
     ...patient,
-    current_admission_id: patient.current_admission_id || rustV2ActiveAdmissionId,
-    current_ward_id: patient.current_ward_id || rustV2ActiveAdmission?.ward_id || null,
-    current_ward: patient.current_ward || rustV2ActiveAdmission?.ward_name || null,
-    current_bed: patient.current_bed || rustV2ActiveAdmission?.bed_code || rustV2ActiveAdmission?.bed_number || null,
+    current_admission_id: authoritative ? rustV2ActiveAdmissionId : patient.current_admission_id || rustV2ActiveAdmissionId,
+    current_ward_id: wardId,
+    current_ward: ward,
+    current_bed: bed,
     local_data: {
       ...localData,
-      current_admission_id: localData.current_admission_id || rustV2ActiveAdmissionId,
-      current_ward_id: localData.current_ward_id || rustV2ActiveAdmission?.ward_id || null,
-      current_ward: localData.current_ward || rustV2ActiveAdmission?.ward_name || null,
-      current_bed: localData.current_bed || rustV2ActiveAdmission?.bed_code || rustV2ActiveAdmission?.bed_number || null,
+      current_admission_id: authoritative ? rustV2ActiveAdmissionId : localData.current_admission_id || rustV2ActiveAdmissionId,
+      current_ward_id: authoritative ? wardId : localData.current_ward_id || wardId,
+      current_ward: authoritative ? ward : localData.current_ward || ward,
+      current_bed: authoritative ? bed : localData.current_bed || bed,
     },
   };
 }

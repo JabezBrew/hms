@@ -45,15 +45,14 @@ fn ready(address: SocketAddr) -> bool {
         .is_ok_and(|count| response[..count].starts_with(b"HTTP/1.1 200 "))
 }
 
-#[tokio::test]
-async fn worker_refuses_023_before_serving_and_serves_after_required_024() {
+async fn refuses_before_serving_and_serves_required_schema(before: i64) {
     let database = hms_db::test_support::TestDatabase::create().unwrap();
     let pool = hms_db::connect(database.database_url()).await.unwrap();
     let historical = sqlx::migrate::Migrator {
         migrations: Cow::Owned(
             hms_db::migrate::MIGRATOR
                 .iter()
-                .filter(|migration| migration.version < 202610170024)
+                .filter(|migration| migration.version < before)
                 .cloned()
                 .collect(),
         ),
@@ -108,4 +107,14 @@ async fn worker_refuses_023_before_serving_and_serves_after_required_024() {
         tokio::time::sleep(Duration::from_millis(20)).await;
     }
     drop(worker);
+}
+
+#[tokio::test]
+async fn actual_worker_refuses_023_before_serving() {
+    refuses_before_serving_and_serves_required_schema(202610170024).await;
+}
+
+#[tokio::test]
+async fn actual_worker_refuses_024_and_serves_after_required_025() {
+    refuses_before_serving_and_serves_required_schema(202610170025).await;
 }

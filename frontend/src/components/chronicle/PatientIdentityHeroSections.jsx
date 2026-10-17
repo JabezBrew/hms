@@ -257,6 +257,15 @@ function TemplatePreviewMenuAction({ onClick }) {
   return <DropdownMenuItem onClick={onClick}>Preview note template</DropdownMenuItem>;
 }
 
+function AdmissionMenuActions({ actions }) {
+  return <>
+        {actions.onViewAdmissionFollowUp && <DropdownMenuItem onClick={actions.onViewAdmissionFollowUp}>Admission follow-up</DropdownMenuItem>}
+        {actions.onMoveAdmission && <DropdownMenuItem onClick={actions.onMoveAdmission}>Move admission bed</DropdownMenuItem>}
+        {actions.onViewMedicationCourses && <DropdownMenuItem onClick={actions.onViewMedicationCourses}>Medication courses</DropdownMenuItem>}
+        {actions.onViewPatientHandover && <DropdownMenuItem onClick={actions.onViewPatientHandover}>Patient handover</DropdownMenuItem>}
+  </>;
+}
+
 function MoreActionsMenu({ actions, activeAdmission, prefetchAction }) {
   return (
     <DropdownMenu>
@@ -329,9 +338,7 @@ function MoreActionsMenu({ actions, activeAdmission, prefetchAction }) {
           </DropdownMenuItem>
         )}
         <TemplatePreviewMenuAction onClick={actions.onPreviewNoteTemplate} />
-        {actions.onViewAdmissionFollowUp && <DropdownMenuItem onClick={actions.onViewAdmissionFollowUp}>Admission follow-up</DropdownMenuItem>}
-        {actions.onViewMedicationCourses && <DropdownMenuItem onClick={actions.onViewMedicationCourses}>Medication courses</DropdownMenuItem>}
-        {actions.onViewPatientHandover && <DropdownMenuItem onClick={actions.onViewPatientHandover}>Patient handover</DropdownMenuItem>}
+        <AdmissionMenuActions actions={actions} />
         {activeAdmission && actions.onStartWardRound && (
           <>
             <DropdownMenuSeparator />

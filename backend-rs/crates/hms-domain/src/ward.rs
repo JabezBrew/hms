@@ -255,6 +255,10 @@ pub struct WardBedMapBed {
     pub bed_code: String,
     pub status: BedStatus,
     pub occupied_since: Option<DateTime<Utc>>,
+    /// First observation of current occupancy, including an unknown legacy prefix.
+    pub occupancy_observed_at: Option<DateTime<Utc>>,
+    /// Whether occupied_since is an actual placement start rather than rollout observation.
+    pub occupancy_start_known: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
@@ -294,6 +298,7 @@ pub struct WardBoardItem {
     pub bed_id: Option<Uuid>,
     pub bed_code: Option<String>,
     pub admission_status: AdmissionStatus,
+    pub placement_revision: i64,
     pub admitted_at: DateTime<Utc>,
     pub open_nursing_task_count: i64,
     pub overdue_nursing_task_count: i64,
@@ -354,12 +359,26 @@ pub struct WardAnalyticsQuery {
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
 pub struct WardAnalyticsMeta {
     pub mode: String,
+    /// Fixed database snapshot cutoff; open occupancy never projects beyond it.
+    pub observed_through: DateTime<Utc>,
     pub unavailable_metrics: Vec<String>,
+    pub occupancy_basis: String,
+    pub capacity_basis: String,
+    pub placement_attribution: String,
+    pub partial_metrics: Vec<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct WardEpisodeTotals {
+    pub admissions: Option<i64>,
+    pub discharges: Option<i64>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
 pub struct WardAnalyticsResponse {
     pub meta: WardAnalyticsMeta,
+    /// Canonical episode counts only when the request has no ward filter.
+    pub facility_episode_totals: Option<WardEpisodeTotals>,
     pub occupancy_trends: Vec<WardOccupancyTrendPoint>,
     pub length_of_stay: Vec<WardLengthOfStayBucket>,
     pub ward_utilization: Vec<WardUtilizationMetric>,
@@ -371,7 +390,7 @@ pub struct WardOccupancyTrendPoint {
     pub date: NaiveDate,
     pub ward_id: Uuid,
     pub ward: String,
-    pub occupancy_rate: f64,
+    pub occupancy_rate: Option<f64>,
     pub occupied_bed_days: f64,
     pub total_beds: i64,
 }
@@ -379,15 +398,15 @@ pub struct WardOccupancyTrendPoint {
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
 pub struct WardLengthOfStayBucket {
     pub range: String,
-    pub count: i64,
-    pub percentage: f64,
+    pub count: Option<i64>,
+    pub percentage: Option<f64>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
 pub struct WardUtilizationMetric {
     pub ward_id: Uuid,
     pub ward: String,
-    pub occupancy_rate: f64,
+    pub occupancy_rate: Option<f64>,
     pub occupied_beds_count: i64,
     pub total_beds: i64,
     pub turnover_rate: Option<f64>,
@@ -399,8 +418,8 @@ pub struct WardUtilizationMetric {
 pub struct WardAdmissionMetric {
     pub ward_id: Uuid,
     pub ward: String,
-    pub admissions: i64,
-    pub discharges: i64,
+    pub admissions: Option<i64>,
+    pub discharges: Option<i64>,
     pub transfers: Option<i64>,
 }
 
@@ -580,6 +599,7 @@ pub struct AdmissionCaseListItem {
     pub bed_id: Option<Uuid>,
     pub bed_code: Option<String>,
     pub status: AdmissionStatus,
+    pub placement_revision: i64,
     pub created_at: DateTime<Utc>,
     pub admitted_at: Option<DateTime<Utc>>,
     pub discharged_at: Option<DateTime<Utc>>,
@@ -656,7 +676,7 @@ pub struct NursingTaskListQuery {
     pub limit: Option<u8>,
     pub patient_id: Option<Uuid>,
     pub admission_case_id: Option<Uuid>,
-    /// The original ward captured on the task.
+    /// The effective service ward responsible for the task.
     pub ward_id: Option<Uuid>,
     pub task_type: Option<NursingTaskType>,
     pub status: Option<NursingTaskStatus>,
@@ -679,6 +699,9 @@ pub struct NursingTaskListItem {
     pub due_at: DateTime<Utc>,
     pub assigned_to_user_id: Option<Uuid>,
     pub ward_id: Uuid,
+    /// Current responsibility; ward_id remains the immutable origin.
+    pub service_ward_id: Uuid,
+    pub route_version: i64,
     pub completed_at: Option<DateTime<Utc>>,
     pub completed_by_user_id: Option<Uuid>,
     pub cancelled_at: Option<DateTime<Utc>>,

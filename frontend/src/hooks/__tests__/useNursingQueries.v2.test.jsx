@@ -425,6 +425,8 @@ describe('Rust V2 nursing dashboard hooks', () => {
             {
               id: 'task-1',
               ward_id: 'ward-1',
+              service_ward_id: 'ward-1',
+              route_version: 0,
               admission_case_id: 'admission-1',
               patient_id: 'patient-1',
               patient_code: 'MRN-001',
@@ -482,6 +484,8 @@ describe('Rust V2 nursing dashboard hooks', () => {
             {
               id: 'task-1',
               ward_id: 'ward-1',
+              service_ward_id: 'ward-1',
+              route_version: 0,
               admission_case_id: 'admission-1',
               patient_id: 'patient-1',
               patient_code: 'MRN-001',
@@ -521,6 +525,8 @@ describe('Rust V2 nursing dashboard hooks', () => {
           data: {
             id: 'task-1',
             ward_id: 'ward-1',
+            service_ward_id: 'ward-1',
+            route_version: 0,
             assigned_to_user_id: 'user-1',
             title: 'Check post-op observations',
             instruction: 'Check post-op observations',
@@ -592,6 +598,8 @@ describe('Rust V2 nursing dashboard hooks', () => {
           data: {
             id: 'task-1',
             ward_id: 'ward-1',
+            service_ward_id: 'ward-1',
+            route_version: 0,
             completed_at: '2026-05-12T11:05:00Z',
             completed_by_user_id: 'user-1',
             cancelled_at: null,
@@ -635,6 +643,8 @@ describe('Rust V2 nursing dashboard hooks', () => {
           data: {
             id: 'task-1',
             ward_id: 'ward-1',
+            service_ward_id: 'ward-1',
+            route_version: 0,
             completed_at: null,
             completed_by_user_id: null,
             cancelled_at: '2026-05-12T11:05:00Z',

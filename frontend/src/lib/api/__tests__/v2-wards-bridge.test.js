@@ -196,6 +196,27 @@ describe('Rust V2 wards bridge', () => {
     });
   });
 
+  it('preserves unknown placement attribution and zero-capacity rates without fabricating zero', async () => {
+    const meta = { mode: 'rust_v2_aggregates', observed_through: '2026-06-01T12:00:00Z', placement_attribution: 'partial', occupancy_basis: 'known_placement_intervals', capacity_basis: 'current_active_ward_nonclosed_beds', partial_metrics: ['occupancy_trends', 'admissions_by_ward.admissions'], unavailable_metrics: [] };
+    globalThis.fetch.mockResolvedValueOnce(new Response(JSON.stringify({ data: {
+      meta, facility_episode_totals: { admissions: 7, discharges: 3 },
+      occupancy_trends: [{ date: '2026-06-01', ward_id: 'historic', ward: 'Historical ward', occupancy_rate: null, occupied_bed_days: 2, total_beds: 0 }],
+      ward_utilization: [{ ward_id: 'historic', ward: 'Historical ward', occupancy_rate: null, occupied_beds_count: 0, total_beds: 0, turnover_rate: null, avg_los: null, bed_days: 2 }],
+      admissions_by_ward: [{ ward_id: 'historic', ward: 'Historical ward', admissions: null, discharges: null, transfers: 0 }],
+      length_of_stay: [{ range: 'Unknown attribution', count: null, percentage: null }],
+    } }), { status: 200, headers: { 'content-type': 'application/json' } }));
+    const result = await wardsApi.getAnalytics({ ward_id: 'all' });
+    expect(result.occupancy_trends[0]).toMatchObject({ 'Historical ward': null, Overall: null });
+    expect(result.ward_utilization[0]).toMatchObject({ occupancy_rate: null, occupied_beds_count: 0, bed_days: 2 });
+    expect(result.admissions_by_ward[0]).toMatchObject({ admissions: null, discharges: null, transfers: 0 });
+    expect(result.facility_episode_totals).toEqual({ admissions: 7, discharges: 3 });
+    expect(result.meta).toEqual(meta);
+  });
+  it('rejects placement analytics without the server observation cutoff instead of inferring the current client time', async () => {
+    globalThis.fetch.mockResolvedValueOnce(new Response(JSON.stringify({ data: { meta: { occupancy_basis: 'known_placement_intervals', capacity_basis: 'current_active_ward_nonclosed_beds', placement_attribution: 'partial', partial_metrics: [] } } }), { status: 200, headers: { 'content-type': 'application/json' } }));
+    await expect(wardsApi.getAnalytics()).rejects.toThrow(/metadata could not be confirmed/);
+  });
+
   it('searches wards with a server-side Rust V2 search parameter', async () => {
     const controller = new AbortController();
     globalThis.fetch.mockResolvedValueOnce(
@@ -1176,10 +1197,10 @@ describe('Rust V2 wards bridge', () => {
       /Rust V2 .* admission updates/i,
     );
     await expect(wardsApi.createTransfer({ admission: 'admission-1' })).rejects.toThrow(
-      /Rust V2 .* ward transfers/i,
+      /Use Move admission bed in Patient Chronicle/i,
     );
 
-    await expect(wardsApi.getTransfers()).resolves.toEqual([]);
+    await expect(wardsApi.getTransfers()).rejects.toThrow(/Review recorded same-admission moves in Patient Chronicle/);
     await expect(wardsApi.getAmenities()).resolves.toEqual([]);
 
     expect(globalThis.fetch).not.toHaveBeenCalled();

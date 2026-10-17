@@ -6,6 +6,11 @@ use crate::state::AppState;
 
 pub fn routes() -> Router<AppState> {
     Router::new()
+        .route("/api/v2/patients/:patient_id/chronicle/admissions/:admission_case_id/placement",get(crate::handlers::admission_moves::context))
+        .route("/api/v2/patients/:patient_id/chronicle/admissions/:admission_case_id/move-destinations",get(crate::handlers::admission_moves::destinations))
+        .route("/api/v2/patients/:patient_id/chronicle/admissions/:admission_case_id/moves",get(crate::handlers::admission_moves::history).post(crate::handlers::admission_moves::command))
+        .route("/api/v2/patients/:patient_id/chronicle/admissions/:admission_case_id/moves/:move_id",get(crate::handlers::admission_moves::detail))
+        .route("/api/v2/patients/:patient_id/chronicle/admissions/:admission_case_id/move-requests/:request_id",get(crate::handlers::admission_moves::receipt))
         .route(
             "/api/v2/nursing/fluid-observations",
             get(crate::handlers::fluid::list).post(crate::handlers::fluid::create),

@@ -5,10 +5,10 @@ const MAX_ENTRIES = 24; const MAX_BYTES = 24000; const UUID = /^[0-9a-f]{8}-[0-9
 const HEX = /^[0-9a-f]{64}$/; const receiptKey = Symbol('write-review');
 const ROOTS = new Set(['admin', 'auth', 'billing', 'clinical', 'encounters', 'inventory', 'laboratory', 'nhis', 'nursing', 'patients', 'pharmacy', 'scheduling', 'visits', 'wards', 'appointments']);
 const FAMILY_ALIASES = { 'nursing/prn-dose-requests': 'nursing/medication-administrations', 'nursing/prn-orders': 'nursing/medication-administrations', 'nhis/batches': 'nhis/claims', 'nhis/exports': 'nhis/claims', 'inventory/catalog-edits': 'inventory/items' };
-const IDEMPOTENT = new Set(['POST /api/v2/nursing/fluid-observations', 'POST /api/v2/nursing/fluid-observations/:id/corrections', 'POST /api/v2/nursing/fluid-observations/:id/void', 'POST /api/v2/nursing/fluid-monitoring/rules', 'POST /api/v2/scheduling/appointment-series', 'POST /api/v2/scheduling/appointment-series/:id/cancel-future', 'POST /api/v2/nursing/prn-dose-requests', 'PUT /api/v2/admin/network-policy', 'PATCH /api/v2/clinical/prescriptions/:id/documentation', 'POST /api/v2/clinical/prescriptions/:id/new-course', 'POST /api/v2/nursing/patient-handovers', 'POST /api/v2/nursing/patient-handovers/:id/amend', 'POST /api/v2/nursing/patient-handovers/:id/void', 'POST /api/v2/patients/:id/clinical/notes/record', 'POST /api/v2/clinical/notes/:id/amendments', 'POST /api/v2/clinical/note-templates/record', 'POST /api/v2/clinical/note-templates/:id/changes', 'POST /api/v2/patients/:id/chronicle/ward-rounds/draft', 'POST /api/v2/patients/:id/chronicle/ward-rounds/:id/commit']);
 let store; let fault = false; let currentScope = null; let currentContext = null; let activation = 0; let serial = Promise.resolve();
 const active = new Map(); const subscribers = new Set();
 let snapshot = { entries: [], unavailable: false };
+const readDispatch = new WeakMap(); let readOrder = 0; let lastReadDenial = 0;
 const error = (code = 'write_review_required', message = 'A previous change needs review before a new change can be submitted. Open and refresh the affected workflow, review its saved records, then acknowledge the recovery notice.') => apiErrorFromEnvelope(409, { error: { code, message } });
 function publish() { snapshot = { entries: (store?.entries || []).filter((entry) => entry.scope === currentScope && (!active.has(entry.id) || entry.state === 'uncertain' || active.get(entry.id).some((handle) => handle.authority !== currentContext?.authority || handle.transport !== currentContext?.transport))).map(({ id, operation, created_at, reviewed_at }) => ({ id, operation, created_at, reviewed: Boolean(reviewed_at) })), unavailable: fault }; subscribers.forEach((notify) => notify()); }
 export const subscribeWriteUncertainty = (notify) => { subscribers.add(notify); return () => subscribers.delete(notify); };
@@ -81,10 +81,10 @@ export async function beginWriteAttempt(request, context) {
     const wireBody = serializable ? JSON.stringify(request.body ?? null) : null;
     const replayable = serializable && wireBody.length <= 1000000;
     const input = replayable ? JSON.stringify(canonical([method, request.resolvedPath, request.query || null, JSON.parse(wireBody)])) : crypto.randomUUID();
-    const admission = await admissionScope(request);
+    const [admission, replayPolicy] = await Promise.all([admissionScope(request), import('./writeReplayPolicy')]);
     const primary = admission?.primary || primaryReference(request);
     const [fingerprint, referenceHashes, familyHash, primaryHash] = await Promise.all([digest(input), references(request.body, request.pathParams, request.query), digest(`family:${admission?.family || family(request.resolvedPath)}`), primary ? digest(`reference:${primary.toLowerCase()}`) : null]);
-    const uuid = replayable && (IDEMPOTENT.has(`${method} ${route}`) || admission?.retryTemplate === `${method} ${route}`) && UUID.test(request.body?.client_request_id) ? request.body.client_request_id : null;
+    const uuid = replayable && (replayPolicy.supportsCommandReplay(method, route) || admission?.retryTemplate === `${method} ${route}`) && UUID.test(request.body?.client_request_id) ? request.body.client_request_id : null;
     const unresolved = load().entries.filter((entry) => entry.scope === scope && (entry.state === 'uncertain' || !active.has(entry.id) || active.get(entry.id).some((live) => live.authority !== context.authority || live.transport !== context.transport)));
     const exact = unresolved.find((entry) => uuid && entry.uuid === uuid && entry.fingerprint === fingerprint);
     if (unresolved.length && (!exact || unresolved.some((entry) => entry.id !== exact.id))) throw error();
@@ -118,24 +118,42 @@ export function markWriteAttemptUncertain(handle) {
 }
 export function markWriteResponseUncertain(response) { markWriteAttemptUncertain(response?.[receiptKey]); }
 export function acknowledgeWriteResponse(response) { const handle = response?.[receiptKey]; if (handle) remove(handle); }
-export function captureWriteRecoveryRead() { try { return load().entries.filter((entry) => !active.has(entry.id)).map(({ id, uncertainty_id }) => ({ id, uncertainty_id })); } catch { return []; } }
+export function captureWriteRecoveryRead() { try { const evidence = load().entries.filter((entry) => !active.has(entry.id)).map(({ id, uncertainty_id }) => ({ id, uncertainty_id })); const order = ++readOrder, epoch = activation, scope = currentScope; readDispatch.set(evidence, () => order > lastReadDenial && epoch === activation && scope === currentScope); return evidence; } catch { return []; } }
 export async function recordWriteRecoveryRead(request, response, context) {
   if (context.isCurrentScope?.() === false || (!context.denied && !context.readEvidence?.length) || !load().entries.length) return;
+  if (context.denied) {
+    lastReadDenial = ++readOrder;
+    // A newer denial invalidates published review as well as pending dispatches.
+    // Keep every opaque unknown-write marker until a fresh authorized review.
+    let changed = false;
+    for (const entry of load().entries) {
+      if (entry.scope === currentScope && entry.reviewed_at !== null) {
+        entry.reviewed_at = null; changed = true;
+      }
+    }
+    if (changed) persist();
+  }
   return (await import('./writeRecoveryRead')).recordRecoveryRead(request, response, context, {
     admissionScope, load, scopeFor, digest, references, family, active, persist,
     current: () => ({ scope: currentScope, context: currentContext }),
+    readLease: evidence => readDispatch.get(evidence),
   });
 }
 export async function acknowledgeWriteReview(id, principal) {
   return queue(async () => { const scope = await scopeFor(principal); const entry = load().entries.find((item) => item.id === id && item.scope === scope); if (scope !== currentScope || !entry?.reviewed_at || active.has(id)) throw error(); store.entries = store.entries.filter((item) => item !== entry); persist(); });
 }
+// Every authority/transport activation invalidates earlier dispatch leases, even
+// when it later returns to the same values. No clinical body is retained here.
+function manualStore() {
+  return { current: () => ({ scope: currentScope, context: currentContext }), digest, load, queue, active: id => active.has(id),
+    remove: (id, uncertaintyId) => { store.entries = load().entries.filter(entry => entry.id !== id || entry.uncertainty_id !== uncertaintyId); persist(); } };
+}
 // Deliberately narrow manual recovery; its lazy protocol accepts only actual
 // transport-stamped current referral reads and an explicit separate gesture.
 export async function referralResponseManualReview(action, input) {
-  return (await import('./referralWriteScopes')).referralManualProtocol(action, input, {
-    current: () => ({ scope: currentScope, context: currentContext }), digest, load, queue,
-    active: id => active.has(id),
-    remove: (id, uncertaintyId) => { store.entries = load().entries.filter(entry => entry.id !== id || entry.uncertainty_id !== uncertaintyId); persist(); },
-  });
+  return (await import('./referralWriteScopes')).referralManualProtocol(action, input, manualStore());
+}
+export async function admissionMoveManualReview(action, input) {
+  return (await import('./moveWriteScopes')).moveManualProtocol(action, input, manualStore());
 }
 export function resetWriteUncertaintyForTests({ preserveStorage = false } = {}) { store = undefined; fault = false; currentScope = null; currentContext = null; activation += 1; active.clear(); serial = Promise.resolve(); if (!preserveStorage) sessionStorage.removeItem(WRITE_UNCERTAINTY_KEY); publish(); }

@@ -163,6 +163,10 @@ function getLosDays(admissionDate) {
 }
 
 function getBedOperationalAdmission(bed, admissions) {
+  if (typeof bed?.occupancy_start_known === 'boolean') {
+    if (canonicalStatus(bed.status) !== 'occupied') return null;
+    return { losDays: bed.occupancy_start_known ? getLosDays(bed.occupied_since) : null, placementEvidence: true, unknownStart: !bed.occupancy_start_known };
+  }
   if (bed?.occupied_since || bed?.admitted_at || bed?.admission_date) {
     const admittedAt = bed.occupied_since || bed.admitted_at || bed.admission_date;
     return {
@@ -530,8 +534,8 @@ function BedCell({ admission, bed }) {
   const config = getStatusConfig(bed.status);
   const StatusIcon = config.icon;
   const losLabel = admission?.losDays !== null && admission?.losDays !== undefined
-    ? `LOS ${admission.losDays}d`
-    : null;
+    ? `${admission.placementEvidence ? 'Bed stay' : 'LOS'} ${admission.losDays}d`
+    : admission?.unknownStart ? 'Bed stay unknown' : null;
   const secondaryLabel = bed.status === 'occupied'
     ? losLabel || config.label
     : config.shortLabel;
@@ -568,8 +572,8 @@ function BedCell({ admission, bed }) {
 function BedStrip({ admission, bed }) {
   const config = getStatusConfig(bed.status);
   const losLabel = admission?.losDays !== null && admission?.losDays !== undefined
-    ? `LOS ${admission.losDays}d`
-    : null;
+    ? `${admission.placementEvidence ? 'Bed stay' : 'LOS'} ${admission.losDays}d`
+    : admission?.unknownStart ? 'Bed stay unknown' : null;
 
   return (
     <Tooltip delayDuration={200}>
@@ -607,8 +611,8 @@ function BedStrip({ admission, bed }) {
 
 function BedTooltip({ admission, bed, config }) {
   const losLabel = admission?.losDays !== null && admission?.losDays !== undefined
-    ? `LOS ${admission.losDays}d`
-    : null;
+    ? `${admission.placementEvidence ? 'Bed stay' : 'LOS'} ${admission.losDays}d`
+    : admission?.unknownStart ? 'Bed stay unknown' : null;
 
   return (
     <div className="space-y-3 p-3">
@@ -633,12 +637,13 @@ function BedTooltip({ admission, bed, config }) {
         </div>
         {losLabel && (
           <div>
-            <p className="text-muted-foreground">Length of stay</p>
+            <p className="text-muted-foreground">{admission.placementEvidence ? 'Recorded bed placement' : 'Length of stay'}</p>
             <p className={cn('font-medium', config.textClass)}>{losLabel}</p>
           </div>
         )}
       </div>
 
+      {admission?.unknownStart && bed.occupancy_observed_at && <p className="font-mono text-xs text-muted-foreground">Current occupancy observed {new Date(bed.occupancy_observed_at).toLocaleString()}. Earlier start unknown.</p>}
       {bed.total_rate && (
         <div className="border-t border-border pt-2 font-mono text-xs text-muted-foreground">
           Rate {bed.total_rate}

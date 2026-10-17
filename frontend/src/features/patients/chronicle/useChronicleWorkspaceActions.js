@@ -53,6 +53,7 @@ export function useChronicleWorkspaceActions({
   const [trendReviewTab, setTrendReviewTab] = useState('vitals');
   const handleViewPatientHandover = useCallback(() => openChronicleWorkspace('handover'), [openChronicleWorkspace]);
   const handleViewAdmissionFollowUp = useCallback(() => openChronicleWorkspace('admissionAdvisory'), [openChronicleWorkspace]);
+  const handleMoveAdmission = useCallback(() => openChronicleWorkspace('admissionMove'), [openChronicleWorkspace]);
   const handleViewMedicationCourses = useCallback(() => openChronicleWorkspace('medicationCourses'), [openChronicleWorkspace]);
   const handleViewSelectedAdmissionMar = useCallback(() => {
     if (isAllVisitsScope || !chartContextAdmissionId) return;
@@ -282,6 +283,10 @@ export function useChronicleWorkspaceActions({
     selectedEncounter: chartContextEncounter,
     selectedEncounterId: chartContextEncounter?.id || null,
     selectedAdmissionId: chartContextAdmissionId,
+    selectedPlacementRevision: chartContextEncounter?.admission?.placement_revision ?? chartContextEncounter?.placement_revision ?? null,
+    selectedWardId: chartContextEncounter?.admission?.ward_id ?? chartContextEncounter?.ward_id ?? null,
+    requestedMoveAdmissionId: workspaceOptions?.moveAdmissionId || null,
+    onAdmissionMoved: refreshData,
     chronicleAllHistory: isAllVisitsScope,
     initialTrendTab: trendReviewTab,
     patientIdentityId,
@@ -356,6 +361,7 @@ export function useChronicleWorkspaceActions({
     handleViewSelectedAdmissionMar,
     handleViewPatientHandover,
     handleViewAdmissionFollowUp,
+    handleMoveAdmission,
     handleViewTrends,
     refreshData,
     workspaceContext,

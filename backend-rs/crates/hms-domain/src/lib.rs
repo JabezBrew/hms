@@ -25,4 +25,5 @@ pub mod scheduling;
 pub mod search;
 pub mod treatment_courses;
 pub mod ward;
+pub mod ward_moves;
 pub mod ward_rounds;

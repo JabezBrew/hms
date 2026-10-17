@@ -1,3 +1,4 @@
+import { taskRoutingKnown } from './taskRouting';
 import { hashQueryValue } from '@/shared/lib/privateQueryKey';
 
 const TASK_TYPES = new Set(['ward_round', 'observation', 'medication', 'handoff']);
@@ -93,8 +94,8 @@ function validRow(row, query, kind) {
     && typeof row.admission_case_id === 'string' && row.admission_case_id.length > 0
     && (!query.patient_id || row.patient_id === query.patient_id)
     && (!query.admission_case_id || row.admission_case_id === query.admission_case_id)
-    && (!query.ward_id || row.ward_id === undefined || row.ward_id === query.ward_id)
-    && (kind !== 'tasks' || (typeof row.ward_id === 'string' && row.ward_id.length > 0
+    && (!query.ward_id || (kind === 'tasks' ? row.service_ward_id === query.ward_id : row.ward_id === undefined || row.ward_id === query.ward_id))
+    && (kind !== 'tasks' || (taskRoutingKnown(row) && typeof row.ward_id === 'string' && row.ward_id.length > 0
       && TASK_TYPES.has(row.task_type) && ['open', 'completed', 'cancelled'].includes(row.status)))
     && (!query.status || row.status === query.status)
     && (!query.task_type || row.task_type === query.task_type)
