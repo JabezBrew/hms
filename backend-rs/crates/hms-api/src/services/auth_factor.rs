@@ -1,4 +1,7 @@
 //! Password+factor login, exact-session step-up, and existing-factor management.
+mod ordinary;
+pub use ordinary::confirm_password;
+
 use crate::{
     error::ApiError,
     extractors::NetworkContext,

@@ -1,3 +1,5 @@
+import { organizationRouteAccess } from '@/features/admin/organization/access'
+import { storageLocationParentAccess, storageLocationRouteAccess } from '@/features/inventory/locations/access'
 const DEFAULT_EMPTY_OBJECT = {};
 
 import LayoutDashboard from 'lucide-react/dist/esm/icons/layout-dashboard.js'
@@ -394,18 +396,18 @@ const globalSections = [
       key: 'inventory',
       label: 'Inventory',
       icon: Package,
-      roles: ROLE_GROUPS.INVENTORY,
+      ...storageLocationParentAccess(),
       features: ['inventory'],
       children: [
-        item({ key: 'inventory-dashboard', label: 'Dashboard', href: '/inventory', icon: LayoutDashboard, exact: true }),
-        item({ key: 'inventory-items', label: 'Items', href: '/inventory/items', icon: Package, exact: false }),
-        item({ key: 'inventory-locations', label: 'Locations', href: '/inventory/locations', icon: Warehouse, exact: true }),
-        item({ key: 'inventory-requisitions', label: 'Requisitions', href: '/inventory/requisitions', icon: ClipboardList, exact: false }),
-        item({ key: 'inventory-purchase-orders', label: 'Purchase Orders', href: '/inventory/purchase-orders', icon: ShoppingCart, exact: false }),
-        item({ key: 'inventory-grns', label: 'GRNs', href: '/inventory/grns', icon: FileBox, exact: false }),
-        item({ key: 'inventory-transfers', label: 'Transfers', href: '/inventory/transfers', icon: Truck, exact: true }),
-        item({ key: 'inventory-controlled', label: 'Controlled', href: '/inventory/controlled', icon: AlertTriangle, exact: false }),
-        item({ key: 'inventory-analytics', label: 'Analytics', href: '/inventory/analytics', icon: BarChart3, exact: true }),
+        item({ key: 'inventory-dashboard', label: 'Dashboard', href: '/inventory', icon: LayoutDashboard, roles: ROLE_GROUPS.INVENTORY, exact: true }),
+        item({ key: 'inventory-items', label: 'Items', href: '/inventory/items', icon: Package, roles: ROLE_GROUPS.INVENTORY, exact: false }),
+        item({ key: 'inventory-locations', label: 'Locations', href: '/inventory/locations', icon: Warehouse, ...storageLocationRouteAccess(), exact: true }),
+        item({ key: 'inventory-requisitions', label: 'Requisitions', href: '/inventory/requisitions', icon: ClipboardList, roles: ROLE_GROUPS.INVENTORY, exact: false }),
+        item({ key: 'inventory-purchase-orders', label: 'Purchase Orders', href: '/inventory/purchase-orders', icon: ShoppingCart, roles: ROLE_GROUPS.INVENTORY, exact: false }),
+        item({ key: 'inventory-grns', label: 'GRNs', href: '/inventory/grns', icon: FileBox, roles: ROLE_GROUPS.INVENTORY, exact: false }),
+        item({ key: 'inventory-transfers', label: 'Transfers', href: '/inventory/transfers', icon: Truck, roles: ROLE_GROUPS.INVENTORY, exact: true }),
+        item({ key: 'inventory-controlled', label: 'Controlled', href: '/inventory/controlled', icon: AlertTriangle, roles: ROLE_GROUPS.INVENTORY, exact: false }),
+        item({ key: 'inventory-analytics', label: 'Analytics', href: '/inventory/analytics', icon: BarChart3, roles: ROLE_GROUPS.INVENTORY, exact: true }),
       ],
     }),
     item({
@@ -445,8 +447,7 @@ const globalSections = [
           label: 'Organization',
           href: '/admin/organization',
           icon: FolderTree,
-          roles: ROLE_GROUPS.ADMIN_ONLY,
-          capabilities: [ADMIN_CAPABILITIES.ORGANIZATION_MANAGE],
+          ...organizationRouteAccess(),
           exact: false,
         }),
         item({
@@ -560,7 +561,7 @@ const inventorySections = [
   section('inventory', 'Inventory', [
     item({ key: 'inventory-dashboard', label: 'Dashboard', href: '/inventory', icon: LayoutDashboard, roles: ROLE_GROUPS.INVENTORY, features: ['inventory'], exact: true }),
     item({ key: 'inventory-items', label: 'Items', href: '/inventory/items', icon: Package, roles: ROLE_GROUPS.INVENTORY, features: ['inventory'], exact: false }),
-    item({ key: 'inventory-locations', label: 'Locations', href: '/inventory/locations', icon: Warehouse, roles: ROLE_GROUPS.INVENTORY, features: ['inventory'], exact: true }),
+    item({ key: 'inventory-locations', label: 'Locations', href: '/inventory/locations', icon: Warehouse, ...storageLocationRouteAccess(), features: ['inventory'], exact: true }),
     item({ key: 'inventory-requisitions', label: 'Requisitions', href: '/inventory/requisitions', icon: ClipboardList, roles: ROLE_GROUPS.INVENTORY, features: ['inventory'], exact: false }),
     item({ key: 'inventory-purchase-orders', label: 'Purchase Orders', href: '/inventory/purchase-orders', icon: ShoppingCart, roles: ROLE_GROUPS.INVENTORY, features: ['inventory'], exact: false }),
     item({ key: 'inventory-grns', label: 'GRNs', href: '/inventory/grns', icon: FileBox, roles: ROLE_GROUPS.INVENTORY, features: ['inventory'], exact: false }),
@@ -588,7 +589,7 @@ const pharmacySections = [
 const adminSections = [
   section('administration', 'Administration', [
     item({ key: 'staff', label: 'Staff', href: '/staff', icon: Shield, roles: ROLE_GROUPS.ADMIN_ONLY, capabilities: [ADMIN_CAPABILITIES.STAFF_VIEW], exact: false }),
-    item({ key: 'organization', label: 'Organization', href: '/admin/organization', icon: FolderTree, roles: ROLE_GROUPS.ADMIN_ONLY, capabilities: [ADMIN_CAPABILITIES.ORGANIZATION_MANAGE], exact: false }),
+    item({ key: 'organization', label: 'Organization', href: '/admin/organization', icon: FolderTree, ...organizationRouteAccess(), exact: false }),
     item({ key: 'duty-roster', label: 'Duty Roster', href: '/admin/organization/duty-roster', icon: CalendarClock, roles: DUTY_ROSTER_ROLES, capabilities: [ADMIN_CAPABILITIES.ROSTER_VIEW], features: ['department_rosters'], exact: true }),
     item({ key: 'access-grants', label: 'Access grants', href: '/admin/access-grants', icon: Shield, roles: [], capabilities: ['admin.authority.manage'], features: ['admin'], exact: true }),
     item({ key: 'audit-logs', label: 'Audit Logs', href: '/admin/audit-logs', icon: FileSearch, roles: ROLE_GROUPS.ADMIN_ONLY, capabilities: [ADMIN_CAPABILITIES.AUDIT_VIEW], features: ['audit'], exact: true }),

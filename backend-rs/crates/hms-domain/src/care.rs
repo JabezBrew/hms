@@ -91,6 +91,7 @@ pub enum CareTeamRole {
 }
 
 #[derive(Clone, Debug, Deserialize, IntoParams, Serialize, ToSchema)]
+#[into_params(parameter_in = Query)]
 pub struct CursorListQuery {
     pub cursor: Option<String>,
     pub limit: Option<u8>,

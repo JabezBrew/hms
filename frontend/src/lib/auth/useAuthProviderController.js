@@ -475,19 +475,21 @@ export function useAuthProviderController() {
     const generation = ++authLifetime.current.generation; const transport = getV2ClientScopeKey()
     const current = () => { if (controller.signal.aborted || generation !== authLifetime.current.generation || transport !== getV2ClientScopeKey()) throw new DOMException('Aborted', 'AbortError') }
     try {
-      const [{ factorApi }, { browserCeremony }, { sameProofSession, sameReadableNetwork, stageProofNetwork }] = await Promise.all([
-        import('@/features/auth/api'), import('@/features/auth/ceremony'), import('@/features/auth/proofUpgrade'),
+      const [api, { dispatchCurrentSessionProof, sameProofSession, ordinarySessionProof, sameReadableNetwork, stageProofNetwork }] = await Promise.all([
+        import('@/features/auth/api'), import('@/features/auth/proofUpgrade'),
       ])
       current()
-      const options = await factorApi.stepUpOptions(password, { signal: controller.signal }); current()
-      const assertion = await browserCeremony(options, { signal: controller.signal }); current()
-      const result = await factorApi.stepUpVerify(assertion, { signal: controller.signal }); current()
-      try { sameSessionIdentity(user, result) } catch (error) { clearWorkflowContinuity(); authLifetime.current.blocked = true; await clearLocalAuthState('identity-confirmation-scope-changed'); throw error }
+      const { result, ordinary, dispatchStartedAt } = await dispatchCurrentSessionProof(user, password, api, { signal: controller.signal, current }); current()
+      let continuity
+      try {
+        sameSessionIdentity(user, result)
+        continuity = ordinary ? ordinarySessionProof(user, result, accessTokenRef.current, result.access_token, dispatchStartedAt) : sameProofSession(user, result, accessTokenRef.current, result.access_token, Boolean(password))
+      } catch (error) { clearWorkflowContinuity(); authLifetime.current.blocked = true; await clearLocalAuthState('identity-confirmation-scope-changed'); throw error }
       const adapted = adaptV2AuthTokenResponse({ data: result }); const nextUser = providerUser(adapted, defaultFacilityCode)
       const authority = authorizationIdentity(user)
       const previous = currentConfirmedNetworkDecision(transport, authority)
       let networkFailure = null
-      if (previous && sameProofSession(user, result, accessTokenRef.current, result.access_token, Boolean(password))) {
+      if (previous && continuity) {
         try {
           const staged = await stageProofNetwork(result.access_token, user.facilityCode, { signal: controller.signal }); current()
           const latest = currentConfirmedNetworkDecision(transport, authority)

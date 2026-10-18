@@ -23,9 +23,12 @@ one-time recovery codes stay local, remain visible after a refresh failure, and
 are removed on scope change. Lost or malformed security writes are explicitly
 unconfirmed and do not automatically repeat.
 
-Same-session identity verification uses assurance options/verify and an existing
-passkey. Password confirmation is explicit; passkey-only proof cannot renew its
-timestamp. A coarse opaque factor-required signal offers a manual ceremony and
+Same-session identity verification uses the generated ordinary password-confirmation
+operation only when the current server says both passkey-required and
+passkey-enrolled are false. It sends exact password bytes in the current session
+without refreshing, logging in again or falling back after failure. Enrolled or
+privileged accounts retain assurance options/verify and an existing passkey.
+Password confirmation is explicit; passkey-only proof cannot renew its timestamp. A coarse opaque factor-required signal offers a manual ceremony and
 never retries the denied clinical/admin mutation. Security and signal scopes
 always use the strict current request identity.
 
@@ -35,8 +38,17 @@ The actual token/transport scope stays strict. The shared workflow continuity
 registry is separate and volatile: it contains only opaque hashes and a coarse
 address-free network decision. It is installed only after the returned token
 matches the original JWT session, actor, facility, profile, permissions,
-features, visibility and account security facts. Only the fresh same-session
-assurance revision, assurance evidence and derived privilege bit may change.
+features, visibility and account security facts. The ordinary response must advance the actual assurance revision, preserve factor
+version and all security facts, and carry a coherent same-session JWT with
+nondecreasing password time admitted for this exact confirmation attempt. An
+ephemeral timestamp captured directly before generated dispatch permits only the
+explicit two-second client/signer tolerance; it does not compare admission with
+response time and is never a request field or persisted receipt. Password proof
+never introduces or extends factor evidence.
+Exact unchanged evidence can preserve workflow continuity. A server-cleared
+naturally expired factor permits applying an otherwise valid same-session token
+without retaining the old workflow; JWT whole-second rounding is respected.
+Passkey proof retains its existing fresh-factor predicate.
 
 Before installing that token, a fixed GET reads network access using the exact
 new token. A matching known/readable policy decision can seed its exact new query

@@ -2,7 +2,9 @@
 use crate::PgPool;
 use sqlx::{migrate::Migrate, Acquire};
 
+mod organization_units;
 mod referral_consultations;
+mod storage_locations;
 mod ward_moves;
 
 pub const TREATMENT_WINDOWS_BREAKING_EPOCH: i64 = 202610170023;
@@ -12,7 +14,11 @@ pub const REFERRAL_RESPONSES_BREAKING_EPOCH: i64 = 202610170024;
 pub const ADMISSION_MOVES_BREAKING_EPOCH: i64 = 202610170025;
 /// Earlier runtimes do not preserve consultation and encounter identity.
 pub const REFERRAL_CONSULTATIONS_BREAKING_EPOCH: i64 = 202610170026;
-pub const REQUIRED_RUNTIME_SCHEMA_EPOCH: i64 = REFERRAL_CONSULTATIONS_BREAKING_EPOCH;
+/// Earlier runtimes bypass governed organization unit maintenance.
+pub const ORGANIZATION_UNITS_BREAKING_EPOCH: i64 = 202610170027;
+/// Earlier runtimes bypass governed location maintenance and reference publication.
+pub const STORAGE_LOCATIONS_BREAKING_EPOCH: i64 = 202610170028;
+pub const REQUIRED_RUNTIME_SCHEMA_EPOCH: i64 = STORAGE_LOCATIONS_BREAKING_EPOCH;
 
 /// This once-per-process startup gate is separate from cheap health probes.
 pub async fn require_runtime_schema(pool: &PgPool) -> anyhow::Result<()> {
@@ -145,6 +151,8 @@ pub async fn committed_breaking_epoch(pool: &PgPool) -> anyhow::Result<i64> {
     };
     let epoch = ward_moves::committed_epoch(&mut tx, history, epoch).await?;
     let epoch = referral_consultations::committed_epoch(&mut tx, history, epoch).await?;
+    let epoch = organization_units::committed_epoch(&mut tx, history, epoch).await?;
+    let epoch = storage_locations::committed_epoch(&mut tx, history, epoch).await?;
     Migrate::unlock(&mut *tx).await?;
     tx.commit().await?;
     Ok(epoch)

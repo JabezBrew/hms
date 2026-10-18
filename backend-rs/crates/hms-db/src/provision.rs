@@ -1,3 +1,5 @@
+mod organization_units;
+mod storage_locations;
 use std::collections::HashSet;
 use std::sync::OnceLock;
 
@@ -863,33 +865,15 @@ async fn seed_demo_hospital_context(
 ) -> anyhow::Result<DemoHospitalContext> {
     let owner_user_id = Uuid::from_u128(OWNER_USER_ID);
     for (department_index, department) in demo_departments().iter().enumerate() {
-        sqlx::query(
-            r#"
-            INSERT INTO organization_units (
-                id,
-                facility_id,
-                parent_unit_id,
-                code,
-                name,
-                unit_type
-            )
-            VALUES ($1, $2, $3, $4, $5, $6)
-            ON CONFLICT (facility_id, code) DO UPDATE
-            SET id = EXCLUDED.id,
-                parent_unit_id = EXCLUDED.parent_unit_id,
-                name = EXCLUDED.name,
-                unit_type = EXCLUDED.unit_type,
-                is_active = TRUE,
-                updated_at = now()
-            "#,
+        organization_units::retain(
+            transaction,
+            demo_department_id(department_index),
+            baseline.facility_id,
+            Some(Uuid::from_u128(DEFAULT_ORG_UNIT_CLINICAL_ID)),
+            &format!("DEMO-{}", department.code),
+            department.name,
+            OrgUnitType::Department,
         )
-        .bind(demo_department_id(department_index))
-        .bind(baseline.facility_id)
-        .bind(Uuid::from_u128(DEFAULT_ORG_UNIT_CLINICAL_ID))
-        .bind(format!("DEMO-{}", department.code))
-        .bind(department.name)
-        .bind(codec::encode(OrgUnitType::Department)?)
-        .execute(&mut **transaction)
         .await?;
     }
 
@@ -1655,21 +1639,6 @@ async fn delete_demo_seed_graph(
           AND id IN (
               SELECT ('d90000000000000000000000' || lpad(to_hex(i::bigint), 8, '0'))::uuid
               FROM generate_series(1, 35) AS generated(i)
-          )
-        "#,
-        r#"
-        DELETE FROM organization_units
-        WHERE facility_id = $1
-          AND code IN (
-              'DEMO-GOPD',
-              'DEMO-MED',
-              'DEMO-SURG',
-              'DEMO-OBGYN',
-              'DEMO-PAEDS',
-              'DEMO-EMERG',
-              'DEMO-LAB',
-              'DEMO-PHARM',
-              'DEMO-ADMIN'
           )
         "#,
     ];
@@ -7481,6 +7450,7 @@ async fn seed_inventory_baseline(
         );
     }
 
+    let mut location_seed = pool.begin().await?;
     for (id, code, name, location_type, temperature_zone) in [
         (
             Uuid::from_u128(DEFAULT_MAIN_STORE_ID),
@@ -7497,29 +7467,18 @@ async fn seed_inventory_baseline(
             "ambient",
         ),
     ] {
-        sqlx::query(
-            r#"
-            INSERT INTO storage_locations (
-                id, facility_id, code, name, location_type, temperature_zone
-            )
-            VALUES ($1, $2, $3, $4, $5, $6)
-            ON CONFLICT (facility_id, code) DO UPDATE
-            SET id = EXCLUDED.id,
-                name = EXCLUDED.name,
-                location_type = EXCLUDED.location_type,
-                temperature_zone = EXCLUDED.temperature_zone,
-                is_active = TRUE
-            "#,
+        storage_locations::retain(
+            &mut location_seed,
+            id,
+            baseline.facility_id,
+            code,
+            name,
+            location_type,
+            temperature_zone,
         )
-        .bind(id)
-        .bind(baseline.facility_id)
-        .bind(code)
-        .bind(name)
-        .bind(location_type)
-        .bind(temperature_zone)
-        .execute(pool)
         .await?;
     }
+    location_seed.commit().await?;
 
     for (id, code, name, contact_name, phone, email) in [
         (
@@ -7835,26 +7794,18 @@ async fn seed_admin_authority_baseline(
     pool: &PgPool,
     baseline: &BaselineProvisioning,
 ) -> anyhow::Result<()> {
-    sqlx::query(
-        r#"
-        INSERT INTO organization_units (id, facility_id, code, name, unit_type)
-        VALUES ($1, $2, $3, $4, $5)
-        ON CONFLICT (facility_id, code) DO UPDATE
-        SET id = EXCLUDED.id,
-            name = EXCLUDED.name,
-            unit_type = EXCLUDED.unit_type,
-            is_active = TRUE
-        "#,
+    let mut organization_tx = pool.begin().await?;
+    organization_units::retain(
+        &mut organization_tx,
+        baseline.facility_id,
+        baseline.facility_id,
+        None,
+        &baseline.facility_code,
+        &baseline.facility_name,
+        OrgUnitType::Facility,
     )
-    .bind(baseline.facility_id)
-    .bind(baseline.facility_id)
-    .bind(&baseline.facility_code)
-    .bind(&baseline.facility_name)
-    .bind(codec::encode(OrgUnitType::Facility)?)
-    .execute(pool)
     .await?;
-
-    for (id, code, name, unit_type) in [
+    for (id, code, name, kind) in [
         (
             DEFAULT_ORG_UNIT_ADMIN_ID,
             "ADMIN",
@@ -7868,26 +7819,17 @@ async fn seed_admin_authority_baseline(
             OrgUnitType::Service,
         ),
     ] {
-        sqlx::query(
-            r#"
-            INSERT INTO organization_units (id, facility_id, code, name, unit_type)
-            VALUES ($1, $2, $3, $4, $5)
-            ON CONFLICT (facility_id, code) DO UPDATE
-            SET id = EXCLUDED.id,
-                name = EXCLUDED.name,
-                unit_type = EXCLUDED.unit_type,
-                is_active = TRUE
-            "#,
+        organization_units::retain(
+            &mut organization_tx,
+            Uuid::from_u128(id),
+            baseline.facility_id,
+            None,
+            code,
+            name,
+            kind,
         )
-        .bind(Uuid::from_u128(id))
-        .bind(baseline.facility_id)
-        .bind(code)
-        .bind(name)
-        .bind(codec::encode(unit_type)?)
-        .execute(pool)
         .await?;
     }
-
     for (id, code, name) in [
         (DEFAULT_ORG_UNIT_OPD_ID, "OPD", "Outpatient Department"),
         (
@@ -7897,27 +7839,18 @@ async fn seed_admin_authority_baseline(
         ),
         (DEFAULT_ORG_UNIT_MEDICINE_ID, "MEDICINE", "General Medicine"),
     ] {
-        sqlx::query(
-            r#"
-            INSERT INTO organization_units (id, facility_id, parent_unit_id, code, name, unit_type)
-            VALUES ($1, $2, $3, $4, $5, $6)
-            ON CONFLICT (facility_id, code) DO UPDATE
-            SET id = EXCLUDED.id,
-                parent_unit_id = EXCLUDED.parent_unit_id,
-                name = EXCLUDED.name,
-                unit_type = EXCLUDED.unit_type,
-                is_active = TRUE
-            "#,
+        organization_units::retain(
+            &mut organization_tx,
+            Uuid::from_u128(id),
+            baseline.facility_id,
+            Some(Uuid::from_u128(DEFAULT_ORG_UNIT_CLINICAL_ID)),
+            code,
+            name,
+            OrgUnitType::Department,
         )
-        .bind(Uuid::from_u128(id))
-        .bind(baseline.facility_id)
-        .bind(Uuid::from_u128(DEFAULT_ORG_UNIT_CLINICAL_ID))
-        .bind(code)
-        .bind(name)
-        .bind(codec::encode(OrgUnitType::Department)?)
-        .execute(pool)
         .await?;
     }
+    organization_tx.commit().await?;
 
     sqlx::query(
         r#"

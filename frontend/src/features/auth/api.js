@@ -21,6 +21,18 @@ async function ownRequest(path, { method = 'GET', body, signal, query } = {}) {
   const response = await v2Request({ method, path, body, signal, query }); return response?.data;
 }
 const keyPath = (id) => { if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) throw new Error('Select a saved passkey.'); return `/api/v2/auth/mfa/passkeys/${id}`; };
+export async function confirmCurrentPassword(password, { signal } = {}) {
+  if (typeof password !== 'string' || !password.length) throw new Error('Enter your current password.');
+  const { createGeneratedClient } = await import('@/lib/api/v2/generated/client');
+  if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+  // The generated options intentionally expose no refresh selector. Use its
+  // actual operation with a fixed no-refresh transport for this credential proof.
+  const client = createGeneratedClient(request => v2Request({ ...request, skipAuthRefresh: true }));
+  const dispatchStartedAt = Date.now();
+  const response = await client.postAuthReauthenticate({ current_password: password }, { signal });
+  if (response?.data?.status !== 'authenticated') throw new Error('Current identity could not be confirmed.');
+  return { result: authenticatedResult(response.data), dispatchStartedAt };
+}
 export const factorApi = {
   login: async (body, options) => loginResult(await grantRequest('/auth/login', body, options)),
   startSetup: async (body, options) => { const result = loginResult(await grantRequest('/auth/setup/start', body, options)); if (result.status !== 'setup_required') throw new Error('First-key setup could not be confirmed.'); return result; },

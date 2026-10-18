@@ -133,6 +133,16 @@ pub async fn status(
             .map_err(service::error)?,
     )))
 }
+#[utoipa::path(post,path="/api/v2/auth/reauthenticate",operation_id="postAuthReauthenticate",tag="auth",security(("bearerAuth"=[])),request_body=OrdinaryPasswordConfirmationRequest,responses((status=200,body=ObjectResponse<AuthLoginResponse>),(status=400,body=ApiErrorResponse),(status=401,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse),(status=429,body=ApiErrorResponse)))]
+pub async fn confirm_password(
+    State(s): State<AppState>,
+    ctx: NetworkContext,
+    body: Result<Json<OrdinaryPasswordConfirmationRequest>, JsonRejection>,
+) -> Result<Json<ObjectResponse<AuthLoginResponse>>, ApiError> {
+    Ok(Json(object(AuthLoginResponse::Authenticated {
+        token: tokens(service::confirm_password(&s, &ctx, payload(body)?).await?),
+    })))
+}
 #[utoipa::path(post,path="/api/v2/auth/assurance/options",operation_id="postAuthAssuranceOptions",tag="auth",security(("bearerAuth"=[])),request_body=StepUpOptionsRequest,responses((status=200,body=ObjectResponse<Value>),(status=400,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse),(status=429,body=ApiErrorResponse)))]
 pub async fn step_up_options(
     State(s): State<AppState>,

@@ -215,7 +215,7 @@ raise SystemExit(subprocess.run(['/bin/mv',*sys.argv[1:]]).returncode)
 
 def test_skip_migration_runtime_replacement_failure_uses_guarded_recovery_not_untouched_claim(tmp_path):
     live, archive, installer, env = install_fixture(tmp_path)
-    env.update(SKIP_MIGRATIONS='true', HMS_ROLLBACK_SKIP_MIGRATIONS_ALLOWED='true', PROBE_OUTPUT='202610170026')
+    env.update(SKIP_MIGRATIONS='true', HMS_ROLLBACK_SKIP_MIGRATIONS_ALLOWED='true', PROBE_OUTPUT='202610170028')
     docker = tmp_path / 'bin/docker'
     source = docker.read_text()
     source = source.replace("if 'config' in a:", "if 'up' in a and 'hms-api' in a: sys.exit(17)\nif 'config' in a:")
@@ -229,7 +229,7 @@ def test_skip_migration_runtime_replacement_failure_uses_guarded_recovery_not_un
     assert [p.read_text().strip() for p in (tmp_path / '.hms-deploy-state').glob('attempt-*')] == ['quiescing']
 
 
-@pytest.mark.parametrize('missing_migration', ['202610170023_treatment_course_windows.sql', '202610170024_referral_response_records.sql', '202610170025_admission_moves.sql', '202610170026_referral_consultation_starts.sql'])
+@pytest.mark.parametrize('missing_migration', ['202610170023_treatment_course_windows.sql', '202610170024_referral_response_records.sql', '202610170025_admission_moves.sql', '202610170026_referral_consultation_starts.sql', '202610170027_organization_unit_lifecycle.sql', '202610170028_storage_location_lifecycle.sql'])
 def test_declared_new_runtime_with_missing_migration_cannot_drain_migrate_or_start(tmp_path, missing_migration):
     root = tmp_path / 'release'
     release(root)

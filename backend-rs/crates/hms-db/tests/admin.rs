@@ -1,5 +1,5 @@
 use chrono::{Duration, NaiveDate, Utc};
-use hms_db::admin::{NewAuditEvent, NewOrganizationUnit, NewPractitionerProfile, NewStaffAccount};
+use hms_db::admin::{NewAuditEvent, NewPractitionerProfile, NewStaffAccount};
 use hms_db::provision::{provision_baseline, BaselineProvisioning};
 use hms_domain::admin::OrgUnitType;
 use hms_domain::deployment::{DeploymentProfile, FeatureKey, PermissionCode};
@@ -177,32 +177,10 @@ async fn organization_unit_lists_can_filter_by_type_and_active_state() {
         .expect("facility query succeeds")
         .expect("facility exists");
 
-    let inactive_facility = hms_db::admin::create_organization_unit(
-        &pool,
-        NewOrganizationUnit {
-            facility_id,
-            code: "OLD_FACILITY".to_owned(),
-            name: "Closed Facility".to_owned(),
-            unit_type: OrgUnitType::Facility,
-            parent_unit_id: None,
-        },
-    )
-    .await
-    .expect("inactive facility unit is created");
-    hms_db::admin::create_organization_unit(
-        &pool,
-        NewOrganizationUnit {
-            facility_id,
-            code: "SUPPORT_DEPT".to_owned(),
-            name: "Support Department".to_owned(),
-            unit_type: OrgUnitType::Department,
-            parent_unit_id: None,
-        },
-    )
-    .await
-    .expect("department unit is created");
-    sqlx::query("UPDATE organization_units SET is_active = false WHERE id = $1")
-        .bind(inactive_facility.id)
+    let inactive_facility: Uuid=sqlx::query_scalar("INSERT INTO organization_units(id,facility_id,code,name,unit_type) VALUES(gen_random_uuid(),$1,'OLD_FACILITY','Closed Facility','facility') RETURNING id").bind(facility_id).fetch_one(&pool).await.expect("synthetic facility unit is created");
+    sqlx::query("INSERT INTO organization_units(id,facility_id,code,name,unit_type) VALUES(gen_random_uuid(),$1,'SUPPORT_DEPT','Support Department','department')").bind(facility_id).execute(&pool).await.expect("synthetic department unit is created");
+    sqlx::query("UPDATE organization_units SET is_active = false, version=version+1, updated_at=clock_timestamp() WHERE id = $1")
+        .bind(inactive_facility)
         .execute(&pool)
         .await
         .expect("facility can be marked inactive");
@@ -224,7 +202,7 @@ async fn organization_unit_lists_can_filter_by_type_and_active_state() {
         .all(|unit| unit.unit_type == OrgUnitType::Facility && unit.is_active));
     assert!(!facility_units
         .iter()
-        .any(|unit| unit.id == inactive_facility.id));
+        .any(|unit| unit.id == inactive_facility));
 }
 
 #[tokio::test]

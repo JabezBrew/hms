@@ -39,6 +39,11 @@ describe('typed success validation and durable opaque write review', () => {
     expect(getWriteUncertaintySnapshot().entries).toHaveLength(1);
     const wrapped = copyWriteResponseMetadata(new Error('Typed uncertainty'), original);
     expect(wrapped.data).toBeUndefined();
+    expect(() => acknowledgeWriteResponse(wrapped)).toThrow();
+    expect(getWriteUncertaintySnapshot().entries).toHaveLength(1);
+    globalThis.fetch.mockResolvedValueOnce(json({ data: { id: prescription } }));
+    await v2Request({ path: '/api/v2/clinical/prescriptions/{id}', pathParams: { id: prescription } });
+    expect(getWriteUncertaintySnapshot().entries[0].reviewed).toBe(true);
     acknowledgeWriteResponse(wrapped);
     expect(getWriteUncertaintySnapshot().entries).toHaveLength(0);
   });
@@ -51,6 +56,11 @@ describe('typed success validation and durable opaque write review', () => {
     const wrapped = copyWriteResponseMetadata(new Error('Typed change could not be confirmed'), original);
     expect(wrapped.data).toBeUndefined();
     expect(JSON.stringify(wrapped)).not.toContain('SYNTHETIC-PRIVATE');
+    expect(() => acknowledgeWriteResponse(wrapped)).toThrow();
+    expect(getWriteUncertaintySnapshot().entries).toHaveLength(1);
+    globalThis.fetch.mockResolvedValueOnce(json({ data: { id: prescription } }));
+    await v2Request({ path: '/api/v2/clinical/prescriptions/{id}', pathParams: { id: prescription } });
+    expect(getWriteUncertaintySnapshot().entries[0].reviewed).toBe(true);
     acknowledgeWriteResponse(wrapped);
     expect(getWriteUncertaintySnapshot().entries).toHaveLength(0);
   });

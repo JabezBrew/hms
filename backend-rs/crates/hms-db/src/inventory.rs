@@ -15,6 +15,7 @@ mod pharmacy;
 mod procurement;
 mod standing_fulfillment;
 mod standing_orders;
+pub mod storage_locations;
 pub use standing_fulfillment::{
     approve_standing_request, cancel_standing_request, issue_standing_request, StandingRequestError,
 };

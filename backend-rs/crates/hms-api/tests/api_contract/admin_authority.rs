@@ -78,6 +78,7 @@ async fn admin_authority_workflows_are_permission_scoped_and_audited() {
                 .header("content-type", "application/json")
                 .body(Body::from(
                     json!({
+                        "client_request_id": Uuid::new_v4(),
                         "code": "LAB_ADMIN",
                         "name": "Laboratory Administration",
                         "unit_type": "department",
@@ -91,7 +92,9 @@ async fn admin_authority_workflows_are_permission_scoped_and_audited() {
         .expect("org unit create succeeds");
     assert_eq!(org_unit.status(), StatusCode::OK);
     let org_unit_body = json_body(org_unit).await;
-    let org_unit_id = org_unit_body["data"]["id"].as_str().expect("org unit id");
+    let org_unit_id = org_unit_body["data"]["unit"]["id"]
+        .as_str()
+        .expect("org unit id");
 
     let org_unit_detail = app
         .clone()
@@ -119,6 +122,7 @@ async fn admin_authority_workflows_are_permission_scoped_and_audited() {
                 .header("content-type", "application/json")
                 .body(Body::from(
                     json!({
+                        "client_request_id": Uuid::new_v4(),
                         "code": "LAB_ADMIN_CHILD",
                         "name": "Laboratory Administration Child",
                         "unit_type": "service",
@@ -132,7 +136,7 @@ async fn admin_authority_workflows_are_permission_scoped_and_audited() {
         .expect("child org unit create succeeds");
     assert_eq!(child_org_unit.status(), StatusCode::OK);
     let child_org_unit_body = json_body(child_org_unit).await;
-    let child_org_unit_id = child_org_unit_body["data"]["id"]
+    let child_org_unit_id = child_org_unit_body["data"]["unit"]["id"]
         .as_str()
         .expect("child org unit id");
 
@@ -146,6 +150,7 @@ async fn admin_authority_workflows_are_permission_scoped_and_audited() {
                 .header("content-type", "application/json")
                 .body(Body::from(
                     json!({
+                        "client_request_id": Uuid::new_v4(),
                         "code": "LAB_ADMIN_GRANDCHILD",
                         "name": "Laboratory Administration Grandchild",
                         "unit_type": "ward",
@@ -159,7 +164,7 @@ async fn admin_authority_workflows_are_permission_scoped_and_audited() {
         .expect("grandchild org unit create succeeds");
     assert_eq!(grandchild_org_unit.status(), StatusCode::OK);
     let grandchild_org_unit_body = json_body(grandchild_org_unit).await;
-    let grandchild_org_unit_id = grandchild_org_unit_body["data"]["id"]
+    let grandchild_org_unit_id = grandchild_org_unit_body["data"]["unit"]["id"]
         .as_str()
         .expect("grandchild org unit id");
 

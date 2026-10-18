@@ -12,6 +12,7 @@ pub fn routes() -> Router<AppState> {
         .route("/login/setup/options", post(auth_factor::setup_options))
         .route("/login/setup/verify", post(auth_factor::setup_verify))
         .route("/login/recovery", post(auth_factor::recovery))
+        .route("/reauthenticate", post(auth_factor::confirm_password))
         .route("/assurance", get(auth_factor::status))
         .route("/assurance/options", post(auth_factor::step_up_options))
         .route("/assurance/verify", post(auth_factor::step_up_verify))

@@ -424,3 +424,83 @@ Referral consultation commands preserve explicit care context:
   own protected context, keep the chart hidden and obtain current authority for
   each command. An immutable original start actor may supply historical ordinary
   relationship evidence under independently current clinical read grants.
+
+## Organization-unit maintenance
+
+Organization create, rename, retire and reactivate are original-actor UUID
+commands with typed canonical reviewed input. Later commands compare an exact
+unit version. Facility, identity, code, type, parent and creation time remain
+immutable; exact-state no-ops preserve unit version/timestamps while recording
+their own immutable receipt. Ordinary directory responses cannot confirm an
+uncertain command. Only the exact current original actor/request receipt can
+establish review, with separate acknowledgment of any persisted recovery notice.
+
+Both active-state transitions refuse recorded child units, positions or scoped
+permission references, including inactive/history rows. This prevents silently
+restoring legacy scoped authority. New reference publication retains the actual
+active same-facility unit/parent. No cascade, physical deletion, reparenting,
+membership, leadership or coverage capability is implied by this slice.
+
+Writes and original receipts require current AdminAuthorityManage and Admin,
+with existing retained privileged session/factor/network proof and final database
+time. Ordinary bounded directory reads keep their existing read authority.
+Migration027 requires coordinated runtime/schema/ops deployment; supported
+rollback to026 is refused after027 commits. See checkpoint20 verification and
+the runtime-schema compatibility scope for exact acceptance limits.
+
+## Storage-location maintenance
+
+Location create, rename, retire and reactivate are exact original-actor UUID
+commands. Later commands review an exact version; facility, id, code, type,
+temperature zone and creation time stay permanent. Exact-state no-ops preserve
+location version/timestamps and record an immutable receipt. Name correction may
+preserve a used location. Both state transitions in this slice refuse every
+operational reference, including zero stock and terminal history. This is an
+unused-maintenance capability; it does not implement used-location closeout.
+
+Actual reference publication retains an active same-facility location inside its
+own transaction across13 edges in10 tables. Unchanged historical links remain
+available for evidence and closure. InventoryView protects administration reads;
+InventoryManage, Inventory feature, real demographics visibility, fresh
+credential proof and retained facility/session/network authority protect commands
+and original receipts through final database time. Admin role is not substituted
+for existing inventory policy, and privileged-account factor policy still
+applies independently.
+
+Directory/detail/stock reads cannot confirm an unknown command. Exact
+actor-bound original receipts may establish review; a separate acknowledgment
+clears a persisted recovery notice. A retained error handle alone cannot clear
+it. Actual response leases must survive receipt validation without a later
+denial, cancellation, scope transition or uncertainty-identity change. No raw
+command body survives reload. Migration028 requires coordinated runtime/schema/ops
+deployment; supported rollback to027 is refused after028 commits.
+
+## Ordinary same-session credential confirmation
+
+POST/auth/reauthenticate accepts only current_password for an authenticated live
+ordinary session with no current privileged policy or active/malformed enrolled
+credential. It shares the existing durable login attempt/crypto admission budget.
+Exact password bytes are verified outside the database transaction; finalization
+retains current account/session/version/profile/factor and original authority
+proof. Original database admission time becomes monotonic password proof, with
+an atomic assurance_version increment and minimal own-session audit. Refresh
+cookie/material, family and idle/absolute horizons remain unchanged. No factor
+evidence is manufactured. Older JWTs retain their older credential freshness.
+
+The exact own-auth network exception grants no business-write authority and
+does not relax mandatory password change. Enrolled/privileged users retain
+passkey confirmation with no ordinary fallback after failure or cancellation.
+Token/session validity and optional workflow continuity are distinct checks:
+ordinary continuity requires unchanged factor evidence, while a genuine expired
+evidence downgrade may require fresh review. Invalid session, revision or
+strengthened factor claims must fail closed. Staged current network proof is
+still required to retain workflow continuity. Credential response failure never
+authorizes automatic business replay.
+
+A retained original write handle clears only against still-current actual
+saved-record proof. Actor-bound original note amendment receipts use their exact
+request UUID, protected patient/note, action and reconstructed original command
+fingerprint across the different read/write route families. Later denial,
+cancellation, scope activation, active retry, changed uncertainty identity or
+storage failure invalidates that proof. No clinical body is persisted by the
+opaque recovery ledger.

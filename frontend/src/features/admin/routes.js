@@ -1,10 +1,11 @@
 import { lazy } from 'react'
+import { organizationRouteAccess } from './organization/access'
 import { ROUTE_LAYOUTS, SIDEBARS } from '@/app/routes/routeTypes'
 import { ADMIN_CAPABILITIES, ROLES, ROLE_GROUPS } from '@/shared/constants/roles'
 
 const AccessGrantsPage = lazy(() => import('./access/AccessGrantsPage'))
 const AuditLogsPage = lazy(() => import('./pages/AuditLogsPage'))
-const OrganizationPage = lazy(() => import('./pages/organization/OrganizationPage'))
+const OrganizationPage = lazy(() => import('./organization/OrganizationRoute'))
 const UnitTypesPage = lazy(() => import('./pages/organization/UnitTypesPage'))
 const LeadershipRolesPage = lazy(() => import('./pages/organization/LeadershipRolesPage'))
 const DutyRosterPage = lazy(() => import('./pages/organization/DutyRosterPage'))
@@ -36,8 +37,7 @@ export const adminRoutes = [
   {
     path: '/admin/organization',
     component: OrganizationPage,
-    roles: ROLE_GROUPS.ADMIN_ONLY,
-    capabilities: [ADMIN_CAPABILITIES.ORGANIZATION_MANAGE],
+    ...organizationRouteAccess(),
     layout: ROUTE_LAYOUTS.APP,
     sidebar: SIDEBARS.ADMIN,
     title: 'Organization | Hospital Management System',

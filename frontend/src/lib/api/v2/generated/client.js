@@ -196,6 +196,16 @@ export const operations = {
     ],
     "hasBody": false
   },
+  "getAdminOrgUnitCommand": {
+    "operationId": "getAdminOrgUnitCommand",
+    "method": "GET",
+    "path": "/api/v2/admin/org-units/commands/{client_request_id}",
+    "pathParamNames": [
+      "client_request_id"
+    ],
+    "queryParamNames": [],
+    "hasBody": false
+  },
   "getAdminOrgUnitDescendants": {
     "operationId": "getAdminOrgUnitDescendants",
     "method": "GET",
@@ -484,7 +494,10 @@ export const operations = {
     "method": "GET",
     "path": "/api/v2/auth/mfa/passkeys",
     "pathParamNames": [],
-    "queryParamNames": [],
+    "queryParamNames": [
+      "cursor",
+      "limit"
+    ],
     "hasBody": false
   },
   "getAuthSessions": {
@@ -793,7 +806,10 @@ export const operations = {
     "pathParamNames": [
       "note_id"
     ],
-    "queryParamNames": [],
+    "queryParamNames": [
+      "cursor",
+      "limit"
+    ],
     "hasBody": false
   },
   "getClinicalNoteRequestReceipt": {
@@ -824,7 +840,10 @@ export const operations = {
     "pathParamNames": [
       "id"
     ],
-    "queryParamNames": [],
+    "queryParamNames": [
+      "cursor",
+      "limit"
+    ],
     "hasBody": false
   },
   "getClinicalNoteTemplateRequestReceipt": {
@@ -842,7 +861,13 @@ export const operations = {
     "method": "GET",
     "path": "/api/v2/clinical/note-templates",
     "pathParamNames": [],
-    "queryParamNames": [],
+    "queryParamNames": [
+      "cursor",
+      "limit",
+      "search",
+      "activity",
+      "note_type"
+    ],
     "hasBody": false
   },
   "getClinicalNoteTemplateVersion": {
@@ -947,7 +972,10 @@ export const operations = {
     "method": "GET",
     "path": "/api/v2/clinics",
     "pathParamNames": [],
-    "queryParamNames": [],
+    "queryParamNames": [
+      "cursor",
+      "limit"
+    ],
     "hasBody": false
   },
   "getClinicWaitlist": {
@@ -1189,7 +1217,10 @@ export const operations = {
     "pathParamNames": [
       "id"
     ],
-    "queryParamNames": [],
+    "queryParamNames": [
+      "cursor",
+      "limit"
+    ],
     "hasBody": false
   },
   "getFluidObservations": {
@@ -2110,7 +2141,9 @@ export const operations = {
     "pathParamNames": [
       "patient_id"
     ],
-    "queryParamNames": [],
+    "queryParamNames": [
+      "admission_case_id"
+    ],
     "hasBody": false
   },
   "getPatientChronicleMedicationCourse": {
@@ -2568,7 +2601,13 @@ export const operations = {
       "patient_id",
       "referral_id"
     ],
-    "queryParamNames": [],
+    "queryParamNames": [
+      "mode",
+      "visit_choice",
+      "visit_id",
+      "admission_case_id",
+      "encounter_id"
+    ],
     "hasBody": false
   },
   "getReferralConsultationRequestReceipt": {
@@ -2849,12 +2888,47 @@ export const operations = {
     ],
     "hasBody": false
   },
+  "getStorageLocationAdministration": {
+    "operationId": "getStorageLocationAdministration",
+    "method": "GET",
+    "path": "/api/v2/inventory/storage-locations/administration",
+    "pathParamNames": [],
+    "queryParamNames": [
+      "cursor",
+      "limit",
+      "search",
+      "is_active",
+      "location_type",
+      "temperature_zone"
+    ],
+    "hasBody": false
+  },
+  "getStorageLocationAdministrationById": {
+    "operationId": "getStorageLocationAdministrationById",
+    "method": "GET",
+    "path": "/api/v2/inventory/storage-locations/{id}/administration",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [],
+    "hasBody": false
+  },
   "getStorageLocationById": {
     "operationId": "getStorageLocationById",
     "method": "GET",
     "path": "/api/v2/inventory/storage-locations/{id}",
     "pathParamNames": [
       "id"
+    ],
+    "queryParamNames": [],
+    "hasBody": false
+  },
+  "getStorageLocationCommand": {
+    "operationId": "getStorageLocationCommand",
+    "method": "GET",
+    "path": "/api/v2/inventory/storage-locations/commands/{client_request_id}",
+    "pathParamNames": [
+      "client_request_id"
     ],
     "queryParamNames": [],
     "hasBody": false
@@ -3401,6 +3475,36 @@ export const operations = {
     "queryParamNames": [],
     "hasBody": true
   },
+  "postAdminOrgUnitReactivate": {
+    "operationId": "postAdminOrgUnitReactivate",
+    "method": "POST",
+    "path": "/api/v2/admin/org-units/{id}/reactivate",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [],
+    "hasBody": true
+  },
+  "postAdminOrgUnitRename": {
+    "operationId": "postAdminOrgUnitRename",
+    "method": "POST",
+    "path": "/api/v2/admin/org-units/{id}/rename",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [],
+    "hasBody": true
+  },
+  "postAdminOrgUnitRetire": {
+    "operationId": "postAdminOrgUnitRetire",
+    "method": "POST",
+    "path": "/api/v2/admin/org-units/{id}/retire",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [],
+    "hasBody": true
+  },
   "postAdminOrgUnits": {
     "operationId": "postAdminOrgUnits",
     "method": "POST",
@@ -3656,6 +3760,14 @@ export const operations = {
     "operationId": "postAuthPasswordResetRequest",
     "method": "POST",
     "path": "/api/v2/auth/password-reset/request",
+    "pathParamNames": [],
+    "queryParamNames": [],
+    "hasBody": true
+  },
+  "postAuthReauthenticate": {
+    "operationId": "postAuthReauthenticate",
+    "method": "POST",
+    "path": "/api/v2/auth/reauthenticate",
     "pathParamNames": [],
     "queryParamNames": [],
     "hasBody": true
@@ -5102,6 +5214,44 @@ export const operations = {
     "queryParamNames": [],
     "hasBody": true
   },
+  "postStorageLocationCreate": {
+    "operationId": "postStorageLocationCreate",
+    "method": "POST",
+    "path": "/api/v2/inventory/storage-locations",
+    "pathParamNames": [],
+    "queryParamNames": [],
+    "hasBody": true
+  },
+  "postStorageLocationReactivate": {
+    "operationId": "postStorageLocationReactivate",
+    "method": "POST",
+    "path": "/api/v2/inventory/storage-locations/{id}/reactivate",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [],
+    "hasBody": true
+  },
+  "postStorageLocationRename": {
+    "operationId": "postStorageLocationRename",
+    "method": "POST",
+    "path": "/api/v2/inventory/storage-locations/{id}/rename",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [],
+    "hasBody": true
+  },
+  "postStorageLocationRetire": {
+    "operationId": "postStorageLocationRetire",
+    "method": "POST",
+    "path": "/api/v2/inventory/storage-locations/{id}/retire",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [],
+    "hasBody": true
+  },
   "postTreatmentSheets": {
     "operationId": "postTreatmentSheets",
     "method": "POST",
@@ -5349,6 +5499,7 @@ export function createGeneratedClient(request) {
     getAdminOrgUnitAncestors: createOperation(request, operations.getAdminOrgUnitAncestors),
     getAdminOrgUnitById: createOperation(request, operations.getAdminOrgUnitById),
     getAdminOrgUnitChildren: createOperation(request, operations.getAdminOrgUnitChildren),
+    getAdminOrgUnitCommand: createOperation(request, operations.getAdminOrgUnitCommand),
     getAdminOrgUnitDescendants: createOperation(request, operations.getAdminOrgUnitDescendants),
     getAdminOrgUnits: createOperation(request, operations.getAdminOrgUnits),
     getAdminPermissionAssignments: createOperation(request, operations.getAdminPermissionAssignments),
@@ -5567,7 +5718,10 @@ export function createGeneratedClient(request) {
     getStockRequisitions: createOperation(request, operations.getStockRequisitions),
     getStockTransferById: createOperation(request, operations.getStockTransferById),
     getStockTransfers: createOperation(request, operations.getStockTransfers),
+    getStorageLocationAdministration: createOperation(request, operations.getStorageLocationAdministration),
+    getStorageLocationAdministrationById: createOperation(request, operations.getStorageLocationAdministrationById),
     getStorageLocationById: createOperation(request, operations.getStorageLocationById),
+    getStorageLocationCommand: createOperation(request, operations.getStorageLocationCommand),
     getStorageLocations: createOperation(request, operations.getStorageLocations),
     getStorageLocationStock: createOperation(request, operations.getStorageLocationStock),
     getSystemDeploymentCapabilities: createOperation(request, operations.getSystemDeploymentCapabilities),
@@ -5618,6 +5772,9 @@ export function createGeneratedClient(request) {
     postAdminCommittees: createOperation(request, operations.postAdminCommittees),
     postAdminDelegations: createOperation(request, operations.postAdminDelegations),
     postAdminNetworkPolicyPreview: createOperation(request, operations.postAdminNetworkPolicyPreview),
+    postAdminOrgUnitReactivate: createOperation(request, operations.postAdminOrgUnitReactivate),
+    postAdminOrgUnitRename: createOperation(request, operations.postAdminOrgUnitRename),
+    postAdminOrgUnitRetire: createOperation(request, operations.postAdminOrgUnitRetire),
     postAdminOrgUnits: createOperation(request, operations.postAdminOrgUnits),
     postAdminPermissionAssignments: createOperation(request, operations.postAdminPermissionAssignments),
     postAdminPositions: createOperation(request, operations.postAdminPositions),
@@ -5648,6 +5805,7 @@ export function createGeneratedClient(request) {
     postAuthPassword: createOperation(request, operations.postAuthPassword),
     postAuthPasswordResetComplete: createOperation(request, operations.postAuthPasswordResetComplete),
     postAuthPasswordResetRequest: createOperation(request, operations.postAuthPasswordResetRequest),
+    postAuthReauthenticate: createOperation(request, operations.postAuthReauthenticate),
     postAuthRecoveryCodes: createOperation(request, operations.postAuthRecoveryCodes),
     postAuthRefresh: createOperation(request, operations.postAuthRefresh),
     postAuthSessionRevoke: createOperation(request, operations.postAuthSessionRevoke),
@@ -5806,6 +5964,10 @@ export function createGeneratedClient(request) {
     postStockRequisitions: createOperation(request, operations.postStockRequisitions),
     postStockRequisitionSubmit: createOperation(request, operations.postStockRequisitionSubmit),
     postStockTransfers: createOperation(request, operations.postStockTransfers),
+    postStorageLocationCreate: createOperation(request, operations.postStorageLocationCreate),
+    postStorageLocationReactivate: createOperation(request, operations.postStorageLocationReactivate),
+    postStorageLocationRename: createOperation(request, operations.postStorageLocationRename),
+    postStorageLocationRetire: createOperation(request, operations.postStorageLocationRetire),
     postTreatmentSheets: createOperation(request, operations.postTreatmentSheets),
     postTriage: createOperation(request, operations.postTriage),
     postTriageAssessment: createOperation(request, operations.postTriageAssessment),

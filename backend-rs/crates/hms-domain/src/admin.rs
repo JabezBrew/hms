@@ -6,6 +6,7 @@ use uuid::Uuid;
 use crate::deployment::{FeatureKey, PermissionCode};
 
 #[derive(Clone, Debug, Deserialize, IntoParams, Serialize, ToSchema)]
+#[into_params(parameter_in = Query)]
 pub struct AdminListQuery {
     pub cursor: Option<String>,
     pub limit: Option<u8>,
@@ -51,6 +52,7 @@ impl From<AuditEventListGetQuery> for AuditEventListQuery {
 }
 
 #[derive(Clone, Debug, Deserialize, IntoParams, Serialize, ToSchema)]
+#[into_params(parameter_in = Query)]
 pub struct OrganizationUnitListQuery {
     pub cursor: Option<String>,
     pub limit: Option<u8>,
@@ -83,6 +85,7 @@ pub struct PractitionerListQuery {
 }
 
 #[derive(Clone, Debug, Deserialize, IntoParams, Serialize, ToSchema)]
+#[into_params(parameter_in = Query)]
 pub struct AdminLimitQuery {
     pub limit: Option<u8>,
 }
@@ -146,10 +149,14 @@ pub struct OrganizationUnitListItem {
     pub parent_unit_name: Option<String>,
     pub is_active: bool,
     pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    pub version: i64,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
 pub struct CreateOrganizationUnitRequest {
+    pub client_request_id: Uuid,
     pub code: String,
     pub name: String,
     pub unit_type: OrgUnitType,

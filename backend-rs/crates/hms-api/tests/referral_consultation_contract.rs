@@ -1085,3 +1085,6 @@ async fn bounded_patient_confirmation_is_current_and_identity_changes_invalidate
     assert!(!persisted && receipt.get("patient").is_none() && receipt["link"].get("patient").is_none(),
         "current confirmation identity is absent from immutable start and command receipt persistence");
 }
+
+#[path = "referral_consultation_contract/scoped_input.rs"]
+mod scoped_input;

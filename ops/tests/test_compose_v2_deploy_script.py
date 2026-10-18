@@ -36,6 +36,8 @@ def isolated_deployment_scripts(tmp_path, monkeypatch):
     (migrations / '202610170024_referral_response_records.sql').write_text('-- fixture\n')
     (migrations / '202610170025_admission_moves.sql').write_text('-- fixture\n')
     (migrations / '202610170026_referral_consultation_starts.sql').write_text('-- fixture\n')
+    (migrations / '202610170027_organization_unit_lifecycle.sql').write_text('-- fixture\n')
+    (migrations / '202610170028_storage_location_lifecycle.sql').write_text('-- fixture\n')
     copy_lease_helper(root, tmp_path / '.hms-deploy-state/deploy.lock')
     monkeypatch.setitem(globals(), 'DEPLOY_SCRIPT', root / 'ops/compose-v2/deploy.sh')
     monkeypatch.setitem(globals(), 'GCP_DEPLOY_SCRIPT', root / 'ops/gcp-staging/deploy.sh')

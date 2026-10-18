@@ -4,6 +4,8 @@ HMS_TREATMENT_SCHEMA_EPOCH=202610170023
 HMS_REFERRAL_RESPONSE_SCHEMA_EPOCH=202610170024
 HMS_ADMISSION_MOVE_SCHEMA_EPOCH=202610170025
 HMS_REFERRAL_CONSULTATION_SCHEMA_EPOCH=202610170026
+HMS_ORGANIZATION_UNIT_SCHEMA_EPOCH=202610170027
+HMS_STORAGE_LOCATION_SCHEMA_EPOCH=202610170028
 
 hms_valid_schema_epoch() {
   case "$1" in
@@ -24,7 +26,7 @@ hms_runtime_schema_epoch() {
     return 1
   fi
   case "$compatible_epoch" in
-    0|202610170023|202610170024|202610170025|202610170026) ;;
+    0|202610170023|202610170024|202610170025|202610170026|202610170027|202610170028) ;;
     *) printf 'Runtime schema compatibility declaration is unknown.\n' >&2; return 1 ;;
   esac
   printf '%s\n' "$compatible_epoch"
@@ -33,7 +35,7 @@ hms_runtime_schema_epoch() {
 hms_validate_database_epoch() {
   # A new breaking migration must extend the explicit registry and this reader.
   case "$1" in
-    0|202610170023|202610170024|202610170025|202610170026) return 0 ;;
+    0|202610170023|202610170024|202610170025|202610170026|202610170027|202610170028) return 0 ;;
     *) printf 'Database schema compatibility could not be confirmed.\n' >&2; return 1 ;;
   esac
 }
@@ -48,7 +50,32 @@ hms_validate_schema_fence() {
 
 hms_candidate_breaking_epoch() {
   declared_epoch="$(hms_runtime_schema_epoch "$1")" || return 1
-  if [ -f "$1/backend-rs/migrations/202610170026_referral_consultation_starts.sql" ]; then
+  if [ -f "$1/backend-rs/migrations/202610170028_storage_location_lifecycle.sql" ]; then
+    if [ ! -f "$1/backend-rs/migrations/202610170027_organization_unit_lifecycle.sql" ] ||
+       [ ! -f "$1/backend-rs/migrations/202610170026_referral_consultation_starts.sql" ] ||
+       [ ! -f "$1/backend-rs/migrations/202610170025_admission_moves.sql" ] ||
+       [ ! -f "$1/backend-rs/migrations/202610170024_referral_response_records.sql" ] ||
+       [ ! -f "$1/backend-rs/migrations/202610170023_treatment_course_windows.sql" ]; then
+      printf 'Candidate release is missing its required breaking migration.\n' >&2
+      return 1
+    fi
+    printf '%s\n' "$HMS_STORAGE_LOCATION_SCHEMA_EPOCH"
+  elif [ "$declared_epoch" = "$HMS_STORAGE_LOCATION_SCHEMA_EPOCH" ]; then
+    printf 'Candidate release is missing its required breaking migration.\n' >&2
+    return 1
+  elif [ -f "$1/backend-rs/migrations/202610170027_organization_unit_lifecycle.sql" ]; then
+    if [ ! -f "$1/backend-rs/migrations/202610170026_referral_consultation_starts.sql" ] ||
+       [ ! -f "$1/backend-rs/migrations/202610170025_admission_moves.sql" ] ||
+       [ ! -f "$1/backend-rs/migrations/202610170024_referral_response_records.sql" ] ||
+       [ ! -f "$1/backend-rs/migrations/202610170023_treatment_course_windows.sql" ]; then
+      printf 'Candidate release is missing its required breaking migration.\n' >&2
+      return 1
+    fi
+    printf '%s\n' "$HMS_ORGANIZATION_UNIT_SCHEMA_EPOCH"
+  elif [ "$declared_epoch" = "$HMS_ORGANIZATION_UNIT_SCHEMA_EPOCH" ]; then
+    printf 'Candidate release is missing its required breaking migration.\n' >&2
+    return 1
+  elif [ -f "$1/backend-rs/migrations/202610170026_referral_consultation_starts.sql" ]; then
     if [ ! -f "$1/backend-rs/migrations/202610170025_admission_moves.sql" ] ||
        [ ! -f "$1/backend-rs/migrations/202610170024_referral_response_records.sql" ] ||
        [ ! -f "$1/backend-rs/migrations/202610170023_treatment_course_windows.sql" ]; then

@@ -12,8 +12,24 @@ use uuid::Uuid;
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema, PartialEq)]
 #[serde(tag = "choice", rename_all = "snake_case", deny_unknown_fields)]
 pub enum ReferralConsultationVisitChoice {
+    #[serde(deserialize_with = "deserialize_no_visit")]
     NoVisit,
-    ExistingVisit { visit_id: Uuid },
+    ExistingVisit {
+        visit_id: Uuid,
+    },
+}
+
+fn deserialize_no_visit<'de, D>(deserializer: D) -> Result<(), D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    // Serde's internally tagged unit visitor ignores remaining fields even
+    // with enum-level deny_unknown_fields. Preserve the existing wire and Rust
+    // variant while requiring an actually empty body after the choice tag.
+    #[derive(Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct NoVisitFields {}
+    NoVisitFields::deserialize(deserializer).map(|_| ())
 }
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema, PartialEq)]
 #[serde(tag = "mode", rename_all = "snake_case", deny_unknown_fields)]
@@ -57,6 +73,7 @@ pub struct ReferralConsultationReviewedInput {
     pub restricted_record_override: Option<ReferralConsultationOverrideEvidence>,
 }
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema, IntoParams, Default)]
+#[into_params(parameter_in = Query)]
 #[serde(deny_unknown_fields)]
 pub struct ReferralConsultationContextQuery {
     pub mode: Option<String>,

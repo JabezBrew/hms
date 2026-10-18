@@ -93,6 +93,31 @@ impl TestDb {
         })
     }
 
+    /// Build historical evidence under the supplied real migration set, before
+    /// applying the current migrator. This never disables current guards.
+    pub async fn with_profile_and_migrator(
+        deployment_profile: DeploymentProfile,
+        migrator: &sqlx::migrate::Migrator,
+    ) -> anyhow::Result<Self> {
+        let database = TestDatabase::create()?;
+        let pool = crate::connect(database.database_url()).await?;
+        migrator.run(&pool).await?;
+        crate::provision::provision_baseline(
+            &pool,
+            &crate::provision::BaselineProvisioning::hms_local(deployment_profile),
+        )
+        .await?;
+        let facility_id = crate::facilities::facility_id_by_code(&pool, "HMS")
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("test facility HMS was not provisioned"))?;
+        Ok(Self {
+            pool,
+            facility_id,
+            owner_user_id: Uuid::from_u128(crate::provision::OWNER_USER_ID),
+            _database: database,
+        })
+    }
+
     pub fn pool(&self) -> &crate::PgPool {
         &self.pool
     }

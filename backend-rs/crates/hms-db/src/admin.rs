@@ -21,6 +21,7 @@ use uuid::Uuid;
 use crate::auth::assurance::BusinessFactorActor;
 use crate::{codec, PgPool};
 
+pub mod organization_units;
 pub(crate) mod privileged;
 
 const EMPLOYEE_IDENTIFIER_TYPE: &str = "employee";
@@ -49,14 +50,6 @@ impl std::error::Error for AdminCommandConflict {}
 pub struct AdminCursor {
     pub occurred_at: DateTime<Utc>,
     pub id: Uuid,
-}
-
-pub struct NewOrganizationUnit {
-    pub facility_id: Uuid,
-    pub code: String,
-    pub name: String,
-    pub unit_type: OrgUnitType,
-    pub parent_unit_id: Option<Uuid>,
 }
 
 pub struct NewPositionTemplate {
@@ -214,6 +207,8 @@ struct OrganizationUnitRow {
     parent_unit_name: Option<String>,
     is_active: bool,
     created_at: DateTime<Utc>,
+    updated_at: DateTime<Utc>,
+    version: i64,
 }
 
 #[derive(FromRow)]
@@ -406,7 +401,8 @@ pub async fn list_organization_units(
                 parent.id AS parent_unit_id,
                 parent.name AS parent_unit_name,
                 organization_units.is_active,
-                organization_units.created_at
+                organization_units.created_at,
+                organization_units.updated_at, organization_units.version
          FROM organization_units
          LEFT JOIN organization_units parent ON parent.id = organization_units.parent_unit_id
            AND parent.facility_id = organization_units.facility_id
@@ -436,41 +432,6 @@ pub async fn list_organization_units(
     rows.into_iter().map(organization_unit_from_row).collect()
 }
 
-pub async fn create_organization_unit(
-    pool: &PgPool,
-    unit: NewOrganizationUnit,
-) -> anyhow::Result<OrganizationUnitListItem> {
-    let id = Uuid::new_v4();
-    let mut tx = pool.begin().await?;
-    if let Some(parent_id) = unit.parent_unit_id {
-        let parent = sqlx::query_scalar::<_, Uuid>(
-            "SELECT id FROM organization_units
-             WHERE id = $1 AND facility_id = $2 AND is_active = TRUE FOR SHARE",
-        )
-        .bind(parent_id)
-        .bind(unit.facility_id)
-        .fetch_optional(&mut *tx)
-        .await?;
-        anyhow::ensure!(parent.is_some(), "organization parent is unavailable");
-    }
-    sqlx::query(
-        "INSERT INTO organization_units (id, facility_id, parent_unit_id, code, name, unit_type)
-         VALUES ($1, $2, $3, $4, $5, $6)",
-    )
-    .bind(id)
-    .bind(unit.facility_id)
-    .bind(unit.parent_unit_id)
-    .bind(unit.code)
-    .bind(unit.name)
-    .bind(codec::encode(unit.unit_type)?)
-    .execute(&mut *tx)
-    .await?;
-    tx.commit().await?;
-    get_organization_unit(pool, unit.facility_id, id)
-        .await?
-        .ok_or_else(|| anyhow::anyhow!("organization unit was not found after write"))
-}
-
 pub async fn get_organization_unit_by_id(
     pool: &PgPool,
     facility_id: Uuid,
@@ -494,7 +455,8 @@ pub async fn list_organization_unit_children(
                 parent.id AS parent_unit_id,
                 parent.name AS parent_unit_name,
                 organization_units.is_active,
-                organization_units.created_at
+                organization_units.created_at,
+                organization_units.updated_at, organization_units.version
          FROM organization_units
          LEFT JOIN organization_units parent ON parent.id = organization_units.parent_unit_id
            AND parent.facility_id = organization_units.facility_id
@@ -532,7 +494,7 @@ pub async fn list_organization_unit_ancestors(
                     parent.unit_type,
                     parent.parent_unit_id,
                     parent.is_active,
-                    parent.created_at,
+                    parent.created_at, parent.updated_at, parent.version,
                     1 AS depth,
                     ARRAY[target.id, parent.id]::uuid[] AS path
              FROM organization_units target
@@ -547,7 +509,7 @@ pub async fn list_organization_unit_ancestors(
                     parent.unit_type,
                     parent.parent_unit_id,
                     parent.is_active,
-                    parent.created_at,
+                    parent.created_at, parent.updated_at, parent.version,
                     ancestors.depth + 1 AS depth,
                     ancestors.path || parent.id
              FROM organization_units parent
@@ -562,7 +524,7 @@ pub async fn list_organization_unit_ancestors(
                 parent.id AS parent_unit_id,
                 parent.name AS parent_unit_name,
                 ancestors.is_active,
-                ancestors.created_at
+                ancestors.created_at, ancestors.updated_at, ancestors.version
          FROM ancestors
          LEFT JOIN organization_units parent ON parent.id = ancestors.parent_unit_id
            AND parent.facility_id = $1
@@ -592,7 +554,7 @@ pub async fn list_organization_unit_descendants(
                     child.unit_type,
                     child.parent_unit_id,
                     child.is_active,
-                    child.created_at,
+                    child.created_at, child.updated_at, child.version,
                     ARRAY[child.id]::uuid[] AS path
              FROM organization_units child
              WHERE child.facility_id = ",
@@ -608,7 +570,7 @@ pub async fn list_organization_unit_descendants(
                     child.unit_type,
                     child.parent_unit_id,
                     child.is_active,
-                    child.created_at,
+                    child.created_at, child.updated_at, child.version,
                     descendants.path || child.id
              FROM organization_units child
              JOIN descendants ON child.parent_unit_id = descendants.id
@@ -625,7 +587,7 @@ pub async fn list_organization_unit_descendants(
                 parent.id AS parent_unit_id,
                 parent.name AS parent_unit_name,
                 descendants.is_active,
-                descendants.created_at
+                descendants.created_at, descendants.updated_at, descendants.version
          FROM descendants
          LEFT JOIN organization_units parent ON parent.id = descendants.parent_unit_id
            AND parent.facility_id = $1
@@ -3147,7 +3109,8 @@ async fn get_organization_unit(
                 parent.id AS parent_unit_id,
                 parent.name AS parent_unit_name,
                 organization_units.is_active,
-                organization_units.created_at
+                organization_units.created_at,
+                organization_units.updated_at, organization_units.version
          FROM organization_units
          LEFT JOIN organization_units parent ON parent.id = organization_units.parent_unit_id
            AND parent.facility_id = organization_units.facility_id
@@ -3439,6 +3402,8 @@ fn organization_unit_from_row(
         parent_unit_name: row.parent_unit_name,
         is_active: row.is_active,
         created_at: row.created_at,
+        updated_at: row.updated_at,
+        version: row.version,
     })
 }
 

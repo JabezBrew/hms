@@ -35,6 +35,7 @@ pub(crate) fn lifecycle_exception(method: &Method, path: &str) -> bool {
                 | "/api/v2/auth/login/setup/options"
                 | "/api/v2/auth/login/setup/verify"
                 | "/api/v2/auth/login/recovery"
+                | "/api/v2/auth/reauthenticate"
                 | "/api/v2/auth/assurance/options"
                 | "/api/v2/auth/assurance/verify"
                 | "/api/v2/auth/mfa/passkeys/:id/disable"
@@ -165,6 +166,20 @@ mod tests {
     use super::*;
     #[test]
     fn exceptions_are_exact_methods_and_routes() {
+        assert!(lifecycle_exception(
+            &Method::POST,
+            "/api/v2/auth/reauthenticate"
+        ));
+        for method in [Method::GET, Method::PUT, Method::PATCH, Method::DELETE] {
+            assert!(!lifecycle_exception(&method, "/api/v2/auth/reauthenticate"));
+        }
+        for path in [
+            "/api/v2/auth/reauthenticate/",
+            "/api/v2/auth/reauthenticate/other",
+            "/api/v2/admin/reauthenticate",
+        ] {
+            assert!(!lifecycle_exception(&Method::POST, path));
+        }
         assert!(lifecycle_exception(&Method::GET, "/api/v2/auth/me"));
         assert!(!lifecycle_exception(&Method::PATCH, "/api/v2/auth/me"));
         assert!(!lifecycle_exception(

@@ -26,7 +26,7 @@ const proof = { can_view_full_clinical: true, can_add_note: true, can_record_vit
 const pointerNames = ['hasPointerCapture', 'setPointerCapture', 'releasePointerCapture'];
 const pointerOriginals = new Map(pointerNames.map((key) => [key, Object.getOwnPropertyDescriptor(Element.prototype, key)]));
 const privateDraft = 'SYNTHETIC PRIVATE CLINICAL DRAFT';
-let auth; let initial; let upgraded; let afterProof; let newReads; let heldReads; let posts; let lost; let pendingWrite; let finishRequest; let finishRefresh;
+let ordinary; let auth; let initial; let upgraded; let afterProof; let newReads; let heldReads; let posts; let lost; let pendingWrite; let finishRequest; let finishRefresh;
 const defer = () => { let resolve; const promise = new Promise((done) => { resolve = done; }); return { promise, resolve }; };
 function authenticated() {
   const value = token('passkey', { permissions: ['patient.demographics.view', 'clinical_documentation.view', 'clinical_documentation.manage', 'nursing.task.manage', 'admission.manage'], features: ['patients', 'encounters', 'nursing', 'admissions'], patient_visibility: ['full_clinical'] });
@@ -44,12 +44,12 @@ function Harness({ workspace }) {
 async function mount(workspace = 'note') {
   render(<QueryClientProvider client={queryClient}><MemoryRouter><HelmetProvider><BreadcrumbProvider><AuthProvider><Harness workspace={workspace} /></AuthProvider></BreadcrumbProvider></HelmetProvider></MemoryRouter></QueryClientProvider>);
   fireEvent.click(screen.getByText('Begin test sign-in'));
-  fireEvent.click(await screen.findByText('Use an existing passkey'));
+  if (!ordinary) fireEvent.click(await screen.findByText('Use an existing passkey'));
   await screen.findByText('Synthetic authorized clinical page');
 }
 async function confirm() {
   fireEvent.click(screen.getByText('Verify current identity'));
-  await waitFor(() => expect(auth.user.accessContext.auth_security.session_assurance.verified_at).toBe(upgraded.user.auth_security.session_assurance.verified_at));
+  await waitFor(() => expect(auth.user.accessContext.auth_security.assurance_version).toBe(upgraded.user.auth_security.assurance_version));
 }
 async function fill(workspace) {
   if (workspace === 'note') { fireEvent.change(await screen.findByLabelText('Note title'), { target: { value: 'Synthetic title' } }); fireEvent.change(screen.getByLabelText('Note'), { target: { value: privateDraft } }); }
@@ -61,14 +61,14 @@ beforeEach(() => {
   window.__HMS_RUNTIME_CONFIG__ = { apiMode: 'rust-v2', v2ApiBaseUrl: 'http://localhost/api/v2', defaultFacilityCode: 'HMS' };
   vi.stubGlobal('crypto', webcrypto); vi.stubGlobal('PublicKeyCredential', class {}); vi.stubGlobal('navigator', { ...navigator, credentials: { get: vi.fn().mockResolvedValue(credential()) } });
   for (const key of pointerNames) Object.defineProperty(Element.prototype, key, { configurable: true, value: key === 'hasPointerCapture' ? () => false : () => {} });
-  initial = authenticated(); upgraded = structuredClone(initial); upgraded.user.auth_security.assurance_version += 1; upgraded.user.auth_security.session_assurance.verified_at = new Date(Date.now()).toISOString(); upgraded.access_token = jwtFor(upgraded, { auth_time: Math.floor(Date.now() / 1000) });
+  ordinary = false; initial = authenticated(); upgraded = structuredClone(initial); upgraded.user.auth_security.assurance_version += 1; upgraded.user.auth_security.session_assurance.verified_at = new Date(Date.now()).toISOString(); upgraded.access_token = jwtFor(upgraded, { auth_time: Math.floor(Date.now() / 1000) });
   afterProof = networkDecision(); newReads = 0; heldReads = []; posts = []; lost = false; pendingWrite = false; finishRequest = null; finishRefresh = null;
   vi.stubGlobal('fetch', vi.fn(async (input, request = {}) => {
     const url = new URL(input); const path = url.pathname;
-    if (path.endsWith('/auth/login')) return json(pending());
+    if (path.endsWith('/auth/login')) return json(ordinary ? initial : pending());
     if (path.endsWith('/login/passkey/options') || path.endsWith('/assurance/options')) return json(options());
     if (path.endsWith('/login/passkey/verify')) return json(initial);
-    if (path.endsWith('/assurance/verify')) return json(upgraded);
+    if (path.endsWith('/assurance/verify') || path.endsWith('/auth/reauthenticate')) return json(upgraded);
     if (path.endsWith('/auth/network-access')) {
       if (request.headers.Authorization === `Bearer ${upgraded.access_token}`) { newReads += 1; if (newReads > 1) { const waiting = defer(); heldReads.push(waiting); return waiting.promise; } return afterProof instanceof Response ? afterProof : json(afterProof); }
       return json(networkDecision());
@@ -99,7 +99,7 @@ it('loads the real signalled verification dialog and retains a closed note draft
   fireEvent.click(await screen.findByRole('button', { name: 'Verify identity' }));
   fireEvent.change(screen.getByLabelText('Current password (if required)'), { target: { value: 'Synthetic explicit password' } });
   fireEvent.click(screen.getByRole('button', { name: 'Use passkey' }));
-  await waitFor(() => expect(auth.user.accessContext.auth_security.session_assurance.verified_at).toBe(upgraded.user.auth_security.session_assurance.verified_at));
+  await waitFor(() => expect(auth.user.accessContext.auth_security.assurance_version).toBe(upgraded.user.auth_security.assurance_version));
   fireEvent.click(screen.getByText('Reopen test workspace'));
   expect(await screen.findByDisplayValue(privateDraft)).toBeInTheDocument();
   expect(posts).toHaveLength(0);
@@ -153,4 +153,28 @@ it('does not install a late old refresh token over the newly verified same-sessi
 });
 it('clears copied clinical state when actual same-actor permissions change during verification', async () => {
   await mount(); await fill('note'); upgraded.user.permissions = ['patient.demographics.view']; fireEvent.click(screen.getByText('Verify current identity')); await waitFor(() => expect(auth.user).toBeNull()); expect(screen.queryByDisplayValue(privateDraft)).not.toBeInTheDocument(); expect(getWorkflowContinuity()).toBeNull();
+});
+
+function ordinaryProof() {
+  ordinary = true;
+  initial.user.auth_security = token().user.auth_security;
+  upgraded = structuredClone(initial); upgraded.user.auth_security.assurance_version += 1;
+  upgraded.access_token = jwtFor(upgraded, { auth_time: Math.floor(Date.now() / 1000) });
+}
+it('retains an actual Chronicle note draft through ordinary password proof and separately confirmed network access', async () => {
+  ordinaryProof(); await mount('note'); await fill('note'); await confirm();
+  expect(getWorkflowContinuity()).not.toBeNull(); expect(screen.getByDisplayValue(privateDraft)).toBeInTheDocument(); expect(posts).toHaveLength(0);
+  expect(fetch.mock.calls.some(([url]) => url.endsWith('/auth/reauthenticate'))).toBe(true); expect(navigator.credentials.get).not.toHaveBeenCalled();
+  await act(async () => heldReads.splice(0).forEach(waiting => waiting.resolve(json(networkDecision()))));
+});
+it('retains the fixed original fluid command through ordinary proof without automatic replay', async () => {
+  ordinaryProof(); await mount('fluids'); await fill('fluids'); lost = true; fireEvent.click(screen.getByText('Record fluid observation')); await screen.findByText('Retry exact observation'); const original = structuredClone(posts[0]);
+  await confirm(); expect(posts).toHaveLength(1); await waitFor(() => expect(getWriteUncertaintySnapshot().entries).toHaveLength(1)); expect(screen.getByText('Retry exact observation')).toBeInTheDocument();
+  await act(async () => heldReads.splice(0).forEach(waiting => waiting.resolve(json(networkDecision())))); lost = false; fireEvent.click(screen.getByText('Retry exact observation')); await screen.findByText('Fluid observation saved.'); expect(posts[1]).toEqual(original);
+});
+it('aborts an already-dispatched ordinary-proof fluid command and retains its unknown exact intent', async () => {
+  ordinaryProof(); await mount('fluids'); await fill('fluids'); pendingWrite = true; fireEvent.click(screen.getByText('Record fluid observation')); await waitFor(() => expect(posts).toHaveLength(1));
+  const signal = fetch.mock.calls.find(([url, request]) => url.endsWith('/fluid-observations') && request.method === 'POST')[1].signal;
+  await confirm(); await screen.findByText('Retry exact observation'); expect(signal.aborted).toBe(true); expect(posts).toHaveLength(1); expect(getWriteUncertaintySnapshot().entries).toHaveLength(1);
+  await act(async () => heldReads.splice(0).forEach(waiting => waiting.resolve(json(networkDecision()))));
 });

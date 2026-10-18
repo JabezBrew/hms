@@ -1,10 +1,11 @@
 import { apiErrorFromEnvelope } from './errors';
+import { invalidateWriteRecoveryReads } from './writeUncertainty';
 
 // Keep exact method/route templates aligned with the Rust network middleware.
 const AUTH_POSTS = new Set(['/api/v2/auth/login', '/api/v2/auth/refresh', '/api/v2/auth/logout', '/api/v2/auth/password',
   '/api/v2/auth/password-reset/request', '/api/v2/auth/password-reset/complete', '/api/v2/auth/sessions/revoke-all', '/api/v2/auth/sessions/:session_id/revoke',
   '/api/v2/auth/mfa/webauthn/register/options', '/api/v2/auth/mfa/webauthn/register/verify', '/api/v2/auth/mfa/webauthn/authenticate/options', '/api/v2/auth/mfa/webauthn/authenticate/verify', '/api/v2/auth/mfa/recovery-codes',
-  '/api/v2/auth/assurance/options', '/api/v2/auth/assurance/verify', '/api/v2/auth/mfa/passkeys/:id/disable']);
+  '/api/v2/auth/assurance/options', '/api/v2/auth/assurance/verify', '/api/v2/auth/reauthenticate', '/api/v2/auth/mfa/passkeys/:id/disable']);
 const READ_POSTS = new Set(['/api/v2/patients/search', '/api/v2/patients/:patient_id/clinical/note-template-previews', '/api/v2/patients/context/search', '/api/v2/wards/board/search', '/api/v2/search/omni',
   '/api/v2/appointments/search', '/api/v2/encounters/search', '/api/v2/admin/audit-events/search',
   '/api/v2/laboratory/orders/search', '/api/v2/laboratory/results/search', '/api/v2/billing/patient-insurances/search', '/api/v2/billing/invoices/search',
@@ -31,7 +32,7 @@ function freshWritable(binding) {
 }
 export function bindNetworkAccessGuard({ transportScope, authorityScope, principal }) {
   enabled = true; const binding = { transportScope, authorityScope, principal, confirmed: false, decision: null }; active = binding; notify();
-  return { update(snapshot) { if (active === binding) { Object.assign(binding, snapshot); notify(); } }, release() { if (active === binding) { active = null; notify(); } } };
+  return { update(snapshot) { if (active === binding) { Object.assign(binding, snapshot); if (binding.confirmed && binding.decision?.access_allowed === false) { try { invalidateWriteRecoveryReads(); } catch { /* Access denial must not depend on recovery storage. */ } } notify(); } }, release() { if (active === binding) { active = null; notify(); } } };
 }
 export const currentNetworkAuthorityScope = () => active?.authorityScope || null;
 export const currentNetworkPrincipal = () => active?.principal || null;

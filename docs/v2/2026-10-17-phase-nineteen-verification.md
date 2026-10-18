@@ -108,7 +108,7 @@ Chronicle response. Async note leases prevent late private-note reopening after
 denial/ABA. The narrow Chronicle purpose proof commits before the existing rich
 DTO pipeline; no retained-through-body-publication claim is made for that pipeline.
 
-Native acceptance passes111 actual HTTP checks, including all three actual
+Native acceptance passes111 assertions over actual HTTP, including all three actual
 generated-client consultation operations and genuine software-P256 registration
 plus a separate signed login assertion. Read-only verification confirms98
 successful migrations/epoch026, four immutable consultation links, four commands,
@@ -117,7 +117,7 @@ exact existing-admission/triage encounter reuse. One clinical note and its comma
 persist; the read-only actor has no note or note-command effects. The immutable
 six-field booking snapshot survives a later actual appointment update.
 
-An initial110-HTTP attempt expected zero original-actor context rows after all
+An initial110-check attempt expected zero original-actor context rows after all
 steps, but the canonical patient PATCH itself publishes a Recent context. That
 attempt and its harness are preserved without acceptance. The corrected fresh
 attempt adds a read-only zero-context checkpoint before the PATCH and verifies

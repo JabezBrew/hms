@@ -176,7 +176,7 @@ pub async fn search_appointments(
     operation_id = "getClinics",
     tag = "care",
     security(("bearerAuth" = [])),
-    params(VisitListQuery),
+    params(CursorListQuery),
     responses(
         (status = 200, description = "Clinics list", body = ListResponse<ClinicListItem>),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),

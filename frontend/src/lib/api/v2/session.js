@@ -4,7 +4,7 @@ import { publishFactorRequirement } from '@/shared/lib/factorRequiredSignal';
 
 import { apiErrorFromEnvelope } from './errors';
 import { appendV2QueryParams, buildV2ApiUrl } from './runtime';
-import { assertNetworkRequestAllowed, currentNetworkAuthorityScope, currentNetworkPrincipal, isNetworkWorkflowWrite, resetNetworkAccessGuardForTests, waitForNetworkRequestAccess } from './networkAccessGuard';
+import { assertNetworkRequestAllowed, currentConfirmedNetworkDecision, currentNetworkAuthorityScope, currentNetworkPrincipal, isNetworkWorkflowWrite, resetNetworkAccessGuardForTests, waitForNetworkRequestAccess } from './networkAccessGuard';
 import { assertWriteAttemptDispatchAllowed, attachWriteResponseMetadata, beginWriteAttempt, captureWriteRecoveryRead, confirmWriteAttempt, markWriteAttemptUncertain, recordWriteRecoveryRead, rejectWriteAttempt, resetWriteUncertaintyForTests } from './writeUncertainty';
 
 let getAccessToken = () => null;
@@ -218,8 +218,13 @@ async function rawV2Request(requestConfig, retryWithRefresh = true) {
     throw failure;
   }
 
+  // Authorization denial invalidates earlier review even if its body is malformed.
+  if (response.status === 403 && !signal?.aborted) { try { await recordWriteRecoveryRead({ resolvedPath }, null, { denied: true, readEvidence, isCurrentScope: () => !signal?.aborted && currentNetworkAuthorityScope() === originAuthority && getV2ClientScopeKey() === originTransport }); } catch { /* A denial must not depend on recovery bookkeeping. */ } }
   let data;
-  try { data = await parseResponseBody(response); } catch (error) { markWriteAttemptUncertain(attempt); attachWriteResponseMetadata(error, attempt); throw error; }
+  try { data = await parseResponseBody(response); } catch (error) {
+    if (response.status === 403) data = { error: { code: 'request_denied', message: 'This request is not permitted in the current access context.' } };
+    else { markWriteAttemptUncertain(attempt); attachWriteResponseMetadata(error, attempt); throw error; }
+  }
   if (response.ok) {
     if (attempt && (!data || typeof data !== 'object' || !('data' in data))) {
       markWriteAttemptUncertain(attempt);
@@ -228,11 +233,11 @@ async function rawV2Request(requestConfig, retryWithRefresh = true) {
       throw failure;
     }
     confirmWriteAttempt(attempt, data);
-    if (!tracked) { try { await recordWriteRecoveryRead({ resolvedPath, pathParams: pathSnapshot, query: querySnapshot, body: bodySnapshot }, data, { principal: originPrincipal, readEvidence, isCurrentScope: () => currentNetworkAuthorityScope() === originAuthority && getV2ClientScopeKey() === originTransport }); } catch { /* Recovery storage failures must not prevent authorized reads. */ } }
+    if (!tracked) { try { await recordWriteRecoveryRead({ resolvedPath, pathParams: pathSnapshot, query: querySnapshot, body: bodySnapshot }, data, { principal: originPrincipal, readEvidence, isCurrentScope: () => !signal?.aborted && currentNetworkAuthorityScope() === originAuthority && getV2ClientScopeKey() === originTransport && Boolean(currentConfirmedNetworkDecision(originTransport, originAuthority)) }); } catch { /* Recovery storage failures must not prevent authorized reads. */ } }
+    if (!tracked && signal?.aborted) throw new DOMException('Aborted', 'AbortError');
     return data;
   }
 
-  if (response.status === 403 && !tracked && !signal?.aborted) { try { await recordWriteRecoveryRead({ resolvedPath }, null, { denied: true, readEvidence, isCurrentScope: () => currentNetworkAuthorityScope() === originAuthority && getV2ClientScopeKey() === originTransport }); } catch { /* A read denial must not depend on recovery bookkeeping. */ } }
   if (response.status >= 500 || String(data?.error?.code || '').endsWith('_unconfirmed')) markWriteAttemptUncertain(attempt);
   else rejectWriteAttempt(attempt);
 

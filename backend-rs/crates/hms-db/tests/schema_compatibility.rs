@@ -19,7 +19,7 @@ async fn historical(pool: &hms_db::PgPool, before: i64) {
         .expect("historical migrations apply");
 }
 #[tokio::test]
-async fn new_runtime_requires_consultation_epoch_while_probe_preserves_historical_epochs() {
+async fn new_runtime_requires_location_epoch_while_probe_preserves_historical_epochs() {
     let database = hms_db::test_support::TestDatabase::create().unwrap();
     let pool = hms_db::connect(database.database_url()).await.unwrap();
     assert_eq!(committed_breaking_epoch(&pool).await.unwrap(), 0);
@@ -40,8 +40,14 @@ async fn new_runtime_requires_consultation_epoch_while_probe_preserves_historica
     historical(&pool, 202610170026).await;
     assert_eq!(committed_breaking_epoch(&pool).await.unwrap(), 202610170025);
     assert!(require_runtime_schema(&pool).await.is_err());
-    hms_db::migrate::run(&pool).await.unwrap();
+    historical(&pool, 202610170027).await;
     assert_eq!(committed_breaking_epoch(&pool).await.unwrap(), 202610170026);
+    assert!(require_runtime_schema(&pool).await.is_err());
+    historical(&pool, 202610170028).await;
+    assert_eq!(committed_breaking_epoch(&pool).await.unwrap(), 202610170027);
+    assert!(require_runtime_schema(&pool).await.is_err());
+    hms_db::migrate::run(&pool).await.unwrap();
+    assert_eq!(committed_breaking_epoch(&pool).await.unwrap(), 202610170028);
     require_runtime_schema(&pool).await.unwrap();
     let identities:(i64,i64,i64)=sqlx::query_as("SELECT (SELECT count(*) FROM facilities),(SELECT count(*) FROM users),(SELECT count(*) FROM audit_events)").fetch_one(&pool).await.unwrap();
     assert_eq!(identities, (0, 0, 0));
@@ -442,4 +448,389 @@ async fn consultation_guards_and_actual_index_keys_are_required() {
         .unwrap();
     sqlx::query(&original).execute(&pool).await.unwrap();
     require_runtime_schema(&pool).await.unwrap();
+}
+
+#[tokio::test]
+async fn organization_metadata_and_each_command_column_are_required() {
+    let database = hms_db::test_support::TestDatabase::create().unwrap();
+    let pool = hms_db::connect(database.database_url()).await.unwrap();
+    hms_db::migrate::run(&pool).await.unwrap();
+    require_runtime_schema(&pool).await.unwrap();
+    let checksum = hms_db::migrate::MIGRATOR
+        .iter()
+        .find(|migration| migration.version == 202610170027)
+        .unwrap()
+        .checksum
+        .as_ref();
+    for statement in [
+        "UPDATE _sqlx_migrations SET success=false WHERE version=202610170027",
+        "UPDATE _sqlx_migrations SET success=true,checksum=decode('00','hex') WHERE version=202610170027",
+        "UPDATE _sqlx_migrations SET success=true,version=209901010004 WHERE version=202610170027",
+    ] {
+        sqlx::query(statement).execute(&pool).await.unwrap();
+        assert!(require_runtime_schema(&pool).await.is_err());
+        sqlx::query("UPDATE _sqlx_migrations SET version=202610170027,success=true,checksum=$1 WHERE version IN(202610170027,209901010004)")
+            .bind(checksum).execute(&pool).await.unwrap();
+        require_runtime_schema(&pool).await.unwrap();
+    }
+    // Static table/column names only; never interpolate caller input into SQL.
+    for (table, columns) in [
+        ("organization_units", &["version"][..]),
+        (
+            "organization_unit_commands",
+            &[
+                "facility_id",
+                "request_key_hash",
+                "actor_user_id",
+                "unit_id",
+                "action",
+                "payload_digest",
+                "receipt",
+                "recorded_at",
+            ][..],
+        ),
+    ] {
+        for column in columns {
+            sqlx::query(&format!(
+                "ALTER TABLE {table} RENAME COLUMN {column} TO hidden_runtime_column"
+            ))
+            .execute(&pool)
+            .await
+            .unwrap();
+            assert!(
+                require_runtime_schema(&pool).await.is_err(),
+                "missing essential column refuses readiness"
+            );
+            sqlx::query(&format!(
+                "ALTER TABLE {table} RENAME COLUMN hidden_runtime_column TO {column}"
+            ))
+            .execute(&pool)
+            .await
+            .unwrap();
+            require_runtime_schema(&pool).await.unwrap();
+        }
+    }
+    sqlx::query("ALTER TABLE organization_units ALTER COLUMN version DROP NOT NULL")
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert!(require_runtime_schema(&pool).await.is_err());
+    sqlx::query("ALTER TABLE organization_units ALTER COLUMN version SET NOT NULL")
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("ALTER TABLE organization_units ALTER COLUMN version TYPE integer")
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert!(require_runtime_schema(&pool).await.is_err());
+    sqlx::query("ALTER TABLE organization_units ALTER COLUMN version TYPE bigint")
+        .execute(&pool)
+        .await
+        .unwrap();
+    require_runtime_schema(&pool).await.unwrap();
+}
+
+#[tokio::test]
+async fn organization_reference_guards_and_lookup_indexes_cannot_be_name_only() {
+    let database = hms_db::test_support::TestDatabase::create().unwrap();
+    let pool = hms_db::connect(database.database_url()).await.unwrap();
+    hms_db::migrate::run(&pool).await.unwrap();
+    require_runtime_schema(&pool).await.unwrap();
+    for (table, guard) in [
+        ("organization_units", "organization_unit_identity_lifecycle"),
+        ("positions", "organization_position_unit_reference"),
+        (
+            "permission_assignments",
+            "organization_permission_unit_reference",
+        ),
+        (
+            "organization_unit_commands",
+            "organization_unit_command_immutable",
+        ),
+    ] {
+        sqlx::query(&format!("ALTER TABLE {table} DISABLE TRIGGER {guard}"))
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert!(require_runtime_schema(&pool).await.is_err());
+        sqlx::query(&format!("ALTER TABLE {table} ENABLE TRIGGER {guard}"))
+            .execute(&pool)
+            .await
+            .unwrap();
+        require_runtime_schema(&pool).await.unwrap();
+    }
+    for definition in [
+        "(facility_id,scope_id) WHERE scope_type='organization_unit'",
+        "(scope_id,facility_id) WHERE scope_type='facility'",
+        "(scope_id,facility_id)",
+    ] {
+        sqlx::query("DROP INDEX organization_permission_scope_reference_idx")
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query(&format!("CREATE INDEX organization_permission_scope_reference_idx ON permission_assignments {definition}"))
+            .execute(&pool).await.unwrap();
+        assert!(
+            require_runtime_schema(&pool).await.is_err(),
+            "same index name cannot substitute different scope or keys"
+        );
+    }
+    sqlx::query("DROP INDEX organization_permission_scope_reference_idx")
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("CREATE INDEX organization_permission_scope_reference_idx ON permission_assignments(scope_id,facility_id) WHERE scope_type='organization_unit'")
+        .execute(&pool).await.unwrap();
+    require_runtime_schema(&pool).await.unwrap();
+}
+
+#[tokio::test]
+async fn location_metadata_and_each_required_column_refuse_incomplete_layouts() {
+    let database = hms_db::test_support::TestDatabase::create().unwrap();
+    let pool = hms_db::connect(database.database_url()).await.unwrap();
+    hms_db::migrate::run(&pool).await.unwrap();
+    require_runtime_schema(&pool).await.unwrap();
+    let checksum = hms_db::migrate::MIGRATOR
+        .iter()
+        .find(|m| m.version == 202610170028)
+        .unwrap()
+        .checksum
+        .as_ref();
+    for statement in [
+        "UPDATE _sqlx_migrations SET success=false WHERE version=202610170028",
+        "UPDATE _sqlx_migrations SET success=true,checksum=decode('00','hex') WHERE version=202610170028",
+        "UPDATE _sqlx_migrations SET success=true,version=209901010005 WHERE version=202610170028",
+    ] {
+        sqlx::query(statement).execute(&pool).await.unwrap();
+        assert!(require_runtime_schema(&pool).await.is_err());
+        sqlx::query("UPDATE _sqlx_migrations SET version=202610170028,success=true,checksum=$1 WHERE version IN(202610170028,209901010005)")
+            .bind(checksum).execute(&pool).await.unwrap();
+        require_runtime_schema(&pool).await.unwrap();
+    }
+    // Static reviewed names only; no caller input is interpolated into SQL.
+    for (table, columns) in [
+        ("storage_locations", &["version", "updated_at"][..]),
+        (
+            "storage_location_commands",
+            &[
+                "facility_id",
+                "request_key_hash",
+                "actor_user_id",
+                "location_id",
+                "action",
+                "payload_digest",
+                "receipt",
+                "recorded_at",
+            ][..],
+        ),
+    ] {
+        for column in columns {
+            sqlx::query(&format!(
+                "ALTER TABLE {table} RENAME COLUMN {column} TO hidden_runtime_column"
+            ))
+            .execute(&pool)
+            .await
+            .unwrap();
+            assert!(require_runtime_schema(&pool).await.is_err());
+            sqlx::query(&format!(
+                "ALTER TABLE {table} RENAME COLUMN hidden_runtime_column TO {column}"
+            ))
+            .execute(&pool)
+            .await
+            .unwrap();
+            require_runtime_schema(&pool).await.unwrap();
+        }
+    }
+    for (weaken, restore) in [
+        (
+            "ALTER TABLE storage_locations ALTER COLUMN version DROP NOT NULL",
+            "ALTER TABLE storage_locations ALTER COLUMN version SET NOT NULL",
+        ),
+        (
+            "ALTER TABLE storage_locations ALTER COLUMN version TYPE integer",
+            "ALTER TABLE storage_locations ALTER COLUMN version TYPE bigint",
+        ),
+        (
+            "ALTER TABLE storage_locations ALTER COLUMN updated_at DROP NOT NULL",
+            "ALTER TABLE storage_locations ALTER COLUMN updated_at SET NOT NULL",
+        ),
+        (
+            "ALTER TABLE storage_location_commands ALTER COLUMN receipt DROP NOT NULL",
+            "ALTER TABLE storage_location_commands ALTER COLUMN receipt SET NOT NULL",
+        ),
+    ] {
+        sqlx::query(weaken).execute(&pool).await.unwrap();
+        assert!(require_runtime_schema(&pool).await.is_err());
+        sqlx::query(restore).execute(&pool).await.unwrap();
+        require_runtime_schema(&pool).await.unwrap();
+    }
+}
+
+#[tokio::test]
+async fn location_guards_reference_arguments_and_actual_index_keys_are_required() {
+    let database = hms_db::test_support::TestDatabase::create().unwrap();
+    let pool = hms_db::connect(database.database_url()).await.unwrap();
+    hms_db::migrate::run(&pool).await.unwrap();
+    require_runtime_schema(&pool).await.unwrap();
+    for (table, trigger) in [
+        ("storage_locations", "storage_location_identity_lifecycle"),
+        ("stock_batches", "storage_location_batch_reference"),
+        ("stock_movements", "storage_location_movement_reference"),
+        ("stock_transfers", "storage_location_transfer_reference"),
+        (
+            "stock_requisitions",
+            "storage_location_requisition_reference",
+        ),
+        (
+            "controlled_substance_register",
+            "storage_location_controlled_reference",
+        ),
+        ("pharmacy_dispenses", "storage_location_dispense_reference"),
+        (
+            "inventory_standing_orders",
+            "storage_location_standing_reference",
+        ),
+        ("stock_check_queue", "storage_location_check_reference"),
+        (
+            "pharmacy_fulfillments",
+            "storage_location_fulfillment_reference",
+        ),
+        (
+            "inventory_standing_order_templates",
+            "storage_location_template_reference",
+        ),
+        (
+            "storage_location_commands",
+            "storage_location_command_immutable",
+        ),
+    ] {
+        sqlx::query(&format!("ALTER TABLE {table} DISABLE TRIGGER {trigger}"))
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert!(require_runtime_schema(&pool).await.is_err());
+        sqlx::query(&format!("ALTER TABLE {table} ENABLE TRIGGER {trigger}"))
+            .execute(&pool)
+            .await
+            .unwrap();
+        require_runtime_schema(&pool).await.unwrap();
+    }
+    let original: String = sqlx::query_scalar("SELECT pg_get_triggerdef(oid) FROM pg_trigger WHERE tgrelid='stock_transfers'::regclass AND tgname='storage_location_transfer_reference'").fetch_one(&pool).await.unwrap();
+    sqlx::query("DROP TRIGGER storage_location_transfer_reference ON stock_transfers")
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("CREATE TRIGGER storage_location_transfer_reference BEFORE INSERT OR UPDATE ON stock_transfers FOR EACH ROW EXECUTE FUNCTION storage_location_operational_reference_guard('from_location_id')").execute(&pool).await.unwrap();
+    assert!(
+        require_runtime_schema(&pool).await.is_err(),
+        "same guard name/function without destination proof is insufficient"
+    );
+    sqlx::query("DROP TRIGGER storage_location_transfer_reference ON stock_transfers")
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query(&original).execute(&pool).await.unwrap();
+    require_runtime_schema(&pool).await.unwrap();
+    for (index, table, wrong_keys) in [
+        (
+            "storage_location_administration_page_idx",
+            "storage_locations",
+            "id",
+        ),
+        (
+            "storage_location_batch_location_id_reference_idx",
+            "stock_batches",
+            "id",
+        ),
+        (
+            "storage_location_movement_location_id_reference_idx",
+            "stock_movements",
+            "id",
+        ),
+        (
+            "storage_location_transfer_from_location_id_reference_idx",
+            "stock_transfers",
+            "id",
+        ),
+        (
+            "storage_location_transfer_to_location_id_reference_idx",
+            "stock_transfers",
+            "id",
+        ),
+        (
+            "storage_location_requisition_requesting_reference_idx",
+            "stock_requisitions",
+            "id",
+        ),
+        (
+            "storage_location_requisition_fulfilling_reference_idx",
+            "stock_requisitions",
+            "id",
+        ),
+        (
+            "storage_location_controlled_location_id_reference_idx",
+            "controlled_substance_register",
+            "id",
+        ),
+        (
+            "storage_location_dispense_location_id_reference_idx",
+            "pharmacy_dispenses",
+            "id",
+        ),
+        (
+            "storage_location_standing_requesting_location_id_reference_idx",
+            "inventory_standing_orders",
+            "id",
+        ),
+        (
+            "storage_location_check_location_id_reference_idx",
+            "stock_check_queue",
+            "id",
+        ),
+        (
+            "storage_location_fulfillment_dispensing_reference_idx",
+            "pharmacy_fulfillments",
+            "id",
+        ),
+        (
+            "storage_location_template_requesting_location_id_reference_idx",
+            "inventory_standing_order_templates",
+            "id",
+        ),
+        (
+            "storage_location_template_fulfilling_location_id_reference_idx",
+            "inventory_standing_order_templates",
+            "id",
+        ),
+        (
+            "storage_location_commands_location_idx",
+            "storage_location_commands",
+            "location_id",
+        ),
+    ] {
+        let definition: String = sqlx::query_scalar("SELECT pg_get_indexdef($1::regclass)")
+            .bind(index)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        sqlx::query(&format!("DROP INDEX {index}"))
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query(&format!("CREATE INDEX {index} ON {table}({wrong_keys})"))
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert!(
+            require_runtime_schema(&pool).await.is_err(),
+            "same index name with incomplete lookup keys is insufficient"
+        );
+        sqlx::query(&format!("DROP INDEX {index}"))
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query(&definition).execute(&pool).await.unwrap();
+        require_runtime_schema(&pool).await.unwrap();
+    }
 }

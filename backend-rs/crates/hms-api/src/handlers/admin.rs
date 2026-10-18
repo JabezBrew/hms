@@ -1,4 +1,8 @@
-use axum::extract::{Path, Query, State};
+pub mod organization_units;
+use axum::extract::{
+    rejection::{JsonRejection, PathRejection, QueryRejection},
+    Path, Query, State,
+};
 use axum::Json;
 use hms_domain::admin::{
     AdminLimitQuery, AdminListQuery, AuditEventListGetQuery, AuditEventListItem,
@@ -20,23 +24,35 @@ use crate::extractors::RequestContext;
 use crate::response::{ListResponse, ObjectResponse};
 use crate::state::AppState;
 
-#[utoipa::path(get, path = "/api/v2/admin/org-units", operation_id = "getAdminOrgUnits", tag = "admin", security(("bearerAuth" = [])), params(OrganizationUnitListQuery), responses((status = 200, body = ListResponse<OrganizationUnitListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
+fn invalid_organization_request() -> ApiError {
+    ApiError::bad_request(
+        "invalid_organization_unit_command",
+        "Review the supported organization fields.",
+    )
+}
+
+#[utoipa::path(get, path = "/api/v2/admin/org-units", operation_id = "getAdminOrgUnits", tag = "admin", security(("bearerAuth" = [])), params(OrganizationUnitListQuery), responses((status = 400, body = ApiErrorResponse), (status = 200, body = ListResponse<OrganizationUnitListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
 pub async fn list_org_units(
     State(state): State<AppState>,
     RequestContext(user): RequestContext,
-    Query(query): Query<OrganizationUnitListQuery>,
+    query: Result<Query<OrganizationUnitListQuery>, QueryRejection>,
 ) -> Result<Json<ListResponse<OrganizationUnitListItem>>, ApiError> {
+    let Query(query) = query.map_err(|_| invalid_organization_request())?;
     Ok(Json(
         state.admin_service().list_org_units(&user, query).await?,
     ))
 }
 
-#[utoipa::path(post, path = "/api/v2/admin/org-units", operation_id = "postAdminOrgUnits", tag = "admin", security(("bearerAuth" = [])), request_body = CreateOrganizationUnitRequest, responses((status = 200, body = ObjectResponse<OrganizationUnitListItem>), (status = 400, body = ApiErrorResponse), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
+#[utoipa::path(post, path = "/api/v2/admin/org-units", operation_id = "postAdminOrgUnits", tag = "admin", security(("bearerAuth" = [])), request_body = CreateOrganizationUnitRequest, responses((status = 200, body = ObjectResponse<hms_domain::organization_units::OrganizationUnitCommandReceipt>), (status = 400, body = ApiErrorResponse), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 409, body = ApiErrorResponse)))]
 pub async fn create_org_unit(
     State(state): State<AppState>,
     RequestContext(user): RequestContext,
-    Json(payload): Json<CreateOrganizationUnitRequest>,
-) -> Result<Json<ObjectResponse<OrganizationUnitListItem>>, ApiError> {
+    payload: Result<Json<CreateOrganizationUnitRequest>, JsonRejection>,
+) -> Result<
+    Json<ObjectResponse<hms_domain::organization_units::OrganizationUnitCommandReceipt>>,
+    ApiError,
+> {
+    let Json(payload) = payload.map_err(|_| invalid_organization_request())?;
     Ok(Json(
         state
             .admin_service()
@@ -45,22 +61,25 @@ pub async fn create_org_unit(
     ))
 }
 
-#[utoipa::path(get, path = "/api/v2/admin/org-units/{id}", operation_id = "getAdminOrgUnitById", tag = "admin", security(("bearerAuth" = [])), params(("id" = Uuid, Path, description = "Organization unit ID")), responses((status = 200, body = ObjectResponse<OrganizationUnitListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
+#[utoipa::path(get, path = "/api/v2/admin/org-units/{id}", operation_id = "getAdminOrgUnitById", tag = "admin", security(("bearerAuth" = [])), params(("id" = Uuid, Path, description = "Organization unit ID")), responses((status = 400, body = ApiErrorResponse), (status = 200, body = ObjectResponse<OrganizationUnitListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
 pub async fn get_org_unit(
     State(state): State<AppState>,
     RequestContext(user): RequestContext,
-    Path(id): Path<Uuid>,
+    path: Result<Path<Uuid>, PathRejection>,
 ) -> Result<Json<ObjectResponse<OrganizationUnitListItem>>, ApiError> {
+    let Path(id) = path.map_err(|_| invalid_organization_request())?;
     Ok(Json(state.admin_service().get_org_unit(&user, id).await?))
 }
 
-#[utoipa::path(get, path = "/api/v2/admin/org-units/{id}/children", operation_id = "getAdminOrgUnitChildren", tag = "admin", security(("bearerAuth" = [])), params(AdminListQuery, ("id" = Uuid, Path, description = "Organization unit ID")), responses((status = 200, body = ListResponse<OrganizationUnitListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
+#[utoipa::path(get, path = "/api/v2/admin/org-units/{id}/children", operation_id = "getAdminOrgUnitChildren", tag = "admin", security(("bearerAuth" = [])), params(AdminListQuery, ("id" = Uuid, Path, description = "Organization unit ID")), responses((status = 400, body = ApiErrorResponse), (status = 200, body = ListResponse<OrganizationUnitListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
 pub async fn list_org_unit_children(
     State(state): State<AppState>,
     RequestContext(user): RequestContext,
-    Path(id): Path<Uuid>,
-    Query(query): Query<AdminListQuery>,
+    path: Result<Path<Uuid>, PathRejection>,
+    query: Result<Query<AdminListQuery>, QueryRejection>,
 ) -> Result<Json<ListResponse<OrganizationUnitListItem>>, ApiError> {
+    let Path(id) = path.map_err(|_| invalid_organization_request())?;
+    let Query(query) = query.map_err(|_| invalid_organization_request())?;
     Ok(Json(
         state
             .admin_service()
@@ -69,13 +88,15 @@ pub async fn list_org_unit_children(
     ))
 }
 
-#[utoipa::path(get, path = "/api/v2/admin/org-units/{id}/ancestors", operation_id = "getAdminOrgUnitAncestors", tag = "admin", security(("bearerAuth" = [])), params(AdminLimitQuery, ("id" = Uuid, Path, description = "Organization unit ID")), responses((status = 200, body = ListResponse<OrganizationUnitListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
+#[utoipa::path(get, path = "/api/v2/admin/org-units/{id}/ancestors", operation_id = "getAdminOrgUnitAncestors", tag = "admin", security(("bearerAuth" = [])), params(AdminLimitQuery, ("id" = Uuid, Path, description = "Organization unit ID")), responses((status = 400, body = ApiErrorResponse), (status = 200, body = ListResponse<OrganizationUnitListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
 pub async fn list_org_unit_ancestors(
     State(state): State<AppState>,
     RequestContext(user): RequestContext,
-    Path(id): Path<Uuid>,
-    Query(query): Query<AdminLimitQuery>,
+    path: Result<Path<Uuid>, PathRejection>,
+    query: Result<Query<AdminLimitQuery>, QueryRejection>,
 ) -> Result<Json<ListResponse<OrganizationUnitListItem>>, ApiError> {
+    let Path(id) = path.map_err(|_| invalid_organization_request())?;
+    let Query(query) = query.map_err(|_| invalid_organization_request())?;
     Ok(Json(
         state
             .admin_service()
@@ -84,13 +105,15 @@ pub async fn list_org_unit_ancestors(
     ))
 }
 
-#[utoipa::path(get, path = "/api/v2/admin/org-units/{id}/descendants", operation_id = "getAdminOrgUnitDescendants", tag = "admin", security(("bearerAuth" = [])), params(AdminListQuery, ("id" = Uuid, Path, description = "Organization unit ID")), responses((status = 200, body = ListResponse<OrganizationUnitListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
+#[utoipa::path(get, path = "/api/v2/admin/org-units/{id}/descendants", operation_id = "getAdminOrgUnitDescendants", tag = "admin", security(("bearerAuth" = [])), params(AdminListQuery, ("id" = Uuid, Path, description = "Organization unit ID")), responses((status = 400, body = ApiErrorResponse), (status = 200, body = ListResponse<OrganizationUnitListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
 pub async fn list_org_unit_descendants(
     State(state): State<AppState>,
     RequestContext(user): RequestContext,
-    Path(id): Path<Uuid>,
-    Query(query): Query<AdminListQuery>,
+    path: Result<Path<Uuid>, PathRejection>,
+    query: Result<Query<AdminListQuery>, QueryRejection>,
 ) -> Result<Json<ListResponse<OrganizationUnitListItem>>, ApiError> {
+    let Path(id) = path.map_err(|_| invalid_organization_request())?;
+    let Query(query) = query.map_err(|_| invalid_organization_request())?;
     Ok(Json(
         state
             .admin_service()

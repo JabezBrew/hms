@@ -45,7 +45,7 @@ async fn actual_binary_reports_only_committed_epoch_without_provisioning_or_writ
     hms_db::migrate::run(&pool).await.unwrap();
     let after = probe(database.database_url());
     assert!(after.status.success());
-    assert_eq!(after.stdout, b"202610170026\n");
+    assert_eq!(after.stdout, b"202610170028\n");
     assert!(after.stderr.is_empty());
     let identities: (i64, i64, i64) = sqlx::query_as("SELECT (SELECT count(*) FROM facilities),(SELECT count(*) FROM users),(SELECT count(*) FROM audit_events)")
         .fetch_one(&pool).await.unwrap();
@@ -235,5 +235,84 @@ async fn actual_binary_distinguishes_025_from_false_consultation_migration_claim
     let identities: (i64, i64, i64) = sqlx::query_as(
         "SELECT (SELECT count(*) FROM facilities),(SELECT count(*) FROM users),(SELECT count(*) FROM audit_events)")
         .fetch_one(&pool).await.unwrap();
+    assert_eq!(identities, (0, 0, 0));
+}
+
+#[tokio::test]
+async fn actual_binary_distinguishes_026_from_false_organization_migration_claim() {
+    use std::borrow::Cow;
+    let database = hms_db::test_support::TestDatabase::create().unwrap();
+    let pool = hms_db::connect(database.database_url()).await.unwrap();
+    let historical = sqlx::migrate::Migrator {
+        migrations: Cow::Owned(
+            hms_db::migrate::MIGRATOR
+                .iter()
+                .filter(|migration| migration.version < 202610170027)
+                .cloned()
+                .collect(),
+        ),
+        ..sqlx::migrate::Migrator::DEFAULT
+    };
+    historical.run(&pool).await.unwrap();
+    let before = probe(database.database_url());
+    assert!(before.status.success());
+    assert_eq!(before.stdout, b"202610170026\n");
+    assert!(before.stderr.is_empty());
+    let checksum = hms_db::migrate::MIGRATOR
+        .iter()
+        .find(|migration| migration.version == 202610170027)
+        .expect("required organization migration is packaged")
+        .checksum
+        .as_ref();
+    sqlx::query("INSERT INTO _sqlx_migrations(version,description,success,checksum,execution_time) VALUES(202610170027,'Synthetic unconfirmed organization layout',true,$1,0)")
+        .bind(checksum).execute(&pool).await.unwrap();
+    let false_claim = probe(database.database_url());
+    assert!(!false_claim.status.success());
+    assert!(false_claim.stdout.is_empty());
+    assert_eq!(
+        String::from_utf8(false_claim.stderr).unwrap().trim(),
+        "Error: Database schema compatibility could not be confirmed."
+    );
+    let identities: (i64, i64, i64) = sqlx::query_as(
+        "SELECT (SELECT count(*) FROM facilities),(SELECT count(*) FROM users),(SELECT count(*) FROM audit_events)")
+        .fetch_one(&pool).await.unwrap();
+    assert_eq!(identities, (0, 0, 0));
+}
+
+#[tokio::test]
+async fn actual_binary_distinguishes_027_from_false_location_migration_claim() {
+    use std::borrow::Cow;
+    let database = hms_db::test_support::TestDatabase::create().unwrap();
+    let pool = hms_db::connect(database.database_url()).await.unwrap();
+    let historical = sqlx::migrate::Migrator {
+        migrations: Cow::Owned(
+            hms_db::migrate::MIGRATOR
+                .iter()
+                .filter(|m| m.version < 202610170028)
+                .cloned()
+                .collect(),
+        ),
+        ..sqlx::migrate::Migrator::DEFAULT
+    };
+    historical.run(&pool).await.unwrap();
+    let before = probe(database.database_url());
+    assert!(before.status.success());
+    assert_eq!(before.stdout, b"202610170027\n");
+    assert!(before.stderr.is_empty());
+    let checksum = hms_db::migrate::MIGRATOR
+        .iter()
+        .find(|m| m.version == 202610170028)
+        .unwrap()
+        .checksum
+        .as_ref();
+    sqlx::query("INSERT INTO _sqlx_migrations(version,description,success,checksum,execution_time) VALUES(202610170028,'Synthetic unconfirmed location layout',true,$1,0)").bind(checksum).execute(&pool).await.unwrap();
+    let outcome = probe(database.database_url());
+    assert!(!outcome.status.success());
+    assert!(outcome.stdout.is_empty());
+    assert_eq!(
+        String::from_utf8(outcome.stderr).unwrap().trim(),
+        "Error: Database schema compatibility could not be confirmed."
+    );
+    let identities: (i64,i64,i64) = sqlx::query_as("SELECT (SELECT count(*) FROM facilities),(SELECT count(*) FROM users),(SELECT count(*) FROM audit_events)").fetch_one(&pool).await.unwrap();
     assert_eq!(identities, (0, 0, 0));
 }

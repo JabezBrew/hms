@@ -21,6 +21,22 @@ pub fn routes() -> Router<AppState> {
         )
         .route("/api/v2/admin/org-units/:id", get(admin::get_org_unit))
         .route(
+            "/api/v2/admin/org-units/commands/:client_request_id",
+            get(admin::organization_units::receipt),
+        )
+        .route(
+            "/api/v2/admin/org-units/:id/rename",
+            post(admin::organization_units::rename),
+        )
+        .route(
+            "/api/v2/admin/org-units/:id/retire",
+            post(admin::organization_units::retire),
+        )
+        .route(
+            "/api/v2/admin/org-units/:id/reactivate",
+            post(admin::organization_units::reactivate),
+        )
+        .route(
             "/api/v2/admin/org-units/:id/ancestors",
             get(admin::list_org_unit_ancestors),
         )

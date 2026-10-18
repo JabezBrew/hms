@@ -313,11 +313,13 @@ impl StockControlService {
             },
         )
         .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "stock_transfer_create_failed",
-                "Transfer could not be saved.",
-            )
+        .map_err(|error| {
+            super::common::storage_location_reference_error(&error).unwrap_or_else(|| {
+                ApiError::conflict(
+                    "stock_transfer_create_failed",
+                    "Transfer could not be saved.",
+                )
+            })
         })?;
         Ok(object(transfer))
     }
@@ -380,11 +382,13 @@ impl StockControlService {
             },
         )
         .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "stock_requisition_create_failed",
-                "Requisition could not be saved.",
-            )
+        .map_err(|error| {
+            super::common::storage_location_reference_error(&error).unwrap_or_else(|| {
+                ApiError::conflict(
+                    "stock_requisition_create_failed",
+                    "Requisition could not be saved.",
+                )
+            })
         })?;
         Ok(object(requisition))
     }
@@ -505,11 +509,13 @@ impl StockControlService {
             },
         )
         .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "standing_order_create_failed",
-                "Standing order could not be saved.",
-            )
+        .map_err(|error| {
+            super::common::storage_location_reference_error(&error).unwrap_or_else(|| {
+                ApiError::conflict(
+                    "standing_order_create_failed",
+                    "Standing order could not be saved.",
+                )
+            })
         })?;
         Ok(object(order))
     }
@@ -623,11 +629,13 @@ impl StockControlService {
             ctx.user_id,
         )
         .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "stock_check_queue_failed",
-                "Stock check could not be queued.",
-            )
+        .map_err(|error| {
+            super::common::storage_location_reference_error(&error).unwrap_or_else(|| {
+                ApiError::conflict(
+                    "stock_check_queue_failed",
+                    "Stock check could not be queued.",
+                )
+            })
         })?;
         Ok(object(check))
     }

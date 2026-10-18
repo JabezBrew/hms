@@ -1,3 +1,4 @@
+pub mod storage_locations;
 use axum::extract::{Path, Query, State};
 use axum::Json;
 use hms_domain::inventory::{

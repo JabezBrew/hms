@@ -3,6 +3,9 @@ use utoipa::openapi::security::{ApiKey, ApiKeyValue, HttpAuthScheme, HttpBuilder
 use utoipa::openapi::OpenApi as OpenApiDocument;
 use utoipa::{Modify, OpenApi};
 
+mod strict_consultations;
+use strict_consultations::StrictConsultationSchemas;
+
 #[derive(OpenApi)]
 #[openapi(
     paths(
@@ -30,6 +33,7 @@ use utoipa::{Modify, OpenApi};
         crate::handlers::auth_factor::setup_verify,
         crate::handlers::auth_factor::recovery,
         crate::handlers::auth_factor::status,
+        crate::handlers::auth_factor::confirm_password,
         crate::handlers::auth_factor::step_up_options,
         crate::handlers::auth_factor::step_up_verify,
         crate::handlers::auth_factor::keys,
@@ -41,6 +45,10 @@ use utoipa::{Modify, OpenApi};
         crate::handlers::admin::create_committee,
         crate::handlers::admin::create_delegation,
         crate::handlers::admin::create_org_unit,
+        crate::handlers::admin::organization_units::rename,
+        crate::handlers::admin::organization_units::retire,
+        crate::handlers::admin::organization_units::reactivate,
+        crate::handlers::admin::organization_units::receipt,
         crate::handlers::admin::create_permission_assignment,
         crate::handlers::admin::create_position,
         crate::handlers::admin::create_position_template,
@@ -269,6 +277,14 @@ use utoipa::{Modify, OpenApi};
         crate::handlers::inventory::list_items,
         crate::handlers::inventory::list_location_stock,
         crate::handlers::inventory::list_locations,
+        crate::handlers::inventory::storage_locations::create,
+        crate::handlers::inventory::storage_locations::rename,
+        crate::handlers::inventory::storage_locations::retire,
+        crate::handlers::inventory::storage_locations::reactivate,
+        crate::handlers::inventory::storage_locations::receipt,
+        crate::handlers::inventory::storage_locations::list,
+        crate::handlers::inventory::storage_locations::detail,
+
         crate::handlers::inventory::list_movements,
         crate::handlers::inventory::list_suppliers,
         crate::handlers::inventory::inspect_grn,
@@ -537,6 +553,7 @@ use utoipa::{Modify, OpenApi};
         hms_domain::auth_assurance::LoginFactorVerifyRequest,
         hms_domain::auth_assurance::LoginRecoveryRequest,
         hms_domain::auth_assurance::LoginSetupOptionsRequest,
+        hms_domain::auth_assurance::OrdinaryPasswordConfirmationRequest,
         hms_domain::auth_assurance::StepUpOptionsRequest,
         hms_domain::auth_assurance::StepUpVerifyRequest,
         hms_domain::auth_assurance::FactorAssuranceStatus,
@@ -618,6 +635,10 @@ use utoipa::{Modify, OpenApi};
         hms_domain::admin::DelegationStatus,
         hms_domain::admin::FeatureEntitlementListItem,
         hms_domain::admin::OrganizationUnitListItem,
+        hms_domain::organization_units::RenameOrganizationUnitRequest,
+        hms_domain::organization_units::OrganizationUnitLifecycleRequest,
+        hms_domain::organization_units::OrganizationUnitReviewedInput,
+        hms_domain::organization_units::OrganizationUnitCommandReceipt,
         hms_domain::admin::OrgUnitType,
         hms_domain::admin::PermissionAssignmentListItem,
         hms_domain::admin::PermissionAssignmentStatus,
@@ -995,6 +1016,16 @@ use utoipa::{Modify, OpenApi};
         hms_domain::inventory::StockTransferListItem,
         hms_domain::inventory::StockTransferListQuery,
         hms_domain::inventory::StorageLocationListItem,
+        hms_domain::storage_locations::StorageLocationType,
+        hms_domain::storage_locations::StorageTemperatureZone,
+        hms_domain::storage_locations::CreateStorageLocationRequest,
+        hms_domain::storage_locations::RenameStorageLocationRequest,
+        hms_domain::storage_locations::StorageLocationLifecycleRequest,
+        hms_domain::storage_locations::StorageLocationReviewedInput,
+        hms_domain::storage_locations::GovernedStorageLocation,
+        hms_domain::storage_locations::StorageLocationCommandReceipt,
+        hms_domain::storage_locations::StorageLocationAdministrationQuery,
+
         hms_domain::inventory::StorageLocationListQuery,
         hms_domain::inventory::StorageLocationStockItem,
         hms_domain::inventory::SupplierListItem,
@@ -1298,7 +1329,7 @@ use utoipa::{Modify, OpenApi};
         hms_domain::ward_rounds::WardRoundReviewRail,
         hms_domain::ward_rounds::WardRoundStatus
     )),
-    modifiers(&SecurityAddon),
+    modifiers(&SecurityAddon, &StrictConsultationSchemas),
     tags(
         (name = "admin", description = "HMS-native organization, authority, permission assignment, delegation, and audit workflows"),
         (name = "auth", description = "Authentication and refresh-session endpoints"),

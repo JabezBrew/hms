@@ -356,6 +356,30 @@ async fn staging_demo_seed_is_bounded_and_refuses_to_replace_clinical_evidence()
     let sentinel_session_id = uuid::Uuid::from_u128(0xe0000000000000000000000000000102);
     let sentinel_org_unit_id = uuid::Uuid::from_u128(0xe0000000000000000000000000000103);
     let sentinel_user_id = uuid::Uuid::from_u128(0xe0000000000000000000000000000104);
+    let sentinel_location_id = uuid::Uuid::from_u128(0xe0000000000000000000000000000105);
+    let sentinel_batch_id = uuid::Uuid::from_u128(0xe0000000000000000000000000000106);
+    sqlx::query("INSERT INTO storage_locations(id,facility_id,code,name,location_type,temperature_zone) VALUES($1,$2,'DEMO-RETAINED-STOCK','Synthetic retained non-seed location','store','ambient')")
+        .bind(sentinel_location_id).bind(baseline.facility_id).execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO stock_batches(id,facility_id,item_id,location_id,batch_number,quantity_on_hand) VALUES($1,$2,$3,$4,'SYNTHETIC-RETAINED-DEMO-STOCK',7)")
+        .bind(sentinel_batch_id).bind(baseline.facility_id)
+        .bind(uuid::Uuid::from_u128(hms_db::provision::DEFAULT_INVENTORY_ITEM_PARACETAMOL_ID))
+        .bind(sentinel_location_id).execute(&pool).await.unwrap();
+    let retained_stock = |location_id, batch_id| {
+        sqlx::query_scalar::<_, serde_json::Value>("SELECT jsonb_build_object('location',(SELECT to_jsonb(l) FROM storage_locations l WHERE id=$1),'batch',(SELECT to_jsonb(b) FROM stock_batches b WHERE id=$2))")
+        .bind(location_id).bind(batch_id)
+    };
+    let before_stock = retained_stock(sentinel_location_id, sentinel_batch_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert!(
+        sqlx::query("DELETE FROM storage_locations WHERE id=$1")
+            .bind(sentinel_location_id)
+            .execute(&pool)
+            .await
+            .is_err(),
+        "demo cleanup cannot delete retained location identity"
+    );
     sqlx::query(
         r#"
         INSERT INTO wards (id, facility_id, code, name, status)
@@ -435,6 +459,14 @@ async fn staging_demo_seed_is_bounded_and_refuses_to_replace_clinical_evidence()
         .await
         .expect("staging demo seed provisions");
     let first_counts = demo_counts(&pool, baseline.facility_id).await;
+    assert_eq!(
+        retained_stock(sentinel_location_id, sentinel_batch_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
+        before_stock,
+        "first demo provisioning preserves unrelated exact location and stock evidence"
+    );
     let before_evidence = note_evidence_digest(&pool, baseline.facility_id).await;
     let denied = provision_demo_seed(&pool, &baseline, DemoSeedProfile::Staging)
         .await
@@ -445,6 +477,14 @@ async fn staging_demo_seed_is_bounded_and_refuses_to_replace_clinical_evidence()
         before_evidence
     );
     let second_counts = demo_counts(&pool, baseline.facility_id).await;
+    assert_eq!(
+        retained_stock(sentinel_location_id, sentinel_batch_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
+        before_stock,
+        "refused repeat demo provisioning preserves unrelated location and stock evidence"
+    );
 
     assert_eq!(first_counts, second_counts);
     assert_eq!(second_counts.patients, 150);

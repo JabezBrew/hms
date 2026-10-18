@@ -8,7 +8,7 @@ const FAMILY_ALIASES = { 'nursing/prn-dose-requests': 'nursing/medication-admini
 let store; let fault = false; let currentScope = null; let currentContext = null; let activation = 0; let serial = Promise.resolve();
 const active = new Map(); const subscribers = new Set();
 let snapshot = { entries: [], unavailable: false };
-const readDispatch = new WeakMap(); let readOrder = 0; let lastReadDenial = 0;
+const readDispatch = new WeakMap(), readReviews = new WeakMap(), readResponses = new WeakMap(); let readOrder = 0; let lastReadDenial = 0;
 const error = (code = 'write_review_required', message = 'A previous change needs review before a new change can be submitted. Open and refresh the affected workflow, review its saved records, then acknowledge the recovery notice.') => apiErrorFromEnvelope(409, { error: { code, message } });
 function publish() { snapshot = { entries: (store?.entries || []).filter((entry) => entry.scope === currentScope && (!active.has(entry.id) || entry.state === 'uncertain' || active.get(entry.id).some((handle) => handle.authority !== currentContext?.authority || handle.transport !== currentContext?.transport))).map(({ id, operation, created_at, reviewed_at }) => ({ id, operation, created_at, reviewed: Boolean(reviewed_at) })), unavailable: fault }; subscribers.forEach((notify) => notify()); }
 export const subscribeWriteUncertainty = (notify) => { subscribers.add(notify); return () => subscribers.delete(notify); };
@@ -45,43 +45,25 @@ export function activateWriteUncertainty(principal, context = null) {
   if (!principal?.id) return;
   scopeFor(principal).then((scope) => { if (activation === request) { currentScope = scope; for (const entry of store.entries) if (entry.scope === scope) entry.reviewed_at = null; publish(); } }).catch(() => {});
 }
-function canonical(value) { if (Array.isArray(value)) return value.map(canonical); if (value && typeof value === 'object') return Object.fromEntries(Object.keys(value).sort().filter((key) => value[key] !== undefined).map((key) => [key, canonical(value[key])])); return value; }
-function identifiers(value, result = new Set(), key = '') {
-  if (!value || result.size >= 100) return result;
-  if (typeof value === 'string' && key !== 'client_request_id' && UUID.test(value) && /(^|_)ids?$/.test(key)) result.add(value);
-  else if (value instanceof FormData) value.forEach((item, field) => identifiers(item, result, field));
-  else if (Array.isArray(value)) value.forEach((item) => identifiers(item, result, key));
-  else if (typeof value === 'object') Object.entries(value).forEach(([field, item]) => identifiers(item, result, field));
-  return result;
-}
-const references = async (...values) => Promise.all([...values.reduce((found, value) => identifiers(value, found), new Set())].map((value) => digest(`reference:${value.toLowerCase()}`)));
+
+
+const references = async (...values) => (await import('./writeReplayPolicy')).referenceHashes(digest, ...values);
 async function admissionScope(request) {
-  const path = String(request.resolvedPath).split('?')[0];
-  if (path.includes('/referrals/')) {
-    try { return (await import('./referralWriteScopes')).classifyReferralWriteScope(path); }
-    catch { throw error('write_review_check_unavailable'); }
-  }
-  if (!path.includes('/chronicle/admissions/') && !path.endsWith('/chronicle/admission-advisory-cases')) return null;
-  try { const module = await import('./admissionWriteScopes'); return module.classifyAdmissionWriteScope(path, request.pathParams); }
+  try { return await (await import('./writeScopeRouter')).classifyWriteScope(request); }
   catch { throw error('write_review_check_unavailable', 'The workflow safety check could not load. No change was submitted. Reload and try again.'); }
 }
 function primaryReference(request) { for (const key of ['admission_case_id', 'patient_id']) for (const source of [request.body, request.query, request.pathParams]) if (UUID.test(source?.[key])) return source[key]; if (UUID.test(request.pathParams?.id)) return request.pathParams.id; return UUID.test(request.body?.item_id) ? request.body.item_id : null; }
-function sensitive(value) { return value && typeof value === 'object' && Object.entries(value).some(([key, item]) => /password|^(access_token|refresh_token|secret|credential)$/i.test(key) || sensitive(item)); }
+
 function family(path) { const parts = String(path).split('?')[0].split('/').filter(Boolean); if (parts[0] !== 'api') parts.unshift('api', 'v2'); const alias = FAMILY_ALIASES[parts.slice(2, 4).join('/')]; return alias ? `api/v2/${alias}` : parts.slice(0, 4).map((part) => UUID.test(part) ? part.toLowerCase() : part).join('/'); }
-function template(path) { return String(path).replace(/\{[a-z_]+\}/g, ':id').replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, ':id'); }
+
 const queue = (work) => { const next = serial.then(work, work); serial = next.catch(() => {}); return next; };
 export async function beginWriteAttempt(request, context) {
   // Only the mounted Rust authority boundary enables this transport layer.
   if (!context.principal?.id) return null;
   return queue(async () => {
-    const scope = await scopeFor(context.principal); const route = template(request.path); const method = request.method.toUpperCase();
-    const serializable = !request.unsupportedBody && !sensitive(request.body);
-    // Compare the JSON actually sent, including Date.toJSON/undefined handling.
-    // Large or credential-bearing commands are never eligible for replay.
-    const wireBody = serializable ? JSON.stringify(request.body ?? null) : null;
-    const replayable = serializable && wireBody.length <= 1000000;
-    const input = replayable ? JSON.stringify(canonical([method, request.resolvedPath, request.query || null, JSON.parse(wireBody)])) : crypto.randomUUID();
+    const scope = await scopeFor(context.principal); const method = request.method.toUpperCase();
     const [admission, replayPolicy] = await Promise.all([admissionScope(request), import('./writeReplayPolicy')]);
+    const { route, replayable, input } = replayPolicy.prepareWriteIntent(request, method);
     const primary = admission?.primary || primaryReference(request);
     const [fingerprint, referenceHashes, familyHash, primaryHash] = await Promise.all([digest(input), references(request.body, request.pathParams, request.query), digest(`family:${admission?.family || family(request.resolvedPath)}`), primary ? digest(`reference:${primary.toLowerCase()}`) : null]);
     const uuid = replayable && (replayPolicy.supportsCommandReplay(method, route) || admission?.retryTemplate === `${method} ${route}`) && UUID.test(request.body?.client_request_id) ? request.body.client_request_id : null;
@@ -117,35 +99,57 @@ export function markWriteAttemptUncertain(handle) {
   persist();
 }
 export function markWriteResponseUncertain(response) { markWriteAttemptUncertain(response?.[receiptKey]); }
-export function acknowledgeWriteResponse(response) { const handle = response?.[receiptKey]; if (handle) remove(handle); }
+export function acknowledgeWriteResponse(response) {
+  const handle = response?.[receiptKey]; if (!handle) return;
+  const entry = load().entries.find(value => value.id === handle.entry.id);
+  // A retained error is not fresh receipt evidence. Reconciliation must still
+  // own the actual read lease and exact uncertainty identity at acknowledgment.
+  if (entry && !readReviews.get(entry)?.()) throw error();
+  remove(handle);
+}
 export function captureWriteRecoveryRead() { try { const evidence = load().entries.filter((entry) => !active.has(entry.id)).map(({ id, uncertainty_id }) => ({ id, uncertainty_id })); const order = ++readOrder, epoch = activation, scope = currentScope; readDispatch.set(evidence, () => order > lastReadDenial && epoch === activation && scope === currentScope); return evidence; } catch { return []; } }
-export async function recordWriteRecoveryRead(request, response, context) {
-  if (context.isCurrentScope?.() === false || (!context.denied && !context.readEvidence?.length) || !load().entries.length) return;
-  if (context.denied) {
-    lastReadDenial = ++readOrder;
-    // A newer denial invalidates published review as well as pending dispatches.
-    // Keep every opaque unknown-write marker until a fresh authorized review.
-    let changed = false;
-    for (const entry of load().entries) {
-      if (entry.scope === currentScope && entry.reviewed_at !== null) {
-        entry.reviewed_at = null; changed = true;
-      }
+// Only an actual transport response can carry a receipt-display lease. This
+// does not grant saved-record review or acknowledge an unknown command.
+export function assertWriteRecoveryReadCurrent(response) {
+  load();
+  if (!readResponses.get(response)?.()) throw error();
+}
+export function invalidateWriteRecoveryReads() {
+  lastReadDenial = ++readOrder;
+  // A newer denial invalidates published review as well as pending dispatches.
+  // Keep every opaque unknown-write marker until a fresh authorized review.
+  let changed = false;
+  for (const entry of load().entries) {
+    if (entry.scope === currentScope && entry.reviewed_at !== null) {
+      entry.reviewed_at = null; changed = true;
     }
-    if (changed) persist();
   }
+  if (changed) persist();
+}
+export async function recordWriteRecoveryRead(request, response, context) {
+  if (context.isCurrentScope?.() === false) return;
+  if (context.denied) {
+    invalidateWriteRecoveryReads();
+  } else if (response && typeof response === 'object') {
+    const lease = readDispatch.get(context.readEvidence);
+    readResponses.set(response, () => context.isCurrentScope?.() !== false && lease?.() === true
+      && context.readEvidence.every(proof => load().entries.some(entry => entry.id === proof.id && entry.uncertainty_id === proof.uncertainty_id && !active.has(entry.id))));
+  }
+  if ((!context.denied && !context.readEvidence?.length) || !load().entries.length) return;
   return (await import('./writeRecoveryRead')).recordRecoveryRead(request, response, context, {
     admissionScope, load, scopeFor, digest, references, family, active, persist,
     current: () => ({ scope: currentScope, context: currentContext }),
     readLease: evidence => readDispatch.get(evidence),
+    review: (entry, proof) => readReviews.set(entry, proof),
   });
 }
 export async function acknowledgeWriteReview(id, principal) {
-  return queue(async () => { const scope = await scopeFor(principal); const entry = load().entries.find((item) => item.id === id && item.scope === scope); if (scope !== currentScope || !entry?.reviewed_at || active.has(id)) throw error(); store.entries = store.entries.filter((item) => item !== entry); persist(); });
+  return queue(async () => { const scope = await scopeFor(principal); const entry = load().entries.find((item) => item.id === id && item.scope === scope); if (scope !== currentScope || !entry?.reviewed_at || active.has(id) || !readReviews.get(entry)?.()) throw error(); store.entries = store.entries.filter((item) => item !== entry); persist(); });
 }
 // Every authority/transport activation invalidates earlier dispatch leases, even
 // when it later returns to the same values. No clinical body is retained here.
 function manualStore() {
-  return { current: () => ({ scope: currentScope, context: currentContext }), digest, load, queue, active: id => active.has(id),
+  return { current: () => ({ scope: currentScope, context: currentContext, activation }), digest, load, queue, active: id => active.has(id),
     remove: (id, uncertaintyId) => { store.entries = load().entries.filter(entry => entry.id !== id || entry.uncertainty_id !== uncertaintyId); persist(); } };
 }
 // Deliberately narrow manual recovery; its lazy protocol accepts only actual
@@ -155,5 +159,16 @@ export async function referralResponseManualReview(action, input, protocol = 're
 }
 export async function admissionMoveManualReview(action, input) {
   return (await import('./moveWriteScopes')).moveManualProtocol(action, input, manualStore());
+}
+// A reload can locate only a singleton current organization command UUID. The
+// original actor-bound receipt and a separate acknowledgment are still required.
+export async function organizationCommandRecoveryCandidate() {
+  const store = manualStore(), origin = store.current();
+  return (await import('./writeScopeRouter')).organizationRecoveryCandidate(store, origin);
+}
+// The body never survives a reload; only an existing singleton actor UUID can be located.
+export async function storageLocationCommandRecoveryCandidate() {
+  const store = manualStore(), origin = store.current();
+  return (await import('./writeScopeRouter')).storageLocationRecoveryCandidate(store, origin);
 }
 export function resetWriteUncertaintyForTests({ preserveStorage = false } = {}) { store = undefined; fault = false; currentScope = null; currentContext = null; activation += 1; active.clear(); serial = Promise.resolve(); if (!preserveStorage) sessionStorage.removeItem(WRITE_UNCERTAINTY_KEY); publish(); }

@@ -8,6 +8,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { dismissFactorRequirement, getFactorRequirement, subscribeFactorRequirement } from '@/shared/lib/factorRequiredSignal';
 import { authFailure } from './model';
+import { usesPasswordConfirmation } from './proofUpgrade';
 
 export function IdentityVerificationNotice() {
   const { user, reauthenticate } = useAuth(); const request = useSyncExternalStore(subscribeFactorRequirement, getFactorRequirement, () => null);
@@ -19,14 +20,15 @@ export function IdentityVerificationNotice() {
   }, [scope]);
   const current = user && request === scope;
   if (!current) return null;
-  const close = () => { if (!operation.current) { setOpen(false); setPassword(''); } };
+  const ordinary = usesPasswordConfirmation(user.accessContext);
+  const close = () => { if (!operation.current || ordinary) { operation.current?.abort(); operation.current = null; setOpen(false); setPassword(''); setError(null); setBusy(false); } };
   const verify = async (event) => {
-    event.preventDefault(); if (operation.current || !reauthenticate) return;
+    event.preventDefault(); if (operation.current || !reauthenticate || (ordinary && !password)) return;
     const controller = new AbortController(); operation.current = controller; setBusy(true); setError(null);
     try { await reauthenticate(user.email, password || undefined, user.facilityCode, { signal: controller.signal }); if (!controller.signal.aborted) dismissFactorRequirement(); }
     catch (failure) { if (!controller.signal.aborted) setError(authFailure(failure)); }
     finally { if (operation.current === controller) operation.current = null; if (!controller.signal.aborted) { setBusy(false); setPassword(''); } }
   };
   return <><Alert className="mx-auto my-3 max-w-3xl"><AlertTitle>Verify identity before continuing</AlertTitle><AlertDescription><p>The server requires fresh proof for a protected action. After verification, reload and review that workflow before explicitly submitting again. No action will retry automatically.</p><div className="mt-2 flex gap-2"><Button type="button" onClick={() => setOpen(true)}>Verify identity</Button><Button type="button" variant="ghost" onClick={dismissFactorRequirement}>Dismiss</Button></div></AlertDescription></Alert>
-    <Dialog open={open} onOpenChange={(next) => { if (!next) close(); }}><DialogContent><DialogHeader><DialogTitle>Verify current identity</DialogTitle><DialogDescription>Use an existing passkey. Enter your password too if its confirmation has expired. This does not grant patient access or override network policy.</DialogDescription></DialogHeader><form onSubmit={verify} className="grid gap-4"><Label htmlFor="identity-proof-password">Current password (if required)</Label><Input id="identity-proof-password" type="password" autoComplete="current-password" value={password} disabled={busy} onChange={(event) => setPassword(event.target.value)} />{error && <p role="alert">{error}</p>}<DialogFooter><Button type="button" variant="outline" disabled={busy} onClick={close}>Cancel</Button><Button type="submit" disabled={busy}>{busy ? 'Verifying…' : 'Use passkey'}</Button></DialogFooter></form></DialogContent></Dialog></>;
+    <Dialog open={open} onOpenChange={(next) => { if (!next) close(); }}><DialogContent><DialogHeader><DialogTitle>Verify current identity</DialogTitle><DialogDescription>{ordinary ? 'Confirm your current password for this signed-in session.' : 'Use an existing passkey. Enter your password too if its confirmation has expired.'} This does not grant patient access or override network policy.</DialogDescription></DialogHeader><form onSubmit={verify} className="grid gap-4"><Label htmlFor="identity-proof-password">{ordinary ? 'Current password' : 'Current password (if required)'}</Label><Input id="identity-proof-password" type="password" autoComplete="current-password" required={ordinary} value={password} disabled={busy} onChange={(event) => setPassword(event.target.value)} />{error && <p role="alert">{error}</p>}<DialogFooter><Button type="button" variant="outline" disabled={busy && !ordinary} onClick={close}>Cancel</Button><Button type="submit" disabled={busy || (ordinary && !password)}>{busy ? 'Verifying…' : ordinary ? 'Confirm password' : 'Use passkey'}</Button></DialogFooter></form></DialogContent></Dialog></>;
 }

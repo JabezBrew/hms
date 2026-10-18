@@ -80,6 +80,7 @@ pub struct ClinicalNoteCommandReceipt {
     pub replayed: bool,
 }
 #[derive(Clone, Debug, Deserialize, IntoParams, ToSchema)]
+#[into_params(parameter_in = Query)]
 #[serde(deny_unknown_fields)]
 pub struct ClinicalNoteHistoryQuery {
     pub cursor: Option<String>,
@@ -93,6 +94,7 @@ pub enum TemplateActivity {
     All,
 }
 #[derive(Clone, Debug, Deserialize, IntoParams, ToSchema)]
+#[into_params(parameter_in = Query)]
 #[serde(deny_unknown_fields)]
 pub struct GovernedNoteTemplateQuery {
     pub cursor: Option<String>,
@@ -146,6 +148,7 @@ pub struct NoteTemplateVersionDetail {
     pub current_template: GovernedNoteTemplateItem,
 }
 #[derive(Clone, Debug, Deserialize, IntoParams, ToSchema)]
+#[into_params(parameter_in = Query)]
 #[serde(deny_unknown_fields)]
 pub struct NoteTemplateHistoryQuery {
     pub cursor: Option<String>,

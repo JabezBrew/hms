@@ -9,12 +9,30 @@ struct Fixture {
     foreign: Uuid,
     inactive: Uuid,
     template: Uuid,
+    legacy_positions: Vec<Uuid>,
+    legacy_child: Uuid,
 }
 async fn fixture() -> Fixture {
-    let app = app().await;
-    let actor = Actor::login(&app, "owner@hms.local").await;
-    let pool = app.db_pool().await;
-    let facility = app.state().facility_id();
+    // Invalid legacy references are honestly created before the new publication
+    // guard exists, then migrated intact and exercised through current HTTP.
+    let database = Arc::new(hms_db::test_support::TestDatabase::create().unwrap());
+    let pool = hms_db::connect(database.database_url()).await.unwrap();
+    let historical = sqlx::migrate::Migrator {
+        migrations: std::borrow::Cow::Owned(
+            hms_db::migrate::MIGRATOR
+                .iter()
+                .filter(|m| m.version < 202610170027)
+                .cloned()
+                .collect(),
+        ),
+        ..sqlx::migrate::Migrator::DEFAULT
+    };
+    historical.run(&pool).await.unwrap();
+    let baseline = hms_db::provision::BaselineProvisioning::hms_local(DeploymentProfile::Hospital);
+    hms_db::provision::provision_baseline(&pool, &baseline)
+        .await
+        .unwrap();
+    let facility = baseline.facility_id;
     let foreign_facility = Uuid::new_v4();
     let foreign = Uuid::new_v4();
     let inactive = Uuid::new_v4();
@@ -30,6 +48,26 @@ async fn fixture() -> Fixture {
     .fetch_one(&pool)
     .await
     .unwrap();
+    let mut legacy_positions = vec![];
+    for (index, (org, source_template)) in
+        [(foreign, None), (inactive, None), (local, Some(template))]
+            .into_iter()
+            .enumerate()
+    {
+        let id = Uuid::new_v4();
+        sqlx::query("INSERT INTO positions(id,facility_id,org_unit_id,template_id,code,title,status) VALUES($1,$2,$3,$4,$5,'Synthetic invalid historical position','active')")
+            .bind(id).bind(facility).bind(org).bind(source_template).bind(format!("REF-LEGACY-APPOINTMENT-{index}")).execute(&pool).await.unwrap();
+        legacy_positions.push(id);
+    }
+    let legacy_child = Uuid::new_v4();
+    sqlx::query("INSERT INTO organization_units(id,facility_id,parent_unit_id,code,name,unit_type) VALUES($1,$2,$3,'REF-LEGACY-CHILD','Synthetic legacy child','department')").bind(legacy_child).bind(facility).bind(foreign).execute(&pool).await.unwrap();
+    hms_db::migrate::run(&pool).await.unwrap();
+    let app = app_with_config(
+        Config::for_tests_with_database_url(database.database_url().to_owned()),
+        database,
+    )
+    .await;
+    let actor = Actor::login(&app, "owner@hms.local").await;
     Fixture {
         app,
         actor,
@@ -38,6 +76,8 @@ async fn fixture() -> Fixture {
         foreign,
         inactive,
         template,
+        legacy_positions,
+        legacy_child,
     }
 }
 #[tokio::test]
@@ -45,7 +85,7 @@ async fn organization_parent_must_be_active_and_local_before_creation() {
     let f = fixture().await;
     let mut statuses = vec![];
     for (index, parent) in [f.foreign, f.inactive].into_iter().enumerate() {
-        let r=api_post_json(f.app.clone(),&f.actor,"/api/v2/admin/org-units",json!({"code":format!("REF-BAD-PARENT-{index}"),"name":"Synthetic child","unit_type":"department","parent_unit_id":parent})).await;
+        let r=api_post_json(f.app.clone(),&f.actor,"/api/v2/admin/org-units",json!({"client_request_id":Uuid::new_v4(),"code":format!("REF-BAD-PARENT-{index}"),"name":"Synthetic child","unit_type":"department","parent_unit_id":parent})).await;
         statuses.push(r.status().as_u16());
     }
     let effects: i64 = sqlx::query_scalar(
@@ -56,7 +96,7 @@ async fn organization_parent_must_be_active_and_local_before_creation() {
     .unwrap();
     assert_eq!(statuses, vec![409, 409]);
     assert_eq!(effects, 0);
-    assert_eq!(api_post_json(f.app.clone(),&f.actor,"/api/v2/admin/org-units",json!({"code":"REF-VALID-CHILD","name":"Synthetic valid child","unit_type":"department","parent_unit_id":f.local})).await.status(),StatusCode::OK);
+    assert_eq!(api_post_json(f.app.clone(),&f.actor,"/api/v2/admin/org-units",json!({"client_request_id":Uuid::new_v4(),"code":"REF-VALID-CHILD","name":"Synthetic valid child","unit_type":"department","parent_unit_id":f.local})).await.status(),StatusCode::OK);
 }
 #[tokio::test]
 async fn position_organization_and_optional_template_must_belong_to_actual_facility() {
@@ -92,21 +132,7 @@ async fn appointment_cannot_reuse_a_legacy_position_with_invalid_references() {
             .fetch_one(&f.pool)
             .await
             .unwrap();
-    let mut ids = vec![];
-    for (index, (org, template)) in [
-        (f.foreign, None),
-        (f.inactive, None),
-        (f.local, Some(f.template)),
-    ]
-    .into_iter()
-    .enumerate()
-    {
-        let id = Uuid::new_v4();
-        sqlx::query("INSERT INTO positions(id,facility_id,org_unit_id,template_id,code,title,status) VALUES($1,$2,$3,$4,$5,'Synthetic invalid position','active')")
-            .bind(id).bind(facility).bind(org).bind(template).bind(format!("REF-LEGACY-APPOINTMENT-{index}"))
-            .execute(&f.pool).await.unwrap();
-        ids.push(id);
-    }
+    let ids = f.legacy_positions.clone();
     for id in &ids {
         let response = api_post_json(f.app.clone(), &f.actor, "/api/v2/admin/authority-appointments",
             json!({"position_id":id,"user_id":user,"appointment_type":"acting","starts_at":null,"ends_at":null})).await;
@@ -123,15 +149,8 @@ async fn appointment_cannot_reuse_a_legacy_position_with_invalid_references() {
 #[tokio::test]
 async fn legacy_invalid_reference_rows_cannot_project_foreign_organization_metadata() {
     let f = fixture().await;
-    let facility = f.app.state().facility_id();
-    let child = Uuid::new_v4();
-    // Deliberately invalid legacy source rows remain stored for operator repair.
-    sqlx::query("INSERT INTO organization_units(id,facility_id,parent_unit_id,code,name,unit_type) VALUES($1,$2,$3,'REF-LEGACY-CHILD','Synthetic legacy child','department')").bind(child).bind(facility).bind(f.foreign).execute(&f.pool).await.unwrap();
-    sqlx::query("INSERT INTO positions(id,facility_id,org_unit_id,code,title,status) VALUES($1,$2,$3,'REF-LEGACY-POSITION','Synthetic legacy position','active')").bind(Uuid::new_v4()).bind(facility).bind(f.foreign).execute(&f.pool).await.unwrap();
-    let foreign_template_position = Uuid::new_v4();
-    sqlx::query("INSERT INTO positions(id,facility_id,org_unit_id,template_id,code,title,status) VALUES($1,$2,$3,$4,'REF-LEGACY-TEMPLATE','Synthetic legacy template reference','active')")
-        .bind(foreign_template_position).bind(facility).bind(f.local).bind(f.template)
-        .execute(&f.pool).await.unwrap();
+    let child = f.legacy_child;
+    let foreign_template_position = f.legacy_positions[2];
     let units = api_get(f.app.clone(), &f.actor, "/api/v2/admin/org-units?limit=100").await;
     assert_eq!(units.status(), StatusCode::OK);
     let units = json_body(units).await;

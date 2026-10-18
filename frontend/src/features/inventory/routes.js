@@ -1,11 +1,12 @@
 import { lazy } from 'react'
 import { ROUTE_LAYOUTS, SIDEBARS } from '@/app/routes/routeTypes'
 import { ROLE_GROUPS } from '@/shared/constants/roles'
+import { storageLocationRouteAccess } from './locations/access'
 
 const InventoryDashboardPage = lazy(() => import('./pages/InventoryDashboardPage'))
 const ItemsPage = lazy(() => import('./pages/ItemsPage'))
 const ItemDetailPage = lazy(() => import('./pages/ItemDetailPage'))
-const LocationsPage = lazy(() => import('./pages/LocationsPage'))
+const LocationsPage = lazy(() => import('./locations/StorageLocationRoute'))
 const RequisitionsPage = lazy(() => import('./pages/RequisitionsPage'))
 const RequisitionDetailPage = lazy(() => import('./pages/RequisitionDetailPage'))
 const PurchaseOrdersPage = lazy(() => import('./pages/PurchaseOrdersPage'))
@@ -56,7 +57,7 @@ export const inventoryRoutes = [
   {
     path: '/inventory/locations',
     component: LocationsPage,
-    roles: ROLE_GROUPS.INVENTORY,
+    ...storageLocationRouteAccess(),
     layout: ROUTE_LAYOUTS.APP,
     sidebar: SIDEBARS.INVENTORY,
     title: 'Inventory Locations | Hospital Management System',

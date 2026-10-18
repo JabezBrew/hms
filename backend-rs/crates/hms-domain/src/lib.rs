@@ -17,6 +17,7 @@ pub mod inventory;
 pub mod inventory_standing;
 pub mod laboratory;
 pub mod network;
+pub mod organization_units;
 pub mod patient_handover;
 pub mod patients;
 pub mod pharmacy;
@@ -28,3 +29,5 @@ pub mod treatment_courses;
 pub mod ward;
 pub mod ward_moves;
 pub mod ward_rounds;
+
+pub mod storage_locations;

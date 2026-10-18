@@ -340,20 +340,15 @@ async fn known_unavailable_admin_references_and_invalid_scope_stay_definite() {
         "permission_assignment_create_failed",
     )
     .await;
-    // Existing references are present and active; only the intended reference
-    // fact changes. No foreign-key corruption or broad privilege downgrade.
-    sqlx::query("UPDATE organization_units SET is_active=FALSE WHERE id=$1")
-        .bind(fixture.unit)
-        .execute(&fixture.matrix.app.db_pool().await)
-        .await
-        .unwrap();
-    definite(
-        &fixture,
-        &token,
-        fixture.operation("position"),
-        "position_create_failed",
-    )
-    .await;
+    // A distinct unreferenced unit is honestly retired. Existing historical
+    // position references are intentionally conserved by the organization guard.
+    let inactive_unit: Uuid = sqlx::query_scalar("INSERT INTO organization_units(id,facility_id,code,name,unit_type) VALUES(gen_random_uuid(),$1,'OUTCOME20_INACTIVE','Synthetic inactive reference','department') RETURNING id")
+        .bind(fixture.matrix.app.state().facility_id()).fetch_one(&fixture.matrix.app.db_pool().await).await.unwrap();
+    sqlx::query("UPDATE organization_units SET is_active=FALSE,version=version+1,updated_at=clock_timestamp() WHERE id=$1")
+        .bind(inactive_unit).execute(&fixture.matrix.app.db_pool().await).await.unwrap();
+    let mut position = fixture.operation("position");
+    position.body.as_mut().unwrap()["org_unit_id"] = json!(inactive_unit);
+    definite(&fixture, &token, position, "position_create_failed").await;
 }
 
 #[tokio::test]

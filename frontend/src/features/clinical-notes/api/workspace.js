@@ -1,5 +1,5 @@
 import { v2Api } from '@/lib/api/v2/client';
-import { acknowledgeWriteResponse, copyWriteResponseMetadata, markWriteResponseUncertain } from '@/lib/api/v2/writeUncertainty';
+import { acknowledgeWriteResponse, assertWriteRecoveryReadCurrent, copyWriteResponseMetadata, markWriteResponseUncertain } from '@/lib/api/v2/writeUncertainty';
 import { NOTE_TYPES, validDate, validId } from '../model';
 
 const noteType = (value) => NOTE_TYPES.some(([key]) => key === value);
@@ -75,6 +75,6 @@ export const noteWorkspaceApi = {
   },
   async recover(command, { signal } = {}) {
     const response = command.kind.startsWith('template') ? await v2Api.getClinicalNoteTemplateRequestReceipt({ request_id: command.payload.client_request_id }, { signal }) : await v2Api.getClinicalNoteRequestReceipt({ patient_id: command.patientId, request_id: command.payload.client_request_id }, { signal });
-    return receipt(response?.data, command);
+    const saved = receipt(response?.data, command); assertWriteRecoveryReadCurrent(response); return saved;
   },
 };

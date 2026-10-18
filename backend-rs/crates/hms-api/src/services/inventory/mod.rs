@@ -1,4 +1,6 @@
 mod catalog;
+mod storage_locations;
+pub use storage_locations::StorageLocationService;
 mod common;
 mod controlled_substances;
 mod pharmacy;
@@ -27,6 +29,10 @@ impl InventoryServices {
 
     pub fn controlled_substances(&self) -> ControlledSubstancesService {
         ControlledSubstancesService::new(self.state.clone())
+    }
+
+    pub fn storage_locations(&self) -> StorageLocationService {
+        StorageLocationService::new(self.state.clone())
     }
 
     pub fn catalog(&self) -> InventoryCatalogService {

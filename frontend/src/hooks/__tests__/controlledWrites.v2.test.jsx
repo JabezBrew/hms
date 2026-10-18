@@ -38,6 +38,12 @@ function activate() {
   activateWriteUncertainty(principal);
 }
 
+async function reviewCurrentRegister() {
+  globalThis.fetch.mockResolvedValueOnce(new Response(JSON.stringify({ data: { id: register, item_id: item, item_name: 'Synthetic controlled item', location_id: location, location_name: 'Synthetic storage', movement_type: 'dispense', quantity_delta: -1, balance_after: 8, witness_user_id: witness, created_at: '2026-10-17T09:00:00Z' } }), { headers: { 'content-type': 'application/json' } }));
+  await inventoryApi.getControlledRegister(register);
+  expect(getWriteUncertaintySnapshot().entries[0].reviewed).toBe(true);
+}
+
 beforeEach(() => {
   vi.stubGlobal('crypto', webcrypto);
   window.__HMS_RUNTIME_CONFIG__ = { apiMode: 'rust-v2', v2ApiBaseUrl: 'http://localhost:8080/api/v2' };
@@ -82,9 +88,11 @@ describe.each(operations)('controlled $name write safety', ({ hook, write, paylo
     expect(getWriteUncertaintySnapshot().entries).toHaveLength(1);
     const stored = sessionStorage.getItem(WRITE_UNCERTAINTY_KEY);
     for (const privateValue of [item, location, register, witness, count.reason, 'synthetic-controlled-token']) expect(stored).not.toContain(privateValue);
+    expect(() => acknowledgeWriteResponse(failure)).toThrow();
+    await reviewCurrentRegister();
     acknowledgeWriteResponse(failure);
     expect(getWriteUncertaintySnapshot().entries).toHaveLength(0);
-    expect(globalThis.fetch).toHaveBeenCalledOnce();
+    expect(globalThis.fetch).toHaveBeenCalledTimes(2);
   });
 
   it('keeps a generic409 unconfirmed write distinct from a definite balance refusal', async () => {
@@ -98,8 +106,10 @@ describe.each(operations)('controlled $name write safety', ({ hook, write, paylo
     expect(globalThis.fetch).toHaveBeenCalledOnce();
     expect(failure).toMatchObject({ name: 'V2ApiError', status: 409, data: { error: { code } } });
     expect(getWriteUncertaintySnapshot().entries).toHaveLength(1);
-    // Removing this exact local receipt proves the adapter retained the opaque
-    // handle; status409 alone cannot establish that no write was saved.
+    // An opaque original error alone is insufficient. A current protected
+    // workflow read must be reviewed before this exact handle can acknowledge.
+    expect(() => acknowledgeWriteResponse(failure)).toThrow();
+    await reviewCurrentRegister();
     acknowledgeWriteResponse(failure);
     expect(getWriteUncertaintySnapshot().entries).toHaveLength(0);
   });

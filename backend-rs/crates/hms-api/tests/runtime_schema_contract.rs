@@ -51,3 +51,13 @@ async fn api_refuses_024_without_auto_migrate_and_accepts_required_schema() {
 async fn api_refuses_025_before_provisioning_and_accepts_026() {
     refuses_before_provisioning_and_accepts_required_schema(202610170026).await;
 }
+
+#[tokio::test]
+async fn api_refuses_026_before_provisioning_and_accepts_027() {
+    refuses_before_provisioning_and_accepts_required_schema(202610170027).await;
+}
+
+#[tokio::test]
+async fn api_refuses_027_before_provisioning_and_accepts_028() {
+    refuses_before_provisioning_and_accepts_required_schema(202610170028).await;
+}

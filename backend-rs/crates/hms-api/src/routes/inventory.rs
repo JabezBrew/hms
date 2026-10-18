@@ -35,7 +35,31 @@ pub fn routes() -> Router<AppState> {
         )
         .route(
             "/api/v2/inventory/storage-locations",
-            get(inventory::list_locations),
+            get(inventory::list_locations).post(inventory::storage_locations::create),
+        )
+        .route(
+            "/api/v2/inventory/storage-locations/administration",
+            get(inventory::storage_locations::list),
+        )
+        .route(
+            "/api/v2/inventory/storage-locations/commands/:client_request_id",
+            get(inventory::storage_locations::receipt),
+        )
+        .route(
+            "/api/v2/inventory/storage-locations/:id/administration",
+            get(inventory::storage_locations::detail),
+        )
+        .route(
+            "/api/v2/inventory/storage-locations/:id/rename",
+            post(inventory::storage_locations::rename),
+        )
+        .route(
+            "/api/v2/inventory/storage-locations/:id/retire",
+            post(inventory::storage_locations::retire),
+        )
+        .route(
+            "/api/v2/inventory/storage-locations/:id/reactivate",
+            post(inventory::storage_locations::reactivate),
         )
         .route(
             "/api/v2/inventory/suppliers",

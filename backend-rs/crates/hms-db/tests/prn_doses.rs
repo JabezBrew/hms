@@ -20,8 +20,11 @@ struct Fixture {
     location: Uuid,
 }
 impl Fixture {
-    async fn new(mut policy: Option<PrnPolicyRequest>) -> Self {
+    async fn new(policy: Option<PrnPolicyRequest>) -> Self {
         let db = TestDb::hospital().await.unwrap();
+        Self::with_db(db, policy).await
+    }
+    async fn with_db(db: TestDb, mut policy: Option<PrnPolicyRequest>) -> Self {
         let care = db
             .scenario("prn-safe")
             .admission_case_with_available_bed()
@@ -612,22 +615,53 @@ async fn prn_supply_skips_expired_batches_and_denies_inactive_locations() {
     assert!(f.supply(request.pharmacy_fulfillment_id, 1).await.is_err());
     assert_eq!(f.stock().await, 100);
     sqlx::query("INSERT INTO stock_batches(id,facility_id,item_id,location_id,batch_number,quantity_on_hand,expires_on) VALUES($1,$2,$3,$4,'SYNTHETIC-UNEXPIRED',10,(clock_timestamp() AT TIME ZONE 'UTC')::date)").bind(Uuid::new_v4()).bind(f.db.facility_id()).bind(f.item).bind(f.location).execute(f.db.pool()).await.unwrap();
-    sqlx::query("UPDATE storage_locations SET is_active=false WHERE id=$1")
-        .bind(f.location)
-        .execute(f.db.pool())
-        .await
-        .unwrap();
-    assert!(f.supply(request.pharmacy_fulfillment_id, 1).await.is_err());
-    assert_eq!(f.stock().await, 110);
-    sqlx::query("UPDATE storage_locations SET is_active=true WHERE id=$1")
-        .bind(f.location)
-        .execute(f.db.pool())
-        .await
-        .unwrap();
     f.supply(request.pharmacy_fulfillment_id, 1).await.unwrap();
     assert_eq!(f.stock().await, 108);
     let old:i64=sqlx::query_scalar("SELECT quantity_on_hand FROM stock_batches WHERE item_id=$1 AND batch_number='SYNTHETIC-PRN'").bind(f.item).fetch_one(f.db.pool()).await.unwrap();
     assert_eq!(old, 100);
+
+    // A stocked inactive location is retained legacy evidence, not a supported
+    // current retirement/reactivation path. Establish it under the real old
+    // schema and then apply the unchanged current migration and guards.
+    let historical = sqlx::migrate::Migrator {
+        migrations: std::borrow::Cow::Owned(
+            hms_db::migrate::MIGRATOR
+                .iter()
+                .filter(|migration| migration.version < 202610170028)
+                .cloned()
+                .collect(),
+        ),
+        ..sqlx::migrate::Migrator::DEFAULT
+    };
+    let legacy = Fixture::with_db(
+        TestDb::with_profile_and_migrator(
+            hms_domain::deployment::DeploymentProfile::Hospital,
+            &historical,
+        )
+        .await
+        .unwrap(),
+        Some(policy()),
+    )
+    .await;
+    let request = hms_db::ward::request_prn_dose(legacy.db.pool(), legacy.request(Uuid::new_v4()))
+        .await
+        .unwrap();
+    sqlx::query("UPDATE storage_locations SET is_active=false WHERE id=$1")
+        .bind(legacy.location)
+        .execute(legacy.db.pool())
+        .await
+        .unwrap();
+    hms_db::migrate::run(legacy.db.pool()).await.unwrap();
+    let before: serde_json::Value = sqlx::query_scalar("SELECT jsonb_build_object('batches',(SELECT jsonb_agg(to_jsonb(b) ORDER BY id) FROM stock_batches b),'fulfillments',(SELECT jsonb_agg(to_jsonb(f) ORDER BY id) FROM pharmacy_fulfillments f),'movements',(SELECT jsonb_agg(to_jsonb(m) ORDER BY id) FROM stock_movements m))")
+        .fetch_one(legacy.db.pool()).await.unwrap();
+    assert!(legacy
+        .supply(request.pharmacy_fulfillment_id, 1)
+        .await
+        .is_err());
+    assert_eq!(legacy.stock().await, 100);
+    let after: serde_json::Value = sqlx::query_scalar("SELECT jsonb_build_object('batches',(SELECT jsonb_agg(to_jsonb(b) ORDER BY id) FROM stock_batches b),'fulfillments',(SELECT jsonb_agg(to_jsonb(f) ORDER BY id) FROM pharmacy_fulfillments f),'movements',(SELECT jsonb_agg(to_jsonb(m) ORDER BY id) FROM stock_movements m))")
+        .fetch_one(legacy.db.pool()).await.unwrap();
+    assert_eq!(before, after);
 }
 
 #[tokio::test]

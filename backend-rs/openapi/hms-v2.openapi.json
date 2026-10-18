@@ -6739,7 +6739,12 @@
         "type": "object"
       },
       "CreateOrganizationUnitRequest": {
+        "additionalProperties": false,
         "properties": {
+          "client_request_id": {
+            "format": "uuid",
+            "type": "string"
+          },
           "code": {
             "type": "string"
           },
@@ -6758,6 +6763,7 @@
           }
         },
         "required": [
+          "client_request_id",
           "code",
           "name",
           "unit_type"
@@ -7483,6 +7489,35 @@
           "from_location_id",
           "to_location_id",
           "quantity"
+        ],
+        "type": "object"
+      },
+      "CreateStorageLocationRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "client_request_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "code": {
+            "type": "string"
+          },
+          "location_type": {
+            "$ref": "#/components/schemas/StorageLocationType"
+          },
+          "name": {
+            "type": "string"
+          },
+          "temperature_zone": {
+            "$ref": "#/components/schemas/StorageTemperatureZone"
+          }
+        },
+        "required": [
+          "client_request_id",
+          "code",
+          "name",
+          "location_type",
+          "temperature_zone"
         ],
         "type": "object"
       },
@@ -9834,6 +9869,53 @@
             ]
           }
         },
+        "type": "object"
+      },
+      "GovernedStorageLocation": {
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "is_active": {
+            "type": "boolean"
+          },
+          "location_type": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "temperature_zone": {
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "version": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "code",
+          "name",
+          "location_type",
+          "temperature_zone",
+          "is_active",
+          "version",
+          "created_at",
+          "updated_at"
+        ],
         "type": "object"
       },
       "HandoffListItem": {
@@ -14330,6 +14412,70 @@
         ],
         "type": "object"
       },
+      "ListResponse_GovernedStorageLocation": {
+        "properties": {
+          "data": {
+            "items": {
+              "properties": {
+                "code": {
+                  "type": "string"
+                },
+                "created_at": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "is_active": {
+                  "type": "boolean"
+                },
+                "location_type": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "temperature_zone": {
+                  "type": "string"
+                },
+                "updated_at": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "version": {
+                  "format": "int64",
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "id",
+                "code",
+                "name",
+                "location_type",
+                "temperature_zone",
+                "is_active",
+                "version",
+                "created_at",
+                "updated_at"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "meta": {},
+          "page": {
+            "$ref": "#/components/schemas/PageInfo"
+          }
+        },
+        "required": [
+          "data",
+          "page",
+          "meta"
+        ],
+        "type": "object"
+      },
       "ListResponse_HandoffListItem": {
         "properties": {
           "data": {
@@ -15995,6 +16141,14 @@
                 },
                 "unit_type": {
                   "$ref": "#/components/schemas/OrgUnitType"
+                },
+                "updated_at": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "version": {
+                  "format": "int64",
+                  "type": "integer"
                 }
               },
               "required": [
@@ -16003,7 +16157,9 @@
                 "name",
                 "unit_type",
                 "is_active",
-                "created_at"
+                "created_at",
+                "updated_at",
+                "version"
               ],
               "type": "object"
             },
@@ -26515,6 +26671,63 @@
         ],
         "type": "object"
       },
+      "ObjectResponse_GovernedStorageLocation": {
+        "properties": {
+          "data": {
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "created_at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "is_active": {
+                "type": "boolean"
+              },
+              "location_type": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "temperature_zone": {
+                "type": "string"
+              },
+              "updated_at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "version": {
+                "format": "int64",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "id",
+              "code",
+              "name",
+              "location_type",
+              "temperature_zone",
+              "is_active",
+              "version",
+              "created_at",
+              "updated_at"
+            ],
+            "type": "object"
+          },
+          "meta": {}
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "type": "object"
+      },
       "ObjectResponse_HandoffListItem": {
         "properties": {
           "data": {
@@ -28869,6 +29082,54 @@
         ],
         "type": "object"
       },
+      "ObjectResponse_OrganizationUnitCommandReceipt": {
+        "properties": {
+          "data": {
+            "properties": {
+              "changed": {
+                "type": "boolean"
+              },
+              "client_request_id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "input_digest": {
+                "type": "string"
+              },
+              "recorded_at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "recorded_by_user_id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "reviewed_input": {
+                "$ref": "#/components/schemas/OrganizationUnitReviewedInput"
+              },
+              "unit": {
+                "$ref": "#/components/schemas/OrganizationUnitListItem"
+              }
+            },
+            "required": [
+              "client_request_id",
+              "input_digest",
+              "reviewed_input",
+              "recorded_by_user_id",
+              "unit",
+              "changed",
+              "recorded_at"
+            ],
+            "type": "object"
+          },
+          "meta": {}
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "type": "object"
+      },
       "ObjectResponse_OrganizationUnitListItem": {
         "properties": {
           "data": {
@@ -28905,6 +29166,14 @@
               },
               "unit_type": {
                 "$ref": "#/components/schemas/OrgUnitType"
+              },
+              "updated_at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "version": {
+                "format": "int64",
+                "type": "integer"
               }
             },
             "required": [
@@ -28913,7 +29182,9 @@
               "name",
               "unit_type",
               "is_active",
-              "created_at"
+              "created_at",
+              "updated_at",
+              "version"
             ],
             "type": "object"
           },
@@ -32020,6 +32291,54 @@
         ],
         "type": "object"
       },
+      "ObjectResponse_StorageLocationCommandReceipt": {
+        "properties": {
+          "data": {
+            "properties": {
+              "changed": {
+                "type": "boolean"
+              },
+              "client_request_id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "input_digest": {
+                "type": "string"
+              },
+              "location": {
+                "$ref": "#/components/schemas/GovernedStorageLocation"
+              },
+              "recorded_at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "recorded_by_user_id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "reviewed_input": {
+                "$ref": "#/components/schemas/StorageLocationReviewedInput"
+              }
+            },
+            "required": [
+              "client_request_id",
+              "input_digest",
+              "reviewed_input",
+              "recorded_by_user_id",
+              "location",
+              "changed",
+              "recorded_at"
+            ],
+            "type": "object"
+          },
+          "meta": {}
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "type": "object"
+      },
       "ObjectResponse_StorageLocationListItem": {
         "properties": {
           "data": {
@@ -34668,6 +34987,18 @@
         ],
         "type": "object"
       },
+      "OrdinaryPasswordConfirmationRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "current_password": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "current_password"
+        ],
+        "type": "object"
+      },
       "OrgUnitType": {
         "enum": [
           "facility",
@@ -34678,6 +35009,62 @@
           "administrative"
         ],
         "type": "string"
+      },
+      "OrganizationUnitCommandReceipt": {
+        "properties": {
+          "changed": {
+            "type": "boolean"
+          },
+          "client_request_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "input_digest": {
+            "type": "string"
+          },
+          "recorded_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "recorded_by_user_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "reviewed_input": {
+            "$ref": "#/components/schemas/OrganizationUnitReviewedInput"
+          },
+          "unit": {
+            "$ref": "#/components/schemas/OrganizationUnitListItem"
+          }
+        },
+        "required": [
+          "client_request_id",
+          "input_digest",
+          "reviewed_input",
+          "recorded_by_user_id",
+          "unit",
+          "changed",
+          "recorded_at"
+        ],
+        "type": "object"
+      },
+      "OrganizationUnitLifecycleRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "client_request_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "expected_version": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "client_request_id",
+          "expected_version"
+        ],
+        "type": "object"
       },
       "OrganizationUnitListItem": {
         "properties": {
@@ -34713,6 +35100,14 @@
           },
           "unit_type": {
             "$ref": "#/components/schemas/OrgUnitType"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "version": {
+            "format": "int64",
+            "type": "integer"
           }
         },
         "required": [
@@ -34721,9 +35116,144 @@
           "name",
           "unit_type",
           "is_active",
-          "created_at"
+          "created_at",
+          "updated_at",
+          "version"
         ],
         "type": "object"
+      },
+      "OrganizationUnitReviewedInput": {
+        "oneOf": [
+          {
+            "properties": {
+              "action": {
+                "enum": [
+                  "create"
+                ],
+                "type": "string"
+              },
+              "client_request_id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "code": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "parent_unit_id": {
+                "format": "uuid",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "unit_type": {
+                "$ref": "#/components/schemas/OrgUnitType"
+              }
+            },
+            "required": [
+              "client_request_id",
+              "code",
+              "name",
+              "unit_type",
+              "action"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "action": {
+                "enum": [
+                  "rename"
+                ],
+                "type": "string"
+              },
+              "client_request_id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "expected_version": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "name": {
+                "type": "string"
+              },
+              "unit_id": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "client_request_id",
+              "unit_id",
+              "expected_version",
+              "name",
+              "action"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "action": {
+                "enum": [
+                  "retire"
+                ],
+                "type": "string"
+              },
+              "client_request_id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "expected_version": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "unit_id": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "client_request_id",
+              "unit_id",
+              "expected_version",
+              "action"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "action": {
+                "enum": [
+                  "reactivate"
+                ],
+                "type": "string"
+              },
+              "client_request_id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "expected_version": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "unit_id": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "client_request_id",
+              "unit_id",
+              "expected_version",
+              "action"
+            ],
+            "type": "object"
+          }
+        ]
       },
       "OutpatientIntakeRequest": {
         "properties": {
@@ -39671,6 +40201,7 @@
       "ReferralConsultationSource": {
         "oneOf": [
           {
+            "additionalProperties": false,
             "properties": {
               "mode": {
                 "enum": [
@@ -39689,6 +40220,7 @@
             "type": "object"
           },
           {
+            "additionalProperties": false,
             "properties": {
               "admission_case_id": {
                 "format": "uuid",
@@ -39968,6 +40500,7 @@
       "ReferralConsultationVisitChoice": {
         "oneOf": [
           {
+            "additionalProperties": false,
             "properties": {
               "choice": {
                 "enum": [
@@ -39982,6 +40515,7 @@
             "type": "object"
           },
           {
+            "additionalProperties": false,
             "properties": {
               "choice": {
                 "enum": [
@@ -40682,6 +41216,28 @@
         },
         "type": "object"
       },
+      "RenameOrganizationUnitRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "client_request_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "expected_version": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "client_request_id",
+          "expected_version",
+          "name"
+        ],
+        "type": "object"
+      },
       "RenamePasskeyRequest": {
         "additionalProperties": false,
         "properties": {
@@ -40691,6 +41247,28 @@
         },
         "required": [
           "label"
+        ],
+        "type": "object"
+      },
+      "RenameStorageLocationRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "client_request_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "expected_version": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "client_request_id",
+          "expected_version",
+          "name"
         ],
         "type": "object"
       },
@@ -42554,6 +43132,105 @@
         ],
         "type": "object"
       },
+      "StorageLocationAdministrationQuery": {
+        "properties": {
+          "cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "is_active": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "limit": {
+            "format": "int32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "location_type": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "search": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "temperature_zone": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "StorageLocationCommandReceipt": {
+        "properties": {
+          "changed": {
+            "type": "boolean"
+          },
+          "client_request_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "input_digest": {
+            "type": "string"
+          },
+          "location": {
+            "$ref": "#/components/schemas/GovernedStorageLocation"
+          },
+          "recorded_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "recorded_by_user_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "reviewed_input": {
+            "$ref": "#/components/schemas/StorageLocationReviewedInput"
+          }
+        },
+        "required": [
+          "client_request_id",
+          "input_digest",
+          "reviewed_input",
+          "recorded_by_user_id",
+          "location",
+          "changed",
+          "recorded_at"
+        ],
+        "type": "object"
+      },
+      "StorageLocationLifecycleRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "client_request_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "expected_version": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "client_request_id",
+          "expected_version"
+        ],
+        "type": "object"
+      },
       "StorageLocationListItem": {
         "properties": {
           "code": {
@@ -42624,6 +43301,136 @@
         },
         "type": "object"
       },
+      "StorageLocationReviewedInput": {
+        "oneOf": [
+          {
+            "properties": {
+              "action": {
+                "enum": [
+                  "create"
+                ],
+                "type": "string"
+              },
+              "client_request_id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "code": {
+                "type": "string"
+              },
+              "location_type": {
+                "$ref": "#/components/schemas/StorageLocationType"
+              },
+              "name": {
+                "type": "string"
+              },
+              "temperature_zone": {
+                "$ref": "#/components/schemas/StorageTemperatureZone"
+              }
+            },
+            "required": [
+              "client_request_id",
+              "code",
+              "name",
+              "location_type",
+              "temperature_zone",
+              "action"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "action": {
+                "enum": [
+                  "rename"
+                ],
+                "type": "string"
+              },
+              "client_request_id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "expected_version": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "location_id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "client_request_id",
+              "location_id",
+              "expected_version",
+              "name",
+              "action"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "action": {
+                "enum": [
+                  "retire"
+                ],
+                "type": "string"
+              },
+              "client_request_id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "expected_version": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "location_id": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "client_request_id",
+              "location_id",
+              "expected_version",
+              "action"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "action": {
+                "enum": [
+                  "reactivate"
+                ],
+                "type": "string"
+              },
+              "client_request_id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "expected_version": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "location_id": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "client_request_id",
+              "location_id",
+              "expected_version",
+              "action"
+            ],
+            "type": "object"
+          }
+        ]
+      },
       "StorageLocationStockItem": {
         "properties": {
           "batch_count": {
@@ -42670,6 +43477,25 @@
           "last_received_at"
         ],
         "type": "object"
+      },
+      "StorageLocationType": {
+        "enum": [
+          "store",
+          "pharmacy",
+          "ward",
+          "warehouse",
+          "department"
+        ],
+        "type": "string"
+      },
+      "StorageTemperatureZone": {
+        "enum": [
+          "ambient",
+          "cold",
+          "frozen",
+          "controlled"
+        ],
+        "type": "string"
       },
       "SupplierListItem": {
         "properties": {
@@ -47488,10 +48314,7 @@
             "name": "cursor",
             "required": false,
             "schema": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": "string"
             }
           },
           {
@@ -47501,10 +48324,7 @@
             "schema": {
               "format": "int32",
               "minimum": 0,
-              "type": [
-                "integer",
-                "null"
-              ]
+              "type": "integer"
             }
           }
         ],
@@ -47622,10 +48442,7 @@
             "name": "cursor",
             "required": false,
             "schema": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": "string"
             }
           },
           {
@@ -47635,10 +48452,7 @@
             "schema": {
               "format": "int32",
               "minimum": 0,
-              "type": [
-                "integer",
-                "null"
-              ]
+              "type": "integer"
             }
           }
         ],
@@ -47756,10 +48570,7 @@
             "name": "cursor",
             "required": false,
             "schema": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": "string"
             }
           },
           {
@@ -47769,10 +48580,7 @@
             "schema": {
               "format": "int32",
               "minimum": 0,
-              "type": [
-                "integer",
-                "null"
-              ]
+              "type": "integer"
             }
           }
         ],
@@ -48258,10 +49066,7 @@
             "name": "cursor",
             "required": false,
             "schema": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": "string"
             }
           },
           {
@@ -48271,10 +49076,7 @@
             "schema": {
               "format": "int32",
               "minimum": 0,
-              "type": [
-                "integer",
-                "null"
-              ]
+              "type": "integer"
             }
           },
           {
@@ -48282,14 +49084,7 @@
             "name": "unit_type",
             "required": false,
             "schema": {
-              "oneOf": [
-                {
-                  "type": "null"
-                },
-                {
-                  "$ref": "#/components/schemas/OrgUnitType"
-                }
-              ]
+              "$ref": "#/components/schemas/OrgUnitType"
             }
           },
           {
@@ -48297,10 +49092,7 @@
             "name": "is_active",
             "required": false,
             "schema": {
-              "type": [
-                "boolean",
-                "null"
-              ]
+              "type": "boolean"
             }
           }
         ],
@@ -48310,6 +49102,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ListResponse_OrganizationUnitListItem"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
                 }
               }
             },
@@ -48362,7 +49164,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ObjectResponse_OrganizationUnitListItem"
+                  "$ref": "#/components/schemas/ObjectResponse_OrganizationUnitCommandReceipt"
                 }
               }
             },
@@ -48389,6 +49191,92 @@
             "description": ""
           },
           "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v2/admin/org-units/commands/{client_request_id}": {
+      "get": {
+        "operationId": "getAdminOrgUnitCommand",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "client_request_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_OrganizationUnitCommandReceipt"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
             "content": {
               "application/json": {
                 "schema": {
@@ -48430,6 +49318,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ObjectResponse_OrganizationUnitListItem"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
                 }
               }
             },
@@ -48487,10 +49385,7 @@
             "schema": {
               "format": "int32",
               "minimum": 0,
-              "type": [
-                "integer",
-                "null"
-              ]
+              "type": "integer"
             }
           },
           {
@@ -48510,6 +49405,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ListResponse_OrganizationUnitListItem"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
                 }
               }
             },
@@ -48565,10 +49470,7 @@
             "name": "cursor",
             "required": false,
             "schema": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": "string"
             }
           },
           {
@@ -48578,10 +49480,7 @@
             "schema": {
               "format": "int32",
               "minimum": 0,
-              "type": [
-                "integer",
-                "null"
-              ]
+              "type": "integer"
             }
           },
           {
@@ -48601,6 +49500,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ListResponse_OrganizationUnitListItem"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
                 }
               }
             },
@@ -48656,10 +49565,7 @@
             "name": "cursor",
             "required": false,
             "schema": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": "string"
             }
           },
           {
@@ -48669,10 +49575,7 @@
             "schema": {
               "format": "int32",
               "minimum": 0,
-              "type": [
-                "integer",
-                "null"
-              ]
+              "type": "integer"
             }
           },
           {
@@ -48692,6 +49595,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ListResponse_OrganizationUnitListItem"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
                 }
               }
             },
@@ -48738,6 +49651,264 @@
         ]
       }
     },
+    "/api/v2/admin/org-units/{id}/reactivate": {
+      "post": {
+        "operationId": "postAdminOrgUnitReactivate",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrganizationUnitLifecycleRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_OrganizationUnitCommandReceipt"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v2/admin/org-units/{id}/rename": {
+      "post": {
+        "operationId": "postAdminOrgUnitRename",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RenameOrganizationUnitRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_OrganizationUnitCommandReceipt"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v2/admin/org-units/{id}/retire": {
+      "post": {
+        "operationId": "postAdminOrgUnitRetire",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrganizationUnitLifecycleRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_OrganizationUnitCommandReceipt"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "admin"
+        ]
+      }
+    },
     "/api/v2/admin/permission-assignments": {
       "get": {
         "operationId": "getAdminPermissionAssignments",
@@ -48747,10 +49918,7 @@
             "name": "cursor",
             "required": false,
             "schema": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": "string"
             }
           },
           {
@@ -48760,10 +49928,7 @@
             "schema": {
               "format": "int32",
               "minimum": 0,
-              "type": [
-                "integer",
-                "null"
-              ]
+              "type": "integer"
             }
           }
         ],
@@ -48881,10 +50046,7 @@
             "name": "cursor",
             "required": false,
             "schema": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": "string"
             }
           },
           {
@@ -48894,10 +50056,7 @@
             "schema": {
               "format": "int32",
               "minimum": 0,
-              "type": [
-                "integer",
-                "null"
-              ]
+              "type": "integer"
             }
           }
         ],
@@ -49015,10 +50174,7 @@
             "name": "cursor",
             "required": false,
             "schema": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": "string"
             }
           },
           {
@@ -49028,10 +50184,7 @@
             "schema": {
               "format": "int32",
               "minimum": 0,
-              "type": [
-                "integer",
-                "null"
-              ]
+              "type": "integer"
             }
           }
         ],
@@ -50101,10 +51254,7 @@
             "name": "cursor",
             "required": false,
             "schema": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": "string"
             }
           },
           {
@@ -50114,10 +51264,7 @@
             "schema": {
               "format": "int32",
               "minimum": 0,
-              "type": [
-                "integer",
-                "null"
-              ]
+              "type": "integer"
             }
           }
         ],
@@ -50630,10 +51777,7 @@
             "name": "cursor",
             "required": false,
             "schema": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": "string"
             }
           },
           {
@@ -50643,10 +51787,7 @@
             "schema": {
               "format": "int32",
               "minimum": 0,
-              "type": [
-                "integer",
-                "null"
-              ]
+              "type": "integer"
             }
           }
         ],
@@ -51851,27 +52992,21 @@
         "operationId": "getAuthPasskeys",
         "parameters": [
           {
-            "in": "path",
+            "in": "query",
             "name": "cursor",
-            "required": true,
+            "required": false,
             "schema": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": "string"
             }
           },
           {
-            "in": "path",
+            "in": "query",
             "name": "limit",
-            "required": true,
+            "required": false,
             "schema": {
               "format": "int32",
               "minimum": 0,
-              "type": [
-                "integer",
-                "null"
-              ]
+              "type": "integer"
             }
           }
         ],
@@ -52666,6 +53801,91 @@
             "description": "Password reset request accepted"
           }
         },
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v2/auth/reauthenticate": {
+      "post": {
+        "operationId": "postAuthReauthenticate",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrdinaryPasswordConfirmationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_AuthLoginResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
         "tags": [
           "auth"
         ]
@@ -56026,68 +57246,45 @@
         "operationId": "getClinicalNoteTemplates",
         "parameters": [
           {
-            "in": "path",
+            "in": "query",
             "name": "cursor",
-            "required": true,
+            "required": false,
             "schema": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": "string"
             }
           },
           {
-            "in": "path",
+            "in": "query",
             "name": "limit",
-            "required": true,
+            "required": false,
             "schema": {
               "format": "int32",
               "minimum": 0,
-              "type": [
-                "integer",
-                "null"
-              ]
+              "type": "integer"
             }
           },
           {
-            "in": "path",
+            "in": "query",
             "name": "search",
-            "required": true,
+            "required": false,
             "schema": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": "string"
             }
           },
           {
-            "in": "path",
+            "in": "query",
             "name": "activity",
-            "required": true,
+            "required": false,
             "schema": {
-              "oneOf": [
-                {
-                  "type": "null"
-                },
-                {
-                  "$ref": "#/components/schemas/TemplateActivity"
-                }
-              ]
+              "$ref": "#/components/schemas/TemplateActivity"
             }
           },
           {
-            "in": "path",
+            "in": "query",
             "name": "note_type",
-            "required": true,
+            "required": false,
             "schema": {
-              "oneOf": [
-                {
-                  "type": "null"
-                },
-                {
-                  "$ref": "#/components/schemas/ClinicalNoteType"
-                }
-              ]
+              "$ref": "#/components/schemas/ClinicalNoteType"
             }
           }
         ],
@@ -56634,27 +57831,21 @@
             }
           },
           {
-            "in": "path",
+            "in": "query",
             "name": "cursor",
-            "required": true,
+            "required": false,
             "schema": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": "string"
             }
           },
           {
-            "in": "path",
+            "in": "query",
             "name": "limit",
-            "required": true,
+            "required": false,
             "schema": {
               "format": "int32",
               "minimum": 0,
-              "type": [
-                "integer",
-                "null"
-              ]
+              "type": "integer"
             }
           }
         ],
@@ -56952,27 +58143,21 @@
             }
           },
           {
-            "in": "path",
+            "in": "query",
             "name": "cursor",
-            "required": true,
+            "required": false,
             "schema": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": "string"
             }
           },
           {
-            "in": "path",
+            "in": "query",
             "name": "limit",
-            "required": true,
+            "required": false,
             "schema": {
               "format": "int32",
               "minimum": 0,
-              "type": [
-                "integer",
-                "null"
-              ]
+              "type": "integer"
             }
           }
         ],
@@ -58325,77 +59510,21 @@
         "operationId": "getClinics",
         "parameters": [
           {
-            "in": "path",
+            "in": "query",
             "name": "cursor",
-            "required": true,
+            "required": false,
             "schema": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": "string"
             }
           },
           {
-            "in": "path",
+            "in": "query",
             "name": "limit",
-            "required": true,
+            "required": false,
             "schema": {
               "format": "int32",
               "minimum": 0,
-              "type": [
-                "integer",
-                "null"
-              ]
-            }
-          },
-          {
-            "in": "path",
-            "name": "clinic_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "type": [
-                "string",
-                "null"
-              ]
-            }
-          },
-          {
-            "in": "path",
-            "name": "practitioner_user_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "type": [
-                "string",
-                "null"
-              ]
-            }
-          },
-          {
-            "in": "path",
-            "name": "status",
-            "required": true,
-            "schema": {
-              "oneOf": [
-                {
-                  "type": "null"
-                },
-                {
-                  "$ref": "#/components/schemas/VisitStatus"
-                }
-              ]
-            }
-          },
-          {
-            "in": "path",
-            "name": "active_only",
-            "required": true,
-            "schema": {
-              "type": [
-                "boolean",
-                "null"
-              ]
+              "type": "integer"
             }
           }
         ],
@@ -58760,10 +59889,7 @@
             "name": "cursor",
             "required": false,
             "schema": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": "string"
             }
           },
           {
@@ -58773,10 +59899,7 @@
             "schema": {
               "format": "int32",
               "minimum": 0,
-              "type": [
-                "integer",
-                "null"
-              ]
+              "type": "integer"
             }
           }
         ],
@@ -59076,10 +60199,7 @@
             "name": "cursor",
             "required": false,
             "schema": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": "string"
             }
           },
           {
@@ -59089,10 +60209,7 @@
             "schema": {
               "format": "int32",
               "minimum": 0,
-              "type": [
-                "integer",
-                "null"
-              ]
+              "type": "integer"
             }
           }
         ],
@@ -64155,6 +65272,282 @@
         "tags": [
           "inventory"
         ]
+      },
+      "post": {
+        "operationId": "postStorageLocationCreate",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateStorageLocationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_StorageLocationCommandReceipt"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "inventory"
+        ]
+      }
+    },
+    "/api/v2/inventory/storage-locations/administration": {
+      "get": {
+        "operationId": "getStorageLocationAdministration",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "search",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "is_active",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "location_type",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "temperature_zone",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListResponse_GovernedStorageLocation"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "inventory"
+        ]
+      }
+    },
+    "/api/v2/inventory/storage-locations/commands/{client_request_id}": {
+      "get": {
+        "operationId": "getStorageLocationCommand",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "client_request_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_StorageLocationCommandReceipt"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "inventory"
+        ]
       }
     },
     "/api/v2/inventory/storage-locations/{id}": {
@@ -64204,6 +65597,370 @@
             "description": ""
           },
           "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "inventory"
+        ]
+      }
+    },
+    "/api/v2/inventory/storage-locations/{id}/administration": {
+      "get": {
+        "operationId": "getStorageLocationAdministrationById",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_GovernedStorageLocation"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "inventory"
+        ]
+      }
+    },
+    "/api/v2/inventory/storage-locations/{id}/reactivate": {
+      "post": {
+        "operationId": "postStorageLocationReactivate",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StorageLocationLifecycleRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_StorageLocationCommandReceipt"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "inventory"
+        ]
+      }
+    },
+    "/api/v2/inventory/storage-locations/{id}/rename": {
+      "post": {
+        "operationId": "postStorageLocationRename",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RenameStorageLocationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_StorageLocationCommandReceipt"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "inventory"
+        ]
+      }
+    },
+    "/api/v2/inventory/storage-locations/{id}/retire": {
+      "post": {
+        "operationId": "postStorageLocationRetire",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StorageLocationLifecycleRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_StorageLocationCommandReceipt"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
             "content": {
               "application/json": {
                 "schema": {
@@ -69488,27 +71245,21 @@
             }
           },
           {
-            "in": "path",
+            "in": "query",
             "name": "cursor",
-            "required": true,
+            "required": false,
             "schema": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": "string"
             }
           },
           {
-            "in": "path",
+            "in": "query",
             "name": "limit",
-            "required": true,
+            "required": false,
             "schema": {
               "format": "int32",
               "minimum": 0,
-              "type": [
-                "integer",
-                "null"
-              ]
+              "type": "integer"
             }
           }
         ],
@@ -72129,10 +73880,7 @@
             "name": "cursor",
             "required": false,
             "schema": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": "string"
             }
           },
           {
@@ -72142,10 +73890,7 @@
             "schema": {
               "format": "int32",
               "minimum": 0,
-              "type": [
-                "integer",
-                "null"
-              ]
+              "type": "integer"
             }
           }
         ],
@@ -77899,15 +79644,12 @@
             }
           },
           {
-            "in": "path",
+            "in": "query",
             "name": "admission_case_id",
-            "required": true,
+            "required": false,
             "schema": {
               "format": "uuid",
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": "string"
             }
           }
         ],
@@ -78714,10 +80456,7 @@
             "name": "cursor",
             "required": false,
             "schema": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": "string"
             }
           },
           {
@@ -78727,10 +80466,7 @@
             "schema": {
               "format": "int32",
               "minimum": 0,
-              "type": [
-                "integer",
-                "null"
-              ]
+              "type": "integer"
             }
           }
         ],
@@ -78890,10 +80626,7 @@
             "name": "cursor",
             "required": false,
             "schema": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": "string"
             }
           },
           {
@@ -78903,10 +80636,7 @@
             "schema": {
               "format": "int32",
               "minimum": 0,
-              "type": [
-                "integer",
-                "null"
-              ]
+              "type": "integer"
             }
           }
         ],
@@ -79548,10 +81278,7 @@
             "name": "cursor",
             "required": false,
             "schema": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": "string"
             }
           },
           {
@@ -79561,10 +81288,7 @@
             "schema": {
               "format": "int32",
               "minimum": 0,
-              "type": [
-                "integer",
-                "null"
-              ]
+              "type": "integer"
             }
           }
         ],
@@ -79724,10 +81448,7 @@
             "name": "cursor",
             "required": false,
             "schema": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": "string"
             }
           },
           {
@@ -79737,10 +81458,7 @@
             "schema": {
               "format": "int32",
               "minimum": 0,
-              "type": [
-                "integer",
-                "null"
-              ]
+              "type": "integer"
             }
           }
         ],
@@ -79904,61 +81622,46 @@
             }
           },
           {
-            "in": "path",
+            "in": "query",
             "name": "mode",
-            "required": true,
+            "required": false,
             "schema": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": "string"
             }
           },
           {
-            "in": "path",
+            "in": "query",
             "name": "visit_choice",
-            "required": true,
+            "required": false,
             "schema": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": "string"
             }
           },
           {
-            "in": "path",
+            "in": "query",
             "name": "visit_id",
-            "required": true,
+            "required": false,
             "schema": {
               "format": "uuid",
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": "string"
             }
           },
           {
-            "in": "path",
+            "in": "query",
             "name": "admission_case_id",
-            "required": true,
+            "required": false,
             "schema": {
               "format": "uuid",
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": "string"
             }
           },
           {
-            "in": "path",
+            "in": "query",
             "name": "encounter_id",
-            "required": true,
+            "required": false,
             "schema": {
               "format": "uuid",
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": "string"
             }
           }
         ],
@@ -81932,10 +83635,7 @@
             "name": "cursor",
             "required": false,
             "schema": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": "string"
             }
           },
           {
@@ -81945,10 +83645,7 @@
             "schema": {
               "format": "int32",
               "minimum": 0,
-              "type": [
-                "integer",
-                "null"
-              ]
+              "type": "integer"
             }
           }
         ],
@@ -84367,10 +86064,7 @@
             "name": "cursor",
             "required": false,
             "schema": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": "string"
             }
           },
           {
@@ -84380,10 +86074,7 @@
             "schema": {
               "format": "int32",
               "minimum": 0,
-              "type": [
-                "integer",
-                "null"
-              ]
+              "type": "integer"
             }
           }
         ],
@@ -86370,10 +88061,7 @@
             "name": "cursor",
             "required": false,
             "schema": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": "string"
             }
           },
           {
@@ -86383,10 +88071,7 @@
             "schema": {
               "format": "int32",
               "minimum": 0,
-              "type": [
-                "integer",
-                "null"
-              ]
+              "type": "integer"
             }
           },
           {
@@ -87238,10 +88923,7 @@
             "name": "cursor",
             "required": false,
             "schema": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": "string"
             }
           },
           {
@@ -87251,10 +88933,7 @@
             "schema": {
               "format": "int32",
               "minimum": 0,
-              "type": [
-                "integer",
-                "null"
-              ]
+              "type": "integer"
             }
           },
           {
@@ -87414,10 +89093,7 @@
             "name": "cursor",
             "required": false,
             "schema": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": "string"
             }
           },
           {
@@ -87427,10 +89103,7 @@
             "schema": {
               "format": "int32",
               "minimum": 0,
-              "type": [
-                "integer",
-                "null"
-              ]
+              "type": "integer"
             }
           },
           {

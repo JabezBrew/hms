@@ -270,6 +270,7 @@ fn reviewed_sections<'de, D: serde::Deserializer<'de>>(
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize, ToSchema, utoipa::IntoParams)]
+#[into_params(parameter_in = Query)]
 #[serde(deny_unknown_fields)]
 pub struct WardRoundCurrentQuery {
     pub admission_case_id: Option<Uuid>,

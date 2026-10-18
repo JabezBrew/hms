@@ -105,6 +105,12 @@ pub struct LoginSetupOptionsRequest {
 }
 #[derive(Deserialize, ToSchema)]
 #[serde(deny_unknown_fields)]
+pub struct OrdinaryPasswordConfirmationRequest {
+    pub current_password: String,
+}
+
+#[derive(Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
 pub struct StepUpOptionsRequest {
     pub current_password: Option<String>,
 }

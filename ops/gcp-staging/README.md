@@ -505,3 +505,17 @@ drain, read-only candidate probe and compatibility declaration prevent unsupport
 rollback to epoch025 or earlier after this migration commits. Older binaries are
 not assumed to recognize migrations introduced after their build. The new runtime
 refuses an epoch025 database before provisioning or readiness.
+
+Migration `202610170027` requires runtime epoch `202610170027`. Governed
+organization unit commands preserve immutable identity, versioned lifecycle and
+original actor receipts. The supported deployment protocol refuses runtime026
+rollback after027 commits; the new runtime refuses schema026 before provisioning
+or readiness. Earlier binaries do not acquire knowledge of future migrations.
+
+Migration `202610170028` requires runtime epoch `202610170028`. Governed
+storage-location commands preserve permanent identity, versioned unused-location
+maintenance and immutable original-actor receipts. New operational references
+retain active same-facility locations; unchanged historical links remain usable
+for closure. The supported deployment protocol refuses runtime027 or earlier
+after028 commits. The new runtime refuses schema027 before provisioning or
+readiness; older binaries are not assumed to know future migrations.

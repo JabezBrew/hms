@@ -204,3 +204,21 @@ pub(super) fn validation_error(field: &'static str, message: &'static str) -> Ap
     error.details = json!({ field: [message] });
     error
 }
+
+/// Static location-publication failures never expose SQL or referenced identifiers.
+pub(super) fn storage_location_reference_error(error: &anyhow::Error) -> Option<ApiError> {
+    let db = error.downcast_ref::<sqlx::Error>()?.as_database_error()?;
+    if db.code().as_deref() == Some("55P03") {
+        return Some(ApiError::conflict(
+            "storage_location_busy",
+            "The selected location is in use. Refresh the current work before continuing.",
+        ));
+    }
+    if db.message() == "storage_location_reference_unavailable" {
+        return Some(ApiError::conflict(
+            "storage_location_reference_unavailable",
+            "Select an active storage location in the current facility.",
+        ));
+    }
+    None
+}

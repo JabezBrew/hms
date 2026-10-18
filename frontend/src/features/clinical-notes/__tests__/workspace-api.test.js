@@ -1,10 +1,13 @@
+import { webcrypto } from 'node:crypto';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { configureV2ApiClient, __resetV2ApiClientForTests } from '@/lib/api/v2/client';
+import { configureV2ApiClient, __resetV2ApiClientForTests, getV2ClientScopeKey } from '@/lib/api/v2/client';
+import { bindNetworkAccessGuard } from '@/lib/api/v2/networkAccessGuard';
+import { activateWriteUncertainty } from '@/lib/api/v2/writeUncertainty';
 import { noteWorkspaceApi } from '../api/workspace';
-import { command, detail, history, ids, json, noteId, page, patientId, receipt, requestId, revision, template, versionId } from './fixtures';
+import { actorId, facilityId, command, detail, history, ids, json, noteId, page, patientId, receipt, requestId, revision, template, versionId } from './fixtures';
 const originalFetch = globalThis.fetch; const runtime = window.__HMS_RUNTIME_CONFIG__;
-beforeEach(() => { __resetV2ApiClientForTests(); window.__HMS_RUNTIME_CONFIG__ = { apiMode: 'rust-v2', v2ApiBaseUrl: 'http://localhost:8080/api/v2' }; configureV2ApiClient({ getAccessToken: () => 'synthetic-token', getFacilityCode: () => 'HMS', canRefreshSession: () => false }); globalThis.fetch = vi.fn(); });
-afterEach(() => { __resetV2ApiClientForTests(); globalThis.fetch = originalFetch; window.__HMS_RUNTIME_CONFIG__ = runtime; });
+beforeEach(() => { vi.stubGlobal('crypto',webcrypto); __resetV2ApiClientForTests(); window.__HMS_RUNTIME_CONFIG__ = { apiMode: 'rust-v2', v2ApiBaseUrl: 'http://localhost:8080/api/v2' }; configureV2ApiClient({ getAccessToken: () => 'synthetic-token', getFacilityCode: () => 'HMS', canRefreshSession: () => false }); globalThis.fetch = vi.fn(); });
+afterEach(() => { __resetV2ApiClientForTests(); vi.unstubAllGlobals(); globalThis.fetch = originalFetch; window.__HMS_RUNTIME_CONFIG__ = runtime; });
 it('loads fresh expanded note evidence and preserves its signal and patient scope', async () => {
   const signal = new AbortController().signal; globalThis.fetch.mockResolvedValueOnce(json({ data: detail })); await expect(noteWorkspaceApi.detail(noteId, patientId, { signal })).resolves.toMatchObject({ body: detail.body, can_amend: true });
   expect(globalThis.fetch.mock.calls[0][0]).toContain(`/clinical/notes/${noteId}`); expect(globalThis.fetch.mock.calls[0][1].signal).toBe(signal);
@@ -52,6 +55,7 @@ it('preserves definite conflicts and classifies explicit commit uncertainty with
   globalThis.fetch.mockResolvedValueOnce(json({ error: { code: 'clinical_note_write_unconfirmed' } }, 409)); await expect(noteWorkspaceApi.write(command('amend'))).rejects.toMatchObject({ name: 'ClinicalNoteUnconfirmedError' }); expect(globalThis.fetch).toHaveBeenCalledTimes(2);
 });
 it.each(['record', 'amend', 'templateRecord', 'templateChange'])('looks up the original actor-bound %s result without making another write', async (kind) => {
-  const input = command(kind); const signal = new AbortController().signal; globalThis.fetch.mockResolvedValueOnce(json({ data: { ...receipt(input), replayed: true } })); await expect(noteWorkspaceApi.recover(input, { signal })).resolves.toMatchObject({ replayed: true });
-  const [url, request] = globalThis.fetch.mock.calls[0]; expect(url).toContain(`/requests/${requestId}`.replace('/requests/', kind.startsWith('template') ? '/requests/' : '/clinical/note-requests/')); expect(request.method).toBe('GET'); expect(request.signal).toBe(signal);
+  const principal={id:actorId,facility_id:facilityId,active_profile:'hospital'},transport=getV2ClientScopeKey(),authority='synthetic-note-api-authority';bindNetworkAccessGuard({transportScope:transport,authorityScope:authority,principal}).update({confirmed:true,decision:{access_allowed:true,read_only:false,classification:'onsite',policy_version:1}});activateWriteUncertainty(principal,{authority,transport});
+  const input = command(kind); const signal = new AbortController().signal; globalThis.fetch.mockRejectedValueOnce(new TypeError('Synthetic original reply loss')); await expect(noteWorkspaceApi.write(input)).rejects.toMatchObject({name:'ClinicalNoteUnconfirmedError'}); globalThis.fetch.mockResolvedValueOnce(json({ data: { ...receipt(input), replayed: true } })); await expect(noteWorkspaceApi.recover(input, { signal })).resolves.toMatchObject({ replayed: true });
+  const [url, request] = globalThis.fetch.mock.calls[1]; expect(globalThis.fetch.mock.calls.filter(([,options])=>options.method==='POST')).toHaveLength(1); expect(url).toContain(`/requests/${requestId}`.replace('/requests/', kind.startsWith('template') ? '/requests/' : '/clinical/note-requests/')); expect(request.method).toBe('GET'); expect(request.signal).toBe(signal);
 });

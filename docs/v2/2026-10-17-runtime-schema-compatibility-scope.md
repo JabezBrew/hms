@@ -17,7 +17,7 @@ runtime's maximum reviewed breaking-schema epoch. An older artifact without the
 declaration supports epoch zero. A migration filename is never evidence that an
 artifact's code is compatible. The shell guard checks the explicit declaration
 against both the actual database and the candidate's known breaking migration.
-The current runtime requires026: a declaration of026 with its required
+The current runtime requires028: a declaration of028 with its required
 migration omitted is an invalid artifact, not an epoch-zero candidate. A fresh
 post-migration probe must report the required epoch before any API or worker is
 started. `--skip-migrations` cannot bypass either the minimum or maximum check.
@@ -117,7 +117,8 @@ No unrelated containers are stopped, pruned or removed.
 
 Before any rollback tree move or runtime restart, the installer probes with the
 candidate image's `hms-migrator schema-compatibility` command. It emits exactly
-one decimal epoch: `0`, `202610170023`, `202610170024`, `202610170025` or `202610170026`. It creates no schema,
+one decimal epoch: `0`, `202610170023`, `202610170024`, `202610170025`,
+`202610170026`, `202610170027` or `202610170028`. It creates no schema,
 identities, policy or audit data. The DB helper uses a read-only transaction,
 bounded statement/lock/idle waits and SQLx's actual migration advisory lock. Its
 dedicated connection closes on every path, including cancellation, so a session
@@ -190,3 +191,39 @@ existing opt-in skips. Actual026 focused gates pass21 cases: database8, migrator
 The schema/migration fingerprints stay unchanged through the run. New API and
 worker processes refuse epoch025 before provisioning/readiness and accept026.
 Neither local gate establishes a live deploy or rollback drill.
+
+## Breaking organization-unit boundary
+
+Migration202610170027 adds immutable original-actor command receipts, versioned
+unit maintenance and retained reference-publication guards. The new runtime
+requires027 before provisioning, listening or worker readiness. Its read-only
+startup probe checks the complete embedded023–027 chain, typed nonnullable
+command layout, unit version, four enabled guards with exact function/event pairs and seven
+actual index keys/predicates. It does not attest arbitrary SQL function bodies.
+
+The deployment protocol recognizes027 explicitly and refuses recovery to an
+epoch026-or-earlier runtime after027 commits. Older binaries are not assumed to
+discover migrations introduced after their build. Actual focused gates pass26
+cases: database10, migrator8, API4 and worker4, with unchanged captured schema
+source. The complete local ops gate passes166 tests with four existing opt-in
+skips. These results supersede preceding checkpoint counts for the current
+source; they do not establish a live deploy or host rollback drill.
+
+## Breaking storage-location boundary
+
+Migration202610170028 adds versioned location maintenance, immutable original-actor
+command receipts and retained active/same-facility publication checks for13
+operational foreign-key edges. The current runtime requires028 before
+provisioning, listening or worker readiness. Its bounded read-only probe checks
+the embedded023–028 chain, eight typed nonnullable command columns, location
+version/update metadata,12 enabled guards with their exact functions/events and
+reference-column arguments, the command primary key,15 supporting index keys and
+the history-function signature. Arbitrary SQL function-body attestation and all
+operator alterations remain outside this probe.
+
+The supported deployment protocol recognizes028 explicitly and refuses runtime027
+or earlier after028 commits. Older binaries are not assumed to recognize later
+migrations. Actual focused gates pass31 cases: database12, migrator9, API5 and
+worker5. The complete local ops gate passes181 cases with four existing opt-in
+skips and unchanged captured source. These focused results do not establish full
+release acceptance, a live deploy or a host rollback drill.

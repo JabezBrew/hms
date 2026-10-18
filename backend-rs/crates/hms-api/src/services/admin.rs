@@ -1,8 +1,9 @@
+pub mod organization_units;
 use chrono::{DateTime, Duration, Utc};
 use hms_db::admin::{
     AdminCursor, AuditEventFilters, NewAuthorityAppointment, NewCommittee, NewDelegation,
-    NewOrganizationUnit, NewPermissionAssignment, NewPosition, NewPositionTemplate,
-    NewPractitionerProfile, NewStaffAccount,
+    NewPermissionAssignment, NewPosition, NewPositionTemplate, NewPractitionerProfile,
+    NewStaffAccount,
 };
 use hms_db::provision::{generate_secret_token, hash_refresh_token};
 use hms_domain::admin::{
@@ -145,14 +146,14 @@ impl AdminService {
         &self,
         ctx: &hms_access::RequestContext,
         payload: CreateOrganizationUnitRequest,
-    ) -> Result<ObjectResponse<OrganizationUnitListItem>, ApiError> {
-        require_admin_access(ctx, self.facility_id())?;
-        validate_code(&payload.code)?;
-        validate_text(&payload.name, MAX_NAME_LEN, "name")?;
-        let unit = hms_db::admin::create_organization_unit(
-            self.pool(),
-            NewOrganizationUnit {
-                facility_id: self.facility_id(),
+    ) -> Result<
+        ObjectResponse<hms_domain::organization_units::OrganizationUnitCommandReceipt>,
+        ApiError,
+    > {
+        self.command_org_unit(
+            ctx,
+            hms_domain::organization_units::OrganizationUnitReviewedInput::Create {
+                client_request_id: payload.client_request_id,
                 code: payload.code,
                 name: payload.name,
                 unit_type: payload.unit_type,
@@ -160,13 +161,6 @@ impl AdminService {
             },
         )
         .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "org_unit_create_failed",
-                "Organization unit could not be saved.",
-            )
-        })?;
-        Ok(object(unit))
     }
 
     pub async fn get_org_unit(

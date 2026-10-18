@@ -1,6 +1,9 @@
 //! Durable exact-session factor proof and restricted, hashed pre-login grants.
 //! Crypto is performed by the API's pure verifier while the bounded ceremony
 //! owns this transaction. No HTTP or other external I/O belongs in this module.
+mod ordinary;
+pub use ordinary::confirm_ordinary_password;
+
 use super::*;
 use hms_domain::auth_assurance::*;
 use sqlx::{Postgres, Transaction};
