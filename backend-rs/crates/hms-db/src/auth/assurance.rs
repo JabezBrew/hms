@@ -37,6 +37,8 @@ pub struct PrivilegedDeadline {
     authority: DateTime<Utc>,
     password: DateTime<Utc>,
     factor: DateTime<Utc>,
+    password_verified_at: DateTime<Utc>,
+    factor_verified_at: DateTime<Utc>,
 }
 
 /// Business publication composes network authority with the exact factor proof.
@@ -47,6 +49,11 @@ pub struct BusinessFactorActor {
     pub resolved_network_policy_version: i64,
 }
 impl PrivilegedDeadline {
+    pub(crate) fn bound_original_password(mut self, original: DateTime<Utc>) -> Self {
+        self.password = self.password.min(original + Duration::minutes(15));
+        self.password_verified_at = self.password_verified_at.max(original);
+        self
+    }
     pub fn expires_at(self) -> DateTime<Utc> {
         self.authority.min(self.password).min(self.factor)
     }
@@ -54,10 +61,13 @@ impl PrivilegedDeadline {
         if at >= self.authority {
             return Err(FactorError::AuthorizationExpired);
         }
-        if at >= self.password {
+        if at < self.password_verified_at || at >= self.password {
             return Err(FactorError::PasswordConfirmationRequired);
         }
-        if at >= self.factor {
+        if at < self.factor_verified_at
+            || at >= self.factor
+            || self.factor > self.factor_verified_at + Duration::minutes(15)
+        {
             return Err(FactorError::FactorRequired);
         }
         Ok(())
@@ -170,6 +180,7 @@ async fn issue(tx: &mut Tx<'_>, facility: Uuid, user: Uuid, purpose: &str) -> an
 
 #[derive(FromRow)]
 pub struct LoginGrant {
+    pub observed_at: DateTime<Utc>,
     pub id: Uuid,
     pub facility_id: Uuid,
     pub user_id: Uuid,
@@ -184,7 +195,7 @@ pub struct LoginGrant {
     pub failed_attempts: i16,
     pub consumed_at: Option<DateTime<Utc>>,
 }
-const GRANT:&str="SELECT id,facility_id,user_id,session_version,permission_version,factor_version,active_profile,password_verified_at,device_label,state,expires_at,failed_attempts,consumed_at FROM auth_login_grants";
+const GRANT:&str="SELECT clock_timestamp() AS observed_at,id,facility_id,user_id,session_version,permission_version,factor_version,active_profile,password_verified_at,device_label,state,expires_at,failed_attempts,consumed_at FROM auth_login_grants";
 pub async fn create_login_grant(
     pool: &PgPool,
     user: &UserAccount,
@@ -545,7 +556,7 @@ impl FactorCeremony {
         deadline(&mut self.tx, expires.ok_or(FactorError::InvalidGrant)?).await?;
         sqlx::query("INSERT INTO auth_webauthn_credentials(id,facility_id,user_id,credential_id,passkey) VALUES(gen_random_uuid(),$1,$2,$3,$4)").bind(g.facility_id).bind(g.user_id).bind(credential).bind(passkey).execute(&mut *self.tx).await?;
         sqlx::query("UPDATE auth_login_grants SET state='factor',factor_version=(SELECT auth_factor_version FROM users WHERE id=$2) WHERE id=$1").bind(g.id).bind(g.user_id).execute(&mut *self.tx).await?;
-        self.finish("auth.factor.bootstrap.enrolled").await
+        self.finish("auth.factor.bootstrap.enrolled", None).await
     }
     pub async fn complete(
         mut self,
@@ -606,9 +617,13 @@ impl FactorCeremony {
             at,
         )
         .await?;
-        self.finish("auth.factor.passkey.verified").await
+        self.finish("auth.factor.passkey.verified", Some(at)).await
     }
-    async fn finish(mut self, event: &str) -> anyhow::Result<()> {
+    async fn finish(
+        mut self,
+        event: &str,
+        published_at: Option<DateTime<Utc>>,
+    ) -> anyhow::Result<()> {
         sqlx::query("UPDATE auth_factor_challenges SET consumed_at=clock_timestamp() WHERE id=$1")
             .bind(self.challenge.id)
             .execute(&mut *self.tx)
@@ -622,7 +637,7 @@ impl FactorCeremony {
             self.challenge.id,
         )
         .await?;
-        deadline(&mut self.tx, self.end).await?;
+        check_proof_publication_tx(&mut self.tx, published_at, self.end).await?;
         self.tx.commit().await?;
         Ok(())
     }
@@ -770,7 +785,7 @@ pub async fn complete_recovery(
         grant.id,
     )
     .await?;
-    deadline(&mut tx, grant.expires_at).await?;
+    check_proof_publication_tx(&mut tx, Some(at), grant.expires_at).await?;
     tx.commit().await?;
     Ok(())
 }
@@ -789,14 +804,18 @@ pub async fn require_privileged_tx(
     {
         return Err(FactorError::AuthorizationExpired.into());
     }
-    if now(tx).await? >= password + Duration::minutes(15) {
+    let point = now(tx).await?;
+    if point < password || point >= password + Duration::minutes(15) {
         return Err(FactorError::PasswordConfirmationRequired.into());
     }
-    let factor:Option<DateTime<Utc>>=sqlx::query_scalar("SELECT a.expires_at FROM auth_session_assurance a JOIN auth_webauthn_credentials k ON k.id=a.credential_id AND k.facility_id=a.facility_id AND k.user_id=a.user_id AND k.disabled_at IS NULL WHERE a.session_id=$1 AND a.facility_id=$2 AND a.user_id=$3 AND a.session_version=$4 AND a.permission_version=$5 AND a.factor_version=$6 AND a.active_profile=$7 AND a.method='passkey' AND a.verified_at<=clock_timestamp() AND a.expires_at>clock_timestamp() FOR SHARE OF a,k").bind(actor.session_id).bind(actor.facility_id).bind(actor.user_id).bind(actor.session_version).bind(actor.permission_version).bind(epoch).bind(codec::encode(actor.active_profile)?).fetch_optional(&mut **tx).await?;
+    let factor:Option<(DateTime<Utc>,DateTime<Utc>)>=sqlx::query_as("SELECT a.verified_at,a.expires_at FROM auth_session_assurance a JOIN auth_webauthn_credentials k ON k.id=a.credential_id AND k.facility_id=a.facility_id AND k.user_id=a.user_id AND k.disabled_at IS NULL WHERE a.session_id=$1 AND a.facility_id=$2 AND a.user_id=$3 AND a.session_version=$4 AND a.permission_version=$5 AND a.factor_version=$6 AND a.active_profile=$7 AND a.method='passkey' AND a.verified_at<=$8 AND a.expires_at>$8 AND a.expires_at<=a.verified_at+interval '15 minutes' FOR SHARE OF a,k").bind(actor.session_id).bind(actor.facility_id).bind(actor.user_id).bind(actor.session_version).bind(actor.permission_version).bind(epoch).bind(codec::encode(actor.active_profile)?).bind(point).fetch_optional(&mut **tx).await?;
+    let (factor_verified_at, factor) = factor.ok_or(FactorError::FactorRequired)?;
     let end = PrivilegedDeadline {
         authority: actor.valid_until,
         password: password + Duration::minutes(15),
-        factor: factor.ok_or(FactorError::FactorRequired)?,
+        factor,
+        password_verified_at: password,
+        factor_verified_at,
     };
     check_privileged_deadline_tx(tx, end).await?;
     Ok(end)
@@ -818,9 +837,17 @@ pub async fn status(
     } else {
         SessionAssurance::default()
     };
-    deadline(&mut tx, actor.valid_until).await?;
+    let observed_at = now(&mut tx).await?;
+    if observed_at >= actor.valid_until {
+        return Err(FactorError::AuthorizationExpired.into());
+    }
     tx.commit().await?;
     Ok(FactorAssuranceStatus {
+        auth_clock: hms_domain::auth_assurance::AuthClockObservation {
+            database_observed_at: observed_at,
+            issuer_observed_at: Utc::now(),
+            access_token_remaining_ms: None,
+        },
         assurance,
         password_verified_at: password,
         password_fresh_until: password + Duration::minutes(15),
@@ -1306,4 +1333,96 @@ pub async fn operator_retire_key(
     }
     tx.commit().await?;
     Ok(())
+}
+
+#[cfg(test)]
+mod strict_deadline_tests {
+    use super::*;
+    #[test]
+    fn retained_factor_deadline_preserves_lower_upper_and_maximum_window() {
+        let at = Utc::now();
+        let deadline = PrivilegedDeadline {
+            authority: at + Duration::hours(1),
+            password: at + Duration::minutes(15),
+            factor: at + Duration::minutes(15),
+            password_verified_at: at,
+            factor_verified_at: at,
+        };
+        assert!(deadline.check_at(at).is_ok());
+        assert_eq!(
+            deadline.check_at(at - Duration::nanoseconds(1)),
+            Err(FactorError::PasswordConfirmationRequired)
+        );
+        assert_eq!(
+            deadline.check_at(at + Duration::minutes(15)),
+            Err(FactorError::PasswordConfirmationRequired)
+        );
+        let future_factor = PrivilegedDeadline {
+            factor_verified_at: at + Duration::nanoseconds(1),
+            ..deadline
+        };
+        assert_eq!(future_factor.check_at(at), Err(FactorError::FactorRequired));
+        let overlong = PrivilegedDeadline {
+            factor: at + Duration::minutes(16),
+            ..deadline
+        };
+        assert_eq!(overlong.check_at(at), Err(FactorError::FactorRequired));
+        let expired = PrivilegedDeadline {
+            factor: at,
+            ..deadline
+        };
+        assert_eq!(expired.check_at(at), Err(FactorError::FactorRequired));
+        let authority = PrivilegedDeadline {
+            authority: at,
+            ..deadline
+        };
+        assert_eq!(
+            authority.check_at(at),
+            Err(FactorError::AuthorizationExpired)
+        );
+    }
+}
+
+/// Fresh final point for a newly published proof; the caller retains its TX.
+/// The same query replaces the producer's former upper-only deadline query.
+pub async fn check_proof_publication_tx(
+    tx: &mut Tx<'_>,
+    published_at: Option<DateTime<Utc>>,
+    end: DateTime<Utc>,
+) -> anyhow::Result<()> {
+    check_proof_publication_at(now(tx).await?, published_at, end)?;
+    Ok(())
+}
+fn check_proof_publication_at(
+    point: DateTime<Utc>,
+    published_at: Option<DateTime<Utc>>,
+    end: DateTime<Utc>,
+) -> Result<(), FactorError> {
+    if published_at.is_some_and(|at| at > point) || point >= end {
+        Err(FactorError::AuthorizationExpired)
+    } else {
+        Ok(())
+    }
+}
+#[cfg(test)]
+mod publication_point_tests {
+    use super::*;
+    #[test]
+    fn newly_published_factor_and_password_cannot_be_future_at_final_point() {
+        let at = Utc::now();
+        let end = at + Duration::minutes(15);
+        assert!(check_proof_publication_at(at, Some(at), end).is_ok());
+        assert_eq!(
+            check_proof_publication_at(at, Some(at + Duration::nanoseconds(1)), end),
+            Err(FactorError::AuthorizationExpired)
+        );
+        assert_eq!(
+            check_proof_publication_at(end, Some(at), end),
+            Err(FactorError::AuthorizationExpired)
+        );
+        assert!(
+            check_proof_publication_at(at, None, end).is_ok(),
+            "setup without new assurance keeps its existing upper-only semantics"
+        );
+    }
 }

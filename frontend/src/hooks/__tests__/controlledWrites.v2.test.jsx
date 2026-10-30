@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { inventoryApi } from '@/features/inventory/api';
 import { __resetV2ApiClientForTests, configureV2ApiClient, getV2ClientScopeKey } from '@/lib/api/v2/client';
-import { bindNetworkAccessGuard } from '@/lib/api/v2/networkAccessGuard';
+import { bindModeledNetworkGuard as bindNetworkAccessGuard } from '@/tests/networkClockModel';
 import { acknowledgeWriteResponse, activateWriteUncertainty, getWriteUncertaintySnapshot, WRITE_UNCERTAINTY_KEY } from '@/lib/api/v2/writeUncertainty';
 import { useDispenseControlledSubstance, useRecordControlledCount, useRecordControlledWastage } from '../useInventoryQueries';
 

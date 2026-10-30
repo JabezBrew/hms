@@ -1,5 +1,6 @@
 pub mod app;
 pub mod auth;
+pub(crate) mod auth_clock;
 pub mod config;
 pub mod cursor_list;
 pub mod error;

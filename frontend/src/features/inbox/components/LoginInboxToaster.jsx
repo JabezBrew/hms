@@ -1,9 +1,12 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 
 import { useAuth } from '@/lib/auth';
-import { useInboxItems, useMarkInboxRead } from '@/features/inbox/hooks';
+import { useInboxItems, useMarkInboxRead, inboxKeys } from '@/features/inbox/hooks';
+import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
+import { useAuthScope } from '@/features/auth/useAuthScope';
+import { optionalReadAccess } from '@/shared/lib/optionalReadAccess';
 
 const URGENT_PRIORITIES = new Set(['emergency', 'urgent']);
 const MAX_URGENT_TOASTS = 3;
@@ -27,20 +30,28 @@ function pickToastFn(priority) {
 }
 
 export default function LoginInboxToaster() {
-  const { isAuthenticated } = useAuth();
+  const { user, isAuthenticated } = useAuth();
+  const rust = isRustV2ApiMode();
+  const scope = useAuthScope(user);
+  const canRead = isAuthenticated && (!rust || optionalReadAccess(user).notifications);
   const navigate = useNavigate();
   const markRead = useMarkInboxRead();
 
-  const armedRef = useRef(null);
-  if (armedRef.current === null) {
-    armedRef.current = isAuthenticated ? consumePendingFlag() : false;
-  }
-  const armed = armedRef.current;
+  const initializedRef = useRef(false);
+  const [armed, setArmed] = useState(false);
+  useEffect(() => {
+    if (initializedRef.current) return;
+    initializedRef.current = true;
+    // Consume only after commit. Effect replay must retain the armed login.
+    if (isAuthenticated && consumePendingFlag()) setArmed(true);
+  }, [isAuthenticated]);
 
-  const { data } = useInboxItems(
-    { status: 'unread', page_size: 20 },
-    { enabled: isAuthenticated && armed },
+  const params = { status: 'unread', page_size: 20 };
+  const { data: queryData, isError } = useInboxItems(
+    params,
+    { ...(rust ? { queryKey: [...inboxKeys.list(params), scope] } : {}), enabled: canRead && armed },
   );
+  const data = canRead && (!rust || !isError) ? queryData : undefined;
 
   const firedRef = useRef(false);
 

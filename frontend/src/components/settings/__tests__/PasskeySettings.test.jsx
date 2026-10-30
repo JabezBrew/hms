@@ -4,19 +4,20 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import MFAStatus from '../MFAStatus';
 import { AuthContext } from '@/lib/auth/AuthContext';
 import { __resetV2ApiClientForTests, configureV2ApiClient } from '@/lib/api/v2/session';
-import { challengeId, credential, failure, json, keyId, options, token } from '@/features/auth/__tests__/fixtures';
+import { challengeId, credential, failure, fixtureClock, json, jwtFor, keyId, options, token } from '@/features/auth/__tests__/fixtures';
 
-let runtime; let client; let handler; let proof; let reauthenticate; let create; let copy; let currentUser;
+let runtime; let client; let handler; let proof; let reauthenticate; let create; let copy; let currentUser; let bearer;
 const row = { id: keyId, label: 'Synthetic key', created_at: '2026-10-01T00:00:00Z', last_used_at: null, disabled_at: null };
 const keyPage = (rows = [row], page = { has_next: false, next_cursor: null }) => new Response(JSON.stringify({ data: rows, page }), { headers: { 'content-type': 'application/json' } });
-function User() { const raw = token('passkey').user; return { id: raw.id, email: raw.email, facilityCode: raw.facility_code, adminAccess: { capabilities: raw.permissions }, accessContext: { ...raw } }; }
+function User(raw) { return { id: raw.id, email: raw.email, facilityCode: raw.facility_code, adminAccess: { capabilities: raw.permissions }, accessContext: { ...raw } }; }
 function Wrap({ user = currentUser }) { return <AuthContext.Provider value={{ user, reauthenticate }}><QueryClientProvider client={client}><MFAStatus /></QueryClientProvider></AuthContext.Provider>; }
-const status = () => ({ assurance: proof, password_verified_at: new Date(Date.now() - 1000).toISOString(), password_fresh_until: new Date(Date.now() + 899000).toISOString() });
+const status = () => { const now = Date.now(); return { auth_clock: fixtureClock(now, bearer), assurance: proof, password_verified_at: new Date(now - 1000).toISOString(), password_fresh_until: new Date(now + 899000).toISOString() }; };
 const originalCredentials = Object.getOwnPropertyDescriptor(navigator, 'credentials');
 const originalClipboard = Object.getOwnPropertyDescriptor(navigator, 'clipboard');
 beforeEach(() => {
-  runtime = window.__HMS_RUNTIME_CONFIG__; window.__HMS_RUNTIME_CONFIG__ = { apiMode: 'rust-v2', v2ApiBaseUrl: 'http://localhost/api/v2' }; __resetV2ApiClientForTests(); configureV2ApiClient({ getAccessToken: () => 'synthetic-access', getFacilityCode: () => 'HMS', canRefreshSession: () => false });
-  client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: 2 } } }); currentUser = User(); proof = token('passkey').user.auth_security.session_assurance; reauthenticate = vi.fn().mockResolvedValue(currentUser); create = vi.fn().mockResolvedValue({ ...credential(), response: { ...credential().response, attestationObject: new Uint8Array([4]).buffer } }); copy = vi.fn().mockResolvedValue(undefined);
+  const session = token('passkey'); const second = Math.floor(Date.now() / 1000); bearer = jwtFor(session, { iat: second, exp: second + 600, auth_time: second - 5 });
+  runtime = window.__HMS_RUNTIME_CONFIG__; window.__HMS_RUNTIME_CONFIG__ = { apiMode: 'rust-v2', v2ApiBaseUrl: 'http://localhost/api/v2' }; __resetV2ApiClientForTests(); configureV2ApiClient({ getAccessToken: () => bearer, getFacilityCode: () => 'HMS', canRefreshSession: () => false });
+  client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: 2 } } }); currentUser = User(session.user); proof = session.user.auth_security.session_assurance; reauthenticate = vi.fn().mockResolvedValue(currentUser); create = vi.fn().mockResolvedValue({ ...credential(), response: { ...credential().response, attestationObject: new Uint8Array([4]).buffer } }); copy = vi.fn().mockResolvedValue(undefined);
   vi.stubGlobal('PublicKeyCredential', class {}); Object.defineProperty(navigator, 'credentials', { configurable: true, value: { create, get: vi.fn().mockResolvedValue(credential()) } }); Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: copy } });
   handler = async (path) => path.endsWith('/auth/assurance') ? json(status()) : path.endsWith('/auth/mfa/passkeys') ? keyPage() : path.endsWith('/register/options') ? json({ ...options(), user: { id: 'AQI', name: 'synthetic@example.test', displayName: 'Synthetic' }, rp: { id: 'localhost', name: 'Synthetic' }, pubKeyCredParams: [] }) : path.endsWith('/register/verify') ? json({ verified: true }) : path.endsWith('/recovery-codes') ? json({ codes: ['SYNTHETIC-CODE-ONE', 'SYNTHETIC-CODE-TWO'] }) : json(row);
   vi.stubGlobal('fetch', vi.fn((url, request) => handler(new URL(url).pathname, request, new URL(url).searchParams)));

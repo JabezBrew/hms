@@ -35,6 +35,7 @@ async fn scheduling_sessions_are_backend_authoritative_and_arrivals_create_visit
                 .header("content-type", "application/json")
                 .body(Body::from(
                     json!({
+                        "client_request_id": Uuid::new_v4(),
                         "code": "bad-duration",
                         "name": "Bad duration",
                         "default_duration_minutes": 0

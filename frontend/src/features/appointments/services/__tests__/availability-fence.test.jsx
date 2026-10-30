@@ -1,0 +1,10 @@
+import { cleanup, render, screen } from '@testing-library/react';
+import { afterEach, expect, it, vi } from 'vitest';
+import { AppointmentCreateTimePanel } from '../../pages/appointment-create/AppointmentCreateTimePanel';
+const calendar = vi.hoisted(() => vi.fn(() => <p>Exact service calendar</p>));
+vi.mock('@/features/appointments/components/DoctorAvailabilityCalendar', () => ({ default: calendar }));
+vi.mock('@/components/ui/form', () => ({ FormField: ({ render: content }) => content(), FormItem: ({ children }) => <div>{children}</div>, FormControl: ({ children }) => <div>{children}</div>, FormMessage: () => null }));
+afterEach(() => { cleanup(); calendar.mockClear(); });
+const props = { form: { control: {} }, watchClinicId: 'synthetic-clinic', watchAppointmentTypeId: 'synthetic-original-service', requiresPractitioner: false, selectedClinicName: 'Synthetic clinic' };
+it('does not mount an unrestricted availability query when the selected service is unavailable', () => { render(<AppointmentCreateTimePanel {...props} serviceAvailable={false} />); expect(calendar).not.toHaveBeenCalled(); expect(screen.queryByText('Exact service calendar')).not.toBeInTheDocument(); });
+it('keeps the exact original service filter when availability is allowed', () => { render(<AppointmentCreateTimePanel {...props} serviceAvailable />); expect(calendar.mock.calls[0][0]).toMatchObject({ clinicId: 'synthetic-clinic', serviceId: 'synthetic-original-service' }); });

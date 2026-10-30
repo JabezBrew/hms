@@ -106,3 +106,61 @@ async fn ordinary_password_confirmation_renews_exact_session_without_factor_or_c
 mod attacks;
 #[path = "ordinary_reauthentication_contract/races.rs"]
 mod races;
+
+#[tokio::test]
+async fn ordinary_confirmation_clock_and_witness_are_exact_committed_response_facts() {
+    let (app, token, _, _) = ordinary().await;
+    let before = access_claims(&token);
+    let response = fixture_json_post(
+        &app,
+        Some(&token),
+        CONFIRM,
+        json!({"current_password":PASSWORD}),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert!(!response.headers().contains_key(SET_COOKIE));
+    let body = json_body(response).await;
+    let data = &body["data"];
+    let fresh = access_claims(data["access_token"].as_str().unwrap());
+    let witness: &Value = &data["ordinary_confirmation"];
+    assert_eq!(witness["purpose"], "ordinary_password_confirmation");
+    assert_eq!(witness["session_id"], fresh.session_id.to_string());
+    assert_eq!(fresh.session_id, before.session_id);
+    let (password, version): (chrono::DateTime<Utc>, i64) = sqlx::query_as(
+        "SELECT password_verified_at,assurance_version FROM refresh_sessions WHERE session_id=$1",
+    )
+    .bind(fresh.session_id)
+    .fetch_one(&app.db_pool().await)
+    .await
+    .unwrap();
+    let admitted: chrono::DateTime<Utc> =
+        serde_json::from_value(witness["admitted_at"].clone()).unwrap();
+    let published: chrono::DateTime<Utc> =
+        serde_json::from_value(witness["published_password_verified_at"].clone()).unwrap();
+    assert_eq!((admitted, published), (password, password));
+    assert_eq!(witness["assurance_version"], version);
+    assert_eq!(data["user"]["auth_security"]["assurance_version"], version);
+    assert_eq!(
+        fresh.auth_time,
+        Some((password.timestamp() as usize).min(fresh.iat))
+    );
+    let clock: &Value = &data["user"]["auth_security"]["auth_clock"];
+    let db: chrono::DateTime<Utc> =
+        serde_json::from_value(clock["database_observed_at"].clone()).unwrap();
+    let issuer: chrono::DateTime<Utc> =
+        serde_json::from_value(clock["issuer_observed_at"].clone()).unwrap();
+    assert!(db >= password);
+    let signed_end = chrono::DateTime::<Utc>::from_timestamp(fresh.exp as i64, 0).unwrap();
+    let signed_start = chrono::DateTime::<Utc>::from_timestamp(fresh.iat as i64, 0).unwrap();
+    assert!(signed_start <= issuer && issuer < signed_end);
+    assert_eq!(
+        clock["access_token_remaining_ms"].as_u64(),
+        Some((signed_end - issuer).num_milliseconds() as u64)
+    );
+    assert!(
+        clock["access_token_remaining_ms"].as_u64().unwrap()
+            <= data["expires_in_seconds"].as_u64().unwrap() * 1000
+    );
+    assert!(data["user"]["auth_security"]["session_assurance"]["method"].is_null());
+}

@@ -1,7 +1,7 @@
 import { webcrypto } from 'node:crypto';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { __resetV2ApiClientForTests, configureV2ApiClient, getV2ClientScopeKey } from '@/lib/api/v2/client';
-import { bindNetworkAccessGuard } from '@/lib/api/v2/networkAccessGuard';
+import { bindModeledNetworkGuard as bindNetworkAccessGuard } from '@/tests/networkClockModel';
 import { activateWriteUncertainty, getWriteUncertaintySnapshot } from '@/lib/api/v2/writeUncertainty';
 import { referralResponseApi } from '../api';
 import { responseCommand } from '../model';

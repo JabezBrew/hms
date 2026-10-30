@@ -1,6 +1,8 @@
 import { lazy, Suspense } from 'react'
 import { Navigate } from 'react-router-dom'
 import { useAuth } from '@/lib/auth'
+import { isRustV2ApiMode } from '@/lib/api/v2/runtime'
+import { optionalReadAccess } from '@/shared/lib/optionalReadAccess'
 import { Layout } from '@/components/layout/layout'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useDashboardModuleGates } from '@/features/dashboards/hooks'
@@ -85,7 +87,8 @@ export default function RoleDashboard() {
   const { user } = useAuth()
   const dashboardConfig = user?.role ? ROLE_DASHBOARD_MAP[user.role] : null
   const requiredFeatures = dashboardFeaturesForRole(user?.role)
-  const moduleGate = useDashboardModuleGates({ enabled: Boolean(dashboardConfig) })
+  const adminUnavailable = isRustV2ApiMode() && user?.role === 'admin' && !optionalReadAccess(user).dashboardSnapshot
+  const moduleGate = useDashboardModuleGates({ enabled: Boolean(dashboardConfig) && !adminUnavailable })
   const hasDynamicRedirect = typeof dashboardConfig?.resolveRedirect === 'function'
   
   if (!user?.role) {
@@ -94,6 +97,15 @@ export default function RoleDashboard() {
   
   if (!dashboardConfig) {
     return <DefaultDashboard />
+  }
+
+  if (adminUnavailable) {
+    return (
+      <DefaultDashboard
+        title="Dashboard unavailable"
+        description="Your current access does not include this dashboard."
+      />
+    )
   }
 
   if ((requiredFeatures.length > 0 || hasDynamicRedirect) && moduleGate.isResolving) {

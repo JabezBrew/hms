@@ -1,3 +1,5 @@
+import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
+import { serviceName } from '../../services/presentation';
 import User from 'lucide-react/dist/esm/icons/user.js';
 import Building2 from 'lucide-react/dist/esm/icons/building-2.js';
 import Stethoscope from 'lucide-react/dist/esm/icons/stethoscope.js';
@@ -11,6 +13,7 @@ import {
   FormControl,
   FormField,
   FormItem,
+  FormLabel,
   FormMessage,
 } from '@/components/ui/form';
 import { SearchBar } from '@/components/ui/search-bar';
@@ -41,6 +44,7 @@ function AppointmentCreatePatientField({
         name="patientId"
         render={({ field }) => (
           <FormItem>
+            <FormLabel className="sr-only">Patient</FormLabel>
             <FormControl>
               <SearchBar
                 options={patientOptions}
@@ -154,6 +158,7 @@ function AppointmentCreatePractitionerField({
           name="practitionerId"
           render={({ field }) => (
             <FormItem>
+              <FormLabel className="sr-only">Doctor</FormLabel>
               <FormControl>
                 <SearchBar
                   options={practitionerOptions}
@@ -210,8 +215,8 @@ function AppointmentCreateTypeField({
                 {Array.isArray(appointmentTypes) ? appointmentTypes.map((type) => (
                   <SelectItem key={type.id} value={type.id}>
                     <div className="flex items-center gap-2">
-                      <span>{type.name}</span>
-                      <span className="text-xs text-muted-foreground">({type.duration_minutes}min)</span>
+                      <span>{isRustV2ApiMode() ? serviceName(type) : type.name}</span>
+                      <span className="text-xs text-muted-foreground">({type.duration_minutes ?? type.default_duration_minutes}min)</span>
                     </div>
                   </SelectItem>
                 )) : (

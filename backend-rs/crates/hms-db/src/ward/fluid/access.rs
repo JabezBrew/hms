@@ -44,6 +44,8 @@ pub(super) async fn administrative(
         user_id: actor.user_id,
         request_id: actor.request_id.clone(),
         authorization: Some(PrescriptionAuthorization {
+            ordinary_reauth_required: false,
+            original_password_verified_at: None,
             resolved_network_policy_version: actor.resolved_network_policy_version,
             session_id: actor.session_id,
             session_version: actor.session_version,

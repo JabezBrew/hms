@@ -24,6 +24,8 @@ pub struct AuthUser {
 
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
 pub struct AuthSecurityState {
+    #[serde(default)]
+    pub auth_clock: Option<crate::auth_assurance::AuthClockObservation>,
     pub privileged_user: bool,
     pub passkey_required: bool,
     pub passkey_enrolled: bool,
@@ -46,6 +48,7 @@ impl AuthSecurityState {
         let privileged_user = permissions.iter().any(is_privileged_permission);
         let passkey_required = privileged_user;
         Self {
+            auth_clock: None,
             privileged_user,
             passkey_required,
             passkey_enrolled,

@@ -20,6 +20,9 @@ import { cn } from '@/lib/utils';
 import formatDistanceToNow from 'date-fns/formatDistanceToNow';
 import { toast } from 'sonner';
 import { useAuth } from '@/lib/auth';
+import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
+import { useAuthScope } from '@/features/auth/useAuthScope';
+import { optionalReadAccess } from '@/shared/lib/optionalReadAccess';
 import { usePageVisibility } from '@/shared/hooks/usePageVisibility';
 import { fetchUpcomingAppointments } from '@/features/appointments/api/upcoming';
 import { appointmentKeys } from '@/features/appointments/hooks/useAppointmentQueries';
@@ -29,6 +32,8 @@ import {
   useMarkNotificationRead,
 } from '@/features/referrals/hooks';
 import { useNotificationWebSocket } from '@/hooks/useWebSocket';
+import { referralsApi } from '@/features/referrals/api';
+import { referralKeys } from '@/hooks/useReferralQueries';
 
 /**
  * Notification type configurations - Chronicle color palette
@@ -75,15 +80,20 @@ const NotificationCenter = () => {
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const { user } = useAuth();
+  const rust = isRustV2ApiMode();
+  const scope = useAuthScope(user);
+  const reads = optionalReadAccess(user);
   const { isPageActive } = usePageVisibility();
 
   const isDoctor = user && ['doctor', 'inpatient_doctor'].includes(user.role);
-  const hasAppointmentAccess = user && ['admin', 'doctor', 'nurse', 'receptionist', 'inpatient_doctor'].includes(user.role);
+  const appointmentRole = user && ['admin', 'doctor', 'nurse', 'receptionist', 'inpatient_doctor'].includes(user.role);
+  const hasAppointmentAccess = appointmentRole && (!rust || reads.appointmentPreview);
+  const hasReferralAccess = isDoctor && (!rust || reads.notifications);
 
   // Appointment notifications
-  const { data: appointments = [], isLoading: appointmentsLoading } = useQuery({
-    queryKey: appointmentKeys.upcoming(),
-    queryFn: fetchUpcomingAppointments,
+  const appointmentQuery = useQuery({
+    queryKey: rust ? [...appointmentKeys.upcoming(), scope] : appointmentKeys.upcoming(),
+    queryFn: ({ signal }) => fetchUpcomingAppointments({ signal }),
     staleTime: 5 * 60 * 1000,
     refetchInterval: open && isPageActive ? 5 * 60 * 1000 : false,
     refetchOnWindowFocus: false,
@@ -91,16 +101,24 @@ const NotificationCenter = () => {
   });
 
   // Referral notifications (only for doctors)
-  const { data: referralNotifications = [], isLoading: referralsLoading } = useReferralNotifications(
-    { page_size: 20 },
-    { enabled: isDoctor && isPageActive }
+  const referralQuery = useReferralNotifications(
+    { page_size: 20, ...(rust ? { authorizationScope: scope } : {}) },
+    { enabled: hasReferralAccess && isPageActive }
   );
-  const { data: unreadReferralCount = 0 } = useReferralNotificationCount({ enabled: isDoctor && isPageActive });
+  const legacyReferralCount = useReferralNotificationCount({ enabled: !rust && hasReferralAccess && isPageActive });
+  // The legacy count adapter converts errors to zero. Keep Rust failures visible.
+  const rustReferralCount = useQuery({
+    queryKey: [...referralKeys.notificationCount(), scope],
+    queryFn: async ({ signal }) => (await referralsApi.getNotifications({ status: 'unread', page_size: 100 }, { signal })).length,
+    staleTime: 5 * 60 * 1000,
+    enabled: rust && hasReferralAccess && isPageActive,
+  });
+  const referralCountQuery = rust ? rustReferralCount : legacyReferralCount;
   const markAsRead = useMarkNotificationRead();
 
   // WebSocket for real-time referral updates
   useNotificationWebSocket({
-    enabled: isDoctor && isPageActive,
+    enabled: hasReferralAccess && isPageActive,
     onNotification: (notification) => {
       const config = notificationConfig[`referral_${notification.event}`] || notificationConfig.referral_submitted;
       toast.info(config.label, {
@@ -116,12 +134,22 @@ const NotificationCenter = () => {
     },
   });
 
+  const appointments = useMemo(() => hasAppointmentAccess && (!rust || !appointmentQuery.isError) ? (appointmentQuery.data || []) : [], [hasAppointmentAccess, rust, appointmentQuery.isError, appointmentQuery.data]);
+  const referralNotifications = useMemo(() => hasReferralAccess && (!rust || !referralQuery.isError) ? (referralQuery.data || []) : [], [hasReferralAccess, rust, referralQuery.isError, referralQuery.data]);
+  const unreadReferralCount = hasReferralAccess && (!rust || (!referralQuery.isError && !referralCountQuery.isError)) ? (referralCountQuery.data || 0) : 0;
+  const previewUnavailable = rust && (
+    !reads.notifications
+    || (appointmentRole && !hasAppointmentAccess)
+    || (hasAppointmentAccess && appointmentQuery.isError)
+    || (hasReferralAccess && (referralQuery.isError || referralCountQuery.isError))
+  );
+
   // Combine and sort all notifications by time
   const allNotifications = useMemo(() => {
     const items = [];
 
     // Add referral notifications (for doctors)
-    if (isDoctor) {
+    if (hasReferralAccess) {
       referralNotifications.forEach((n) => {
         items.push({
           id: n.id,
@@ -160,11 +188,11 @@ const NotificationCenter = () => {
 
     // Sort by timestamp descending
     return items.sort((a, b) => b.timestamp - a.timestamp).slice(0, 15);
-  }, [referralNotifications, appointments, isDoctor, hasAppointmentAccess, markAsRead, navigate]);
+  }, [referralNotifications, appointments, hasReferralAccess, hasAppointmentAccess, markAsRead, navigate]);
 
   // Calculate total count
-  const totalCount = appointments.length + (isDoctor ? unreadReferralCount : 0);
-  const isLoading = appointmentsLoading || (isDoctor && referralsLoading);
+  const totalCount = appointments.length + (hasReferralAccess ? unreadReferralCount : 0);
+  const isLoading = (hasAppointmentAccess && appointmentQuery.isLoading) || (hasReferralAccess && referralQuery.isLoading);
 
   // Count unread notifications
   const unreadCount = allNotifications.filter(n => !n.isRead).length;
@@ -172,7 +200,7 @@ const NotificationCenter = () => {
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <Button variant="ghost" size="icon" className="relative" aria-label={totalCount > 0 ? `Notifications, ${totalCount} items` : 'Notifications'}>
+        <Button variant="ghost" size="icon" className="relative" aria-label={previewUnavailable ? 'Notifications unavailable' : totalCount > 0 ? `Notifications, ${totalCount} items` : 'Notifications'}>
           <Bell aria-hidden="true" />
           {totalCount > 0 && (
             <span className="absolute -top-1 -right-1 h-5 min-w-5 flex items-center justify-center p-0 text-[10px] font-mono bg-primary text-primary-foreground rounded-full">
@@ -194,6 +222,9 @@ const NotificationCenter = () => {
           </div>
         </div>
 
+        {previewUnavailable && (
+          <p role="status" className="px-4 py-3 text-xs text-muted-foreground">Notifications unavailable with your current access.</p>
+        )}
         <ScrollArea className="max-h-80">
           {isLoading ? (
             <div className="p-6 space-y-3">
@@ -207,7 +238,7 @@ const NotificationCenter = () => {
                 </div>
               ))}
             </div>
-          ) : allNotifications.length === 0 ? (
+          ) : allNotifications.length === 0 && previewUnavailable ? null : allNotifications.length === 0 ? (
             <div className="py-12 px-4 text-center">
               <div className="size-12 rounded-full bg-muted flex items-center justify-center mx-auto mb-3">
                 <Bell className="size-6 text-muted-foreground" />
@@ -279,6 +310,7 @@ const NotificationCenter = () => {
         <div className="border-t border-border p-2">
           <Button
             variant="ghost"
+            disabled={rust && !reads.notifications}
             className="w-full justify-center font-mono text-xs gap-2 hover:bg-muted"
             onClick={() => {
               setOpen(false);

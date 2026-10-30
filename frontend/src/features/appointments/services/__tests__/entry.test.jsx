@@ -1,0 +1,23 @@
+import { cleanup, render, screen } from '@testing-library/react';
+import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { AuthContext } from '@/lib/auth/AuthContext';
+import { userCanAccess } from '@/shared/lib/access';
+import { SIDEBARS } from '@/app/routes/routeTypes';
+import BookableServicesPanel from '../../components/BookableServicesPanel';
+import ScheduleRoute from '../../pages/AppointmentsPage';
+import { actor, service } from './fixtures';
+const hooks = vi.hoisted(() => ({ legacy: vi.fn(() => ({ mutateAsync: vi.fn(), isPending: false })), unrelated: vi.fn(() => { throw new Error('An unrelated Schedule query mounted'); }) }));
+vi.mock('@/features/appointments/hooks', () => ({ useCreateSchedulingService: hooks.legacy, useCreateSchedulingException: hooks.unrelated, useCreateSchedulingSession: hooks.unrelated, useSchedulingExceptions: hooks.unrelated, useSchedulingServices: hooks.unrelated, useSchedulingSessions: hooks.unrelated }));
+vi.mock('@/features/appointments/components/AppointmentList', () => ({ default: () => null }));
+vi.mock('@/features/appointments/components/SchedulingTemplatesPanel', () => ({ default: () => null }));
+const runtime = window.__HMS_RUNTIME_CONFIG__;
+beforeEach(() => { window.__HMS_RUNTIME_CONFIG__ = { apiMode: 'rust-v2' }; hooks.legacy.mockClear(); hooks.unrelated.mockClear(); });
+afterEach(() => { cleanup(); window.__HMS_RUNTIME_CONFIG__ = runtime; });
+async function routes() { return (await import('../../routes')).appointmentRoutes; }
+it('admits the actual capability-only actor only to the exact Services route', async () => { const definitions = await routes(); expect(userCanAccess(actor, definitions.find(route => route.path === '/appointments/services'))).toBe(true); expect(definitions.filter(route => route.path !== '/appointments/services').every(route => !userCanAccess(actor, route))).toBe(true); });
+it('refuses a role-only Rust Services actor while preserving other scheduling role rules', async () => { const definitions = await routes(), roleOnly = { ...actor, role: 'admin', adminAccess: { capabilities: [] } }; expect(userCanAccess(roleOnly, definitions.find(route => route.path === '/appointments/services'))).toBe(false); expect(userCanAccess(roleOnly, definitions.find(route => route.path === '/appointments'))).toBe(true); });
+it('keeps only Services reachable in the global appointment sidebar for its capability-only actor', async () => { const { resolveSidebarSections } = await import('@/components/layout/sidebar'); const sections = resolveSidebarSections({ sidebar: SIDEBARS.GLOBAL, user: actor, enabledFeatures: { appointments: true }, inboxCount: 0, location: { pathname: '/' }, params: {} }); const walk = items => items.flatMap(item => [item.href, ...walk(item.children || [])]); expect(sections.flatMap(section => walk(section.items)).filter(href => href?.startsWith('/appointments') || href === '/practitioner-availability')).toEqual(['/appointments/services']); });
+it('guards the direct Rust Host before legacy mutation or directory hooks mount', async () => { render(<AuthContext.Provider value={{ user: { ...actor, role: 'admin', adminAccess: { capabilities: [] } } }}><MemoryRouter><BookableServicesPanel services={[service]} /></MemoryRouter></AuthContext.Provider>); await screen.findByText('Bookable service administration unavailable'); expect(hooks.legacy).not.toHaveBeenCalled(); expect(screen.queryByText(service.name)).not.toBeInTheDocument(); });
+it('redirects the exact legacy Services tab URL before unrelated Schedule queries mount', async () => { render(<MemoryRouter initialEntries={['/appointments?tab=services']}><Routes><Route path="/appointments" element={<ScheduleRoute />} /><Route path="/appointments/services" element={<p>Independent service entry</p>} /></Routes></MemoryRouter>); await screen.findByText('Independent service entry'); expect(hooks.unrelated).not.toHaveBeenCalled(); expect(hooks.legacy).not.toHaveBeenCalled(); });
+it('preserves the Django role route and supplied legacy form without Rust administration', async () => { window.__HMS_RUNTIME_CONFIG__ = { apiMode: 'django' }; const { bookableServiceRouteAccess } = await import('../access'); expect(userCanAccess({ role: 'doctor' }, bookableServiceRouteAccess())).toBe(true); render(<BookableServicesPanel services={[service]} />); await screen.findByRole('button', { name: 'Add Service' }); expect(screen.getByText(service.name)).toBeInTheDocument(); expect(hooks.legacy).toHaveBeenCalledTimes(1); });

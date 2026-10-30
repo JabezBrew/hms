@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { act, render } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
+import { StrictMode } from 'react';
 
 vi.mock('sonner', () => {
   const fn = vi.fn();
@@ -179,5 +180,47 @@ describe('LoginInboxToaster', () => {
     expect(toast).not.toHaveBeenCalled();
     expect(toast.warning).not.toHaveBeenCalled();
     expect(toast.info).not.toHaveBeenCalled();
+  });
+});
+
+
+describe('LoginInboxToaster React StrictMode commit behavior', () => {
+  beforeEach(() => {
+    sessionStorage.clear(); vi.clearAllMocks();
+    useAuth.mockReturnValue({ isAuthenticated: true });
+    useMarkInboxRead.mockReturnValue({ mutate: vi.fn() });
+  });
+  const strictTree = () => <StrictMode><MemoryRouter><LoginInboxToaster /></MemoryRouter></StrictMode>;
+
+  it('consumes one pending flag and preserves exactly one summary through replay and remount', () => {
+    sessionStorage.setItem('hms.pendingLoginToast', '1');
+    const remove = vi.spyOn(sessionStorage, 'removeItem');
+    useInboxItems.mockReturnValue({ data: { results: [item({ title: 'Synthetic routine update' })], count: 7 } });
+    const view = render(strictTree());
+
+    expect(remove.mock.calls.filter(([key]) => key === 'hms.pendingLoginToast')).toHaveLength(1);
+    expect(sessionStorage.getItem('hms.pendingLoginToast')).toBeNull();
+    expect(toast).toHaveBeenCalledTimes(1);
+    expect(toast.mock.calls[0][0]).toBe('7 unread');
+    view.rerender(strictTree());
+    expect(toast).toHaveBeenCalledTimes(1);
+    view.unmount(); render(strictTree());
+    expect(toast).toHaveBeenCalledTimes(1);
+    expect(remove.mock.calls.filter(([key]) => key === 'hms.pendingLoginToast')).toHaveLength(1);
+  });
+
+  it('keeps the committed login armed until asynchronous unread data arrives without duplicate urgent toasts', () => {
+    sessionStorage.setItem('hms.pendingLoginToast', '1');
+    const remove = vi.spyOn(sessionStorage, 'removeItem');
+    useInboxItems.mockReturnValue({ data: undefined });
+    const view = render(strictTree());
+    expect(toast).not.toHaveBeenCalled();
+    expect(useInboxItems.mock.calls.some(([, options]) => options.enabled === true)).toBe(true);
+    useInboxItems.mockReturnValue({ data: { results: [item({ title: 'Synthetic urgent update', priority: 'urgent' })], count: 1 } });
+    view.rerender(strictTree()); view.rerender(strictTree());
+    expect(toast.warning).toHaveBeenCalledTimes(1);
+    expect(toast).toHaveBeenCalledTimes(1);
+    expect(toast.mock.calls[0][0]).toBe('1 unread • 1 urgent');
+    expect(remove.mock.calls.filter(([key]) => key === 'hms.pendingLoginToast')).toHaveLength(1);
   });
 });

@@ -6,7 +6,7 @@ use hms_domain::scheduling::{
     SchedulingExceptionItem, SlotCapacity,
 };
 use sqlx::{FromRow, Postgres, QueryBuilder};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use uuid::Uuid;
 
 use crate::codec;
@@ -333,6 +333,16 @@ pub async fn create_bookable_session(
     }
 
     let mut transaction = pool.begin().await?;
+    let mut types = session.allowed_service_ids.clone();
+    if matches!(session.owner_type, BookableUnitType::Service) {
+        types.push(
+            session
+                .owner_id
+                .ok_or_else(|| anyhow::anyhow!("appointment_type_reference_unavailable"))?,
+        );
+    }
+    crate::appointment_types::retain_active_types_tx(&mut transaction, session.facility_id, &types)
+        .await?;
     let row = sqlx::query_as::<_, BookableSessionRow>(
         r#"
         INSERT INTO clinic_sessions (
@@ -449,6 +459,20 @@ pub async fn create_bookable_session_template(
     validate_template_shape(&template)?;
 
     let mut transaction = pool.begin().await?;
+    let mut types = template.allowed_service_ids.clone();
+    if matches!(template.owner_type, BookableUnitType::Service) {
+        types.push(
+            template
+                .owner_id
+                .ok_or_else(|| anyhow::anyhow!("appointment_type_reference_unavailable"))?,
+        );
+    }
+    crate::appointment_types::retain_active_types_tx(
+        &mut transaction,
+        template.facility_id,
+        &types,
+    )
+    .await?;
     let row = sqlx::query_as::<_, BookableSessionTemplateRow>(
         r#"
         INSERT INTO clinic_session_templates (
@@ -536,7 +560,9 @@ pub async fn generate_bookable_sessions(
     filters: GenerateSessionFilters,
     actor_user_id: Uuid,
 ) -> anyhow::Result<GenerateBookableSessionsResponse> {
-    let templates = generation_templates(pool, facility_id, start_date, end_date, filters).await?;
+    let mut transaction = pool.begin().await?;
+    let templates =
+        generation_templates(&mut transaction, facility_id, start_date, end_date, filters).await?;
     if templates.is_empty() {
         return Ok(GenerateBookableSessionsResponse {
             generated_count: 0,
@@ -546,8 +572,19 @@ pub async fn generate_bookable_sessions(
     }
 
     let template_ids: Vec<Uuid> = templates.iter().map(|template| template.id).collect();
-    let allowed_services = template_allowed_services(pool, facility_id, &template_ids).await?;
-    let mut transaction = pool.begin().await?;
+    let allowed_services =
+        template_allowed_services(&mut transaction, facility_id, &template_ids).await?;
+    let mut types: Vec<Uuid> = allowed_services.values().flatten().copied().collect();
+    for template in &templates {
+        if matches!(template.owner_type, BookableUnitType::Service) {
+            types.push(
+                template
+                    .owner_id
+                    .ok_or_else(|| anyhow::anyhow!("appointment_type_reference_unavailable"))?,
+            );
+        }
+    }
+    crate::appointment_types::retain_active_types_tx(&mut transaction, facility_id, &types).await?;
     let mut generated = Vec::new();
     let mut skipped_count = 0_i64;
 
@@ -881,8 +918,10 @@ pub async fn bookable_service_exists(
     facility_id: Uuid,
     service_id: Uuid,
 ) -> anyhow::Result<bool> {
-    let exists: bool = sqlx::query_scalar(
-        r#"
+    let exists: bool = hms_observability::observe_db_query(
+        "scheduling.service.scalar_validation",
+        sqlx::query_scalar(
+            r#"
         SELECT EXISTS (
             SELECT 1
             FROM appointment_types
@@ -891,12 +930,38 @@ pub async fn bookable_service_exists(
               AND is_active = TRUE
         )
         "#,
+        )
+        .bind(facility_id)
+        .bind(service_id)
+        .fetch_one(pool),
     )
-    .bind(facility_id)
-    .bind(service_id)
-    .fetch_one(pool)
     .await?;
     Ok(exists)
+}
+
+/// Exact active/local set validation; duplicates and an explicit empty set keep
+/// their existing meaning. Never publish a filtered subset of requested IDs.
+pub async fn bookable_services_exist(
+    pool: &PgPool,
+    facility_id: Uuid,
+    service_ids: &[Uuid],
+) -> anyhow::Result<bool> {
+    if service_ids.is_empty() {
+        return Ok(true);
+    }
+    Ok(hms_observability::observe_db_query(
+        "scheduling.services.exact_validation",
+        sqlx::query_scalar(
+            r#"
+ SELECT count(*)=(SELECT count(DISTINCT requested.id) FROM unnest($2::uuid[])requested(id))
+ FROM appointment_types WHERE facility_id=$1 AND id=ANY($2::uuid[]) AND is_active
+ "#,
+        )
+        .bind(facility_id)
+        .bind(service_ids)
+        .fetch_one(pool),
+    )
+    .await?)
 }
 
 pub async fn bookable_session_exists(
@@ -1158,7 +1223,7 @@ fn apply_service_filter(
 }
 
 async fn generation_templates(
-    pool: &PgPool,
+    transaction: &mut sqlx::Transaction<'_, Postgres>,
     facility_id: Uuid,
     start_date: NaiveDate,
     end_date: NaiveDate,
@@ -1186,9 +1251,10 @@ async fn generation_templates(
     query
         .push(" ORDER BY clinic_session_templates.created_at ASC, clinic_session_templates.id ASC");
 
+    query.push(" FOR SHARE OF clinic_session_templates NOWAIT");
     let rows = query
         .build_query_as::<BookableSessionTemplateRow>()
-        .fetch_all(pool)
+        .fetch_all(&mut **transaction)
         .await?;
     rows.into_iter()
         .map(bookable_session_template_from_row)
@@ -1196,29 +1262,33 @@ async fn generation_templates(
 }
 
 async fn template_allowed_services(
-    pool: &PgPool,
+    transaction: &mut sqlx::Transaction<'_, Postgres>,
     facility_id: Uuid,
     template_ids: &[Uuid],
 ) -> anyhow::Result<HashMap<Uuid, Vec<Uuid>>> {
     if template_ids.is_empty() {
         return Ok(HashMap::new());
     }
-    let rows = sqlx::query_as::<_, (Uuid, Uuid)>(
+    let rows = sqlx::query_as::<_, (Uuid, Uuid, Uuid, Option<Uuid>)>(
         r#"
-        SELECT clinic_session_template_id,
-               appointment_type_id
-        FROM clinic_session_template_appointment_types
-        WHERE facility_id = $1
-          AND clinic_session_template_id = ANY($2)
+        SELECT allowed.clinic_session_template_id,
+               allowed.facility_id,
+               allowed.appointment_type_id,
+               typ.facility_id
+        FROM clinic_session_template_appointment_types allowed
+        LEFT JOIN appointment_types typ ON typ.id=allowed.appointment_type_id
+        WHERE allowed.clinic_session_template_id = ANY($1)
         "#,
     )
-    .bind(facility_id)
     .bind(template_ids)
-    .fetch_all(pool)
+    .fetch_all(&mut **transaction)
     .await?;
 
     let mut services = HashMap::new();
-    for (template_id, service_id) in rows {
+    for (template_id, child_facility_id, service_id, type_facility_id) in rows {
+        if child_facility_id != facility_id || type_facility_id != Some(facility_id) {
+            anyhow::bail!("appointment_type_reference_unavailable");
+        }
         services
             .entry(template_id)
             .or_insert_with(Vec::new)
@@ -1328,6 +1398,7 @@ async fn availability_sessions(
     query.push(" WHERE clinic_sessions.facility_id = ");
     query.push_bind(facility_id);
     query.push(" AND clinic_sessions.is_active = TRUE");
+    query.push(" AND (clinic_sessions.owner_type <> 'service' OR EXISTS(SELECT 1 FROM appointment_types owner_service WHERE owner_service.facility_id=clinic_sessions.facility_id AND owner_service.id=clinic_sessions.owner_id AND owner_service.is_active))");
     query.push(" AND clinic_sessions.starts_at < ");
     query.push_bind(filters.ends_before);
     query.push(" AND clinic_sessions.ends_at > ");
@@ -1342,6 +1413,12 @@ async fn availability_sessions(
         query.push_bind(practitioner_user_id);
     }
     if let Some(service_id) = filters.service_id {
+        query.push(" AND EXISTS(SELECT 1 FROM appointment_types selected_service WHERE selected_service.facility_id=");
+        query
+            .push_bind(facility_id)
+            .push(" AND selected_service.id=")
+            .push_bind(service_id)
+            .push(" AND selected_service.is_active)");
         apply_service_filter(&mut query, facility_id, service_id);
     }
 
@@ -1616,72 +1693,53 @@ async fn insert_session_allowed_services(
     session_id: Uuid,
     allowed_service_ids: &[Uuid],
 ) -> anyhow::Result<()> {
-    let mut seen_service_ids = HashSet::new();
-    for service_id in allowed_service_ids {
-        if !seen_service_ids.insert(*service_id) {
-            continue;
-        }
-        let result = sqlx::query(
+    let mut exact = allowed_service_ids.to_vec();
+    exact.sort_unstable();
+    exact.dedup();
+    if exact.is_empty() {
+        return Ok(());
+    }
+    let result = hms_observability::observe_db_query(
+        "scheduling.allowed_type.publish",
+        sqlx::query(
             r#"
-            INSERT INTO clinic_session_appointment_types (
-                facility_id,
-                clinic_session_id,
-                appointment_type_id
-            )
-            SELECT $1, $2, appointment_types.id
-            FROM appointment_types
-            WHERE appointment_types.facility_id = $1
-              AND appointment_types.id = $3
-              AND appointment_types.is_active = TRUE
-            ON CONFLICT (clinic_session_id, appointment_type_id) DO NOTHING
-            "#,
+ INSERT INTO clinic_session_appointment_types(facility_id,clinic_session_id,appointment_type_id)
+ SELECT $1,$2,t.id FROM appointment_types t
+ WHERE t.facility_id=$1 AND t.id=ANY($3::uuid[]) AND t.is_active ORDER BY t.id
+ ON CONFLICT(clinic_session_id,appointment_type_id)DO NOTHING
+ "#,
         )
         .bind(facility_id)
         .bind(session_id)
-        .bind(*service_id)
-        .execute(&mut **transaction)
-        .await?;
-        if result.rows_affected() == 0 {
-            anyhow::bail!("allowed service is not active in facility");
-        }
+        .bind(&exact)
+        .execute(&mut **transaction),
+    )
+    .await?;
+    if result.rows_affected() != exact.len() as u64 {
+        anyhow::bail!("allowed service is not active in facility");
     }
     Ok(())
 }
-
 async fn insert_template_allowed_services(
     transaction: &mut sqlx::Transaction<'_, Postgres>,
     facility_id: Uuid,
     template_id: Uuid,
     allowed_service_ids: &[Uuid],
 ) -> anyhow::Result<()> {
-    let mut seen_service_ids = HashSet::new();
-    for service_id in allowed_service_ids {
-        if !seen_service_ids.insert(*service_id) {
-            continue;
-        }
-        let result = sqlx::query(
-            r#"
-            INSERT INTO clinic_session_template_appointment_types (
-                facility_id,
-                clinic_session_template_id,
-                appointment_type_id
-            )
-            SELECT $1, $2, appointment_types.id
-            FROM appointment_types
-            WHERE appointment_types.facility_id = $1
-              AND appointment_types.id = $3
-              AND appointment_types.is_active = TRUE
-            ON CONFLICT (clinic_session_template_id, appointment_type_id) DO NOTHING
-            "#,
-        )
-        .bind(facility_id)
-        .bind(template_id)
-        .bind(*service_id)
-        .execute(&mut **transaction)
-        .await?;
-        if result.rows_affected() == 0 {
-            anyhow::bail!("allowed service is not active in facility");
-        }
+    let mut exact = allowed_service_ids.to_vec();
+    exact.sort_unstable();
+    exact.dedup();
+    if exact.is_empty() {
+        return Ok(());
+    }
+    let result=hms_observability::observe_db_query("scheduling.allowed_type.publish",sqlx::query(r#"
+ INSERT INTO clinic_session_template_appointment_types(facility_id,clinic_session_template_id,appointment_type_id)
+ SELECT $1,$2,t.id FROM appointment_types t
+ WHERE t.facility_id=$1 AND t.id=ANY($3::uuid[]) AND t.is_active ORDER BY t.id
+ ON CONFLICT(clinic_session_template_id,appointment_type_id)DO NOTHING
+ "#).bind(facility_id).bind(template_id).bind(&exact).execute(&mut **transaction)).await?;
+    if result.rows_affected() != exact.len() as u64 {
+        anyhow::bail!("allowed service is not active in facility");
     }
     Ok(())
 }

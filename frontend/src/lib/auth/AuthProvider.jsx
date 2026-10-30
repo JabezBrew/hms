@@ -1,11 +1,11 @@
-import { AuthContext } from './AuthContext.js'
-import { useAuthProviderController } from './useAuthProviderController.js'
-import { IdentityVerificationLoader } from '@/features/auth/IdentityVerificationLoader'
-import { isRustV2ApiMode } from '@/lib/api/v2/runtime'
-import { authorizationIdentity } from '@/shared/lib/authorizationScope'
+import { Suspense } from 'react'
+import PublicAuthLoader from '@/app/PublicAuthLoader'
+import { authSessionRuntime } from './authSessionLoader'
 
-export function AuthProvider({ children }) {
-  const value = useAuthProviderController()
+const SessionProvider = authSessionRuntime(() => import('./AuthSessionProvider'))
 
-  return <AuthContext.Provider value={value}>{isRustV2ApiMode() && value.user && <IdentityVerificationLoader key={authorizationIdentity(value.user)} />}{children}</AuthContext.Provider>
+// The module-scope runtime stays mounted through every session transition.
+// No auth consumer or protected child mounts while the real provider loads.
+export function AuthProvider({ children, Runtime = SessionProvider }) {
+  return <Suspense fallback={<PublicAuthLoader />}><Runtime>{children}</Runtime></Suspense>
 }

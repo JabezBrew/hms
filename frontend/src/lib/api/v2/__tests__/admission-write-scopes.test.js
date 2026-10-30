@@ -12,12 +12,12 @@ const oldRuntime = window.__HMS_RUNTIME_CONFIG__; const oldFetch = globalThis.fe
 let client; let guard; let ledger; let token; let authority;
 const json = (data) => new Response(JSON.stringify({ data }), { headers: { 'content-type': 'application/json' } });
 async function setup() {
-  [client, guard, ledger] = await Promise.all([import('../client'), import('../networkAccessGuard'), import('../writeUncertainty')]);
+  [client, guard, ledger] = await Promise.all([import('../client'), import('@/tests/networkClockModel'), import('../writeUncertainty')]);
   client.__resetV2ApiClientForTests(); bind();
 }
 function bind() {
   client.configureV2ApiClient({ getAccessToken: () => token, getFacilityCode: () => 'QA', canRefreshSession: () => false });
-  guard.bindNetworkAccessGuard({ transportScope: client.getV2ClientScopeKey(), authorityScope: authority, principal }).update({ confirmed: true, decision: { access_allowed: true, read_only: false, classification: 'onsite', policy_version: 1 } });
+  guard.bindModeledNetworkGuard({ transportScope: client.getV2ClientScopeKey(), authorityScope: authority, principal }).update({ confirmed: true, decision: { access_allowed: true, read_only: false, classification: 'onsite', policy_version: 1 } });
   ledger.activateWriteUncertainty(principal);
 }
 const write = () => client.v2Request({ method: 'POST', path: `${root}/{course_id}/stop`, pathParams, body });

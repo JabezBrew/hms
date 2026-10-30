@@ -220,7 +220,7 @@ impl InventoryCatalogService {
         authorization_deadline: chrono::DateTime<chrono::Utc>,
     ) -> Result<ObjectResponse<InventoryCatalogVersionItem>, ApiError> {
         require_inventory_access(ctx, self.facility_id(), PermissionCode::InventoryManage)?;
-        if !ctx.reauth.is_fresh_at(chrono::Utc::now()) {
+        if !ctx.reauth_is_fresh_at(chrono::Utc::now()) {
             return Err(ApiError::forbidden(
                 "reauth_required",
                 "Confirm your current credentials before correcting the catalog.",
@@ -231,10 +231,10 @@ impl InventoryCatalogService {
             self.pool(),
             CatalogEditCommand {
                 authorization: Some(
-                    crate::services::clinical::prescription_courses::authorization(
+                    crate::services::clinical::prescription_courses::ordinary_authorization(
                         ctx,
                         authorization_deadline,
-                    ),
+                    )?,
                 ),
                 id: Uuid::new_v4(),
                 facility_id: self.facility_id(),

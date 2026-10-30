@@ -1,6 +1,6 @@
 # Python to Rust and UI feature parity
 
-Updated: 2026-10-18. Scope: the user's expanded request for all phases after the
+Updated: 2026-10-30. Scope: the user's expanded request for all phases after the
 phase-one release. This ledger extends `v2-cutover-scope.md`; its old baseline
 labels are historical evidence, not a claim that all Python workflows work in
 the Rust UI. Python is a behavior reference; Rust access and PHI contracts win
@@ -81,7 +81,7 @@ remaining organization, billing catalog, external delivery or realtime backlog.
 | Workflow | Evidence | Required work | Status |
 | --- | --- | --- | --- |
 | Appointment recurrence | Python appointment generation; Rust `create_appointment_series` repository exists without API | Expose audited series contract/UI with atomic capacity, conflicts, cancellation and exceptions. Normal booking/session templates already work. | explicit real-slot series implemented; fifth checkpoint local regression/HTTP acceptance passed; browser/staging pending; rule expansion and automatic scheduling queued |
-| Appointment type/availability administration | Legacy UI guards versus current scheduling contracts | Complete genuine missing administration without duplicating implemented scheduling sessions/exceptions. | twenty-third checkpoint private implementation in progress: real frozen22 tests reproduce missing management wire, default-service reseed overwrite/reactivation and inactive/foreign publication gaps; governed metadata/lifecycle, six reference families and preservation of booked care are not yet accepted |
+| Appointment type/availability administration | Legacy UI guards versus current scheduling contracts | Complete genuine missing administration without duplicating implemented scheduling sessions/exceptions. | twenty-third checkpoint frozen local acceptance: governed original-actor UUID/CAS create/metadata/retire/reactivate, bounded reachable directory, six retained reference families, preserving provisioning and booked-care closure; 1102 backend tests/154 targets, final frontend six gates,196 ops/four opt-in skips and actual native 517 SDK/659 assertions with persisted101 migrations/029 and400 protected reads pass; finite service browser checks pass, broader rendered/live acceptance remains separate |
 | Department rosters | Python `organization/views.py` roster generation/import/publish | Staff source, shifts/coverage, publish/override and bounded on-duty projections. Scheduling session templates are not roster parity. | queued |
 | Lab catalog management | Python `laboratory/views.py` customize/reset/CRUD | Facility-owned test/panel versioning and safe order/result historical snapshots. Normal lab order through verification already exists. | queued |
 | Chart builder and assignments | Python `charts/models.py` templates/fields/assignments/critical entries/trends | Validated versioned schema, assignment lifecycle, safe entries/alerts/trends inside Chronicle. Scalar chart entries alone are partial. | queued |
@@ -95,6 +95,12 @@ checkpoints20–22 pass1027 Rust tests/150 targets,3077 frontend tests/343 suite
 with400 zero-error protected reads. Earlier frontend-only results are superseded
 by the final denial/cancellation/storage and note-recovery compatibility controls.
 Rendered/browser/hardware/live deployment and full Python parity remain open. See `2026-10-18-phase-twenty-two-verification.md`.
+
+Checkpoint 23 appointment-service maintenance adds a later, separately frozen
+local release. See `2026-10-18-phase-twenty-three-verification.md` for its exact
+source-bound gates, preserved negative controls and native evidence. Inventory
+item governance remains a subsequent slice; neither checkpoint closes full Python
+parity, whole-application rendered acceptance or live deployment.
 
 ## Phase 7: governed external integration and release proof
 

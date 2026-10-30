@@ -1,6 +1,8 @@
 import { apiErrorFromEnvelope } from '@/lib/api/v2/errors';
 import { buildV2ApiUrl } from '@/lib/api/v2/runtime';
-import { v2Request } from '@/lib/api/v2/session';
+import { getV2ClientScopeKey, v2Request } from '@/lib/api/v2/session';
+import { clockGeneration, clockNow, recordServerClockResponse } from '@/shared/lib/serverClock';
+import { observeAssurance, observePendingGrant, observeTokenResponse } from './clock';
 import { authenticatedResult, assuranceResult, hasFreshPasskey, loginResult } from './model';
 
 const grantPaths = new Set(['/auth/login', '/auth/setup/start', '/auth/login/passkey/options', '/auth/login/passkey/verify', '/auth/login/recovery', '/auth/login/setup/options', '/auth/login/setup/verify']);
@@ -9,12 +11,14 @@ const grantPaths = new Set(['/auth/login', '/auth/setup/start', '/auth/login/pas
 export async function grantRequest(path, body, { signal } = {}) {
   if (!grantPaths.has(path)) throw new Error('Unsupported sign-in operation.');
   if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+  const started = clockNow(); const generation = clockGeneration(); const transport = getV2ClientScopeKey();
   const response = await fetch(buildV2ApiUrl(path), { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal });
   let envelope;
   try { envelope = await response.json(); } catch { throw new Error('The sign-in response could not be read. Restart sign-in.'); }
   if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
   if (!response.ok) throw apiErrorFromEnvelope(response.status, envelope);
   if (!envelope || !('data' in envelope)) throw new Error('The sign-in response could not be confirmed. Restart sign-in.');
+  recordServerClockResponse(envelope, { started, generation, signal, token: null, method: 'POST', path: `/api/v2${path}`, current: () => getV2ClientScopeKey() === transport });
   return envelope.data;
 }
 async function ownRequest(path, { method = 'GET', body, signal, query } = {}) {
@@ -28,20 +32,20 @@ export async function confirmCurrentPassword(password, { signal } = {}) {
   // The generated options intentionally expose no refresh selector. Use its
   // actual operation with a fixed no-refresh transport for this credential proof.
   const client = createGeneratedClient(request => v2Request({ ...request, skipAuthRefresh: true }));
-  const dispatchStartedAt = Date.now();
+  const dispatchStartedAt = clockNow();
   const response = await client.postAuthReauthenticate({ current_password: password }, { signal });
   if (response?.data?.status !== 'authenticated') throw new Error('Current identity could not be confirmed.');
-  return { result: authenticatedResult(response.data), dispatchStartedAt };
+  return { result: authenticatedResult(observeTokenResponse(response.data, { ordinary: true })), dispatchStartedAt };
 }
 export const factorApi = {
-  login: async (body, options) => loginResult(await grantRequest('/auth/login', body, options)),
-  startSetup: async (body, options) => { const result = loginResult(await grantRequest('/auth/setup/start', body, options)); if (result.status !== 'setup_required') throw new Error('First-key setup could not be confirmed.'); return result; },
+  login: async (body, options) => { const value = await grantRequest('/auth/login', body, options); return loginResult(value?.status === 'authenticated' ? observeTokenResponse(value) : observePendingGrant(value)); },
+  startSetup: async (body, options) => { const result = loginResult(observePendingGrant(await grantRequest('/auth/setup/start', body, options))); if (result.status !== 'setup_required') throw new Error('First-key setup could not be confirmed.'); return result; },
   options: (grant, options) => grantRequest('/auth/login/passkey/options', { login_grant: grant }, options),
   verify: async (body, options) => factorResult(await grantRequest('/auth/login/passkey/verify', body, options), 'passkey'),
   recovery: async (grant, code, options) => factorResult(await grantRequest('/auth/login/recovery', { login_grant: grant, code }, options), 'recovery'),
   setupOptions: (grant, bootstrap, options) => grantRequest('/auth/login/setup/options', { login_grant: grant, bootstrap_token: bootstrap }, options),
-  setupVerify: async (body, options) => { const result = loginResult(await grantRequest('/auth/login/setup/verify', body, options)); if (result.status !== 'factor_required') throw new Error('Passkey setup did not return the required separate assertion. Restart sign-in.'); return result; },
-  assurance: async (options) => assuranceResult(await ownRequest('/api/v2/auth/assurance', options)),
+  setupVerify: async (body, options) => { const value = await grantRequest('/auth/login/setup/verify', body, options); if (value?.status === 'authenticated') throw new Error('Passkey setup did not return the required separate assertion. Restart sign-in.'); const result = loginResult(observePendingGrant(value)); if (result.status !== 'factor_required') throw new Error('Passkey setup did not return the required separate assertion. Restart sign-in.'); return result; },
+  assurance: async (options) => assuranceResult(observeAssurance(await ownRequest('/api/v2/auth/assurance', options))),
   stepUpOptions: (password, options) => ownRequest('/api/v2/auth/assurance/options', { ...options, method: 'POST', body: { ...(password ? { current_password: password } : {}) } }),
   stepUpVerify: async (body, options) => factorResult(await ownRequest('/api/v2/auth/assurance/verify', { ...options, method: 'POST', body }), 'passkey'),
   keys: async ({ cursor, signal } = {}) => {
@@ -55,7 +59,7 @@ export const factorApi = {
 };
 function validKey(row) { try { keyPath(row.id); return typeof row.created_at === 'string' && (row.label === null || typeof row.label === 'string') && (row.disabled_at === null || typeof row.disabled_at === 'string'); } catch { return false; } }
 function factorResult(value, method) {
-  const result = authenticatedResult(value); const assurance = result.user.auth_security?.session_assurance;
+  const result = authenticatedResult(observeTokenResponse(value, { newFactor: method })); const assurance = result.user.auth_security?.session_assurance;
   if (result.status !== 'authenticated' || assurance?.method !== method || (method === 'passkey' && !hasFreshPasskey(assurance))) throw new Error('The verified sign-in proof could not be confirmed. Restart verification.');
   return result;
 }

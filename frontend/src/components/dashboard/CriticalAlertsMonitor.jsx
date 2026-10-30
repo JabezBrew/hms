@@ -5,11 +5,15 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import {
   useAdminDashboard,
   useInpatientDashboard,
+  dashboardKeys,
 } from '@/features/dashboards/hooks';
 import { useActiveAlerts, useOverdueMedications } from '@/features/nursing/hooks';
 import { toast } from 'sonner';
 
 import { useAuth } from '@/lib/auth';
+import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
+import { useAuthScope } from '@/features/auth/useAuthScope';
+import { optionalReadAccess } from '@/shared/lib/optionalReadAccess';
 import { usePageVisibility } from '@/shared/hooks/usePageVisibility';
 
 /**
@@ -20,6 +24,9 @@ import { usePageVisibility } from '@/shared/hooks/usePageVisibility';
  */
 export default function CriticalAlertsMonitor() {
   const { user } = useAuth();
+  const rust = isRustV2ApiMode();
+  const scope = useAuthScope(user);
+  const reads = optionalReadAccess(user);
   const { isPageActive } = usePageVisibility();
   const location = useLocation();
   const navigate = useNavigate();
@@ -45,6 +52,8 @@ export default function CriticalAlertsMonitor() {
   const isInpatientDoctor = ['doctor', 'inpatient_doctor'].includes(userRole);
   const isAdmin = userRole === 'admin';
   const isAdminDashboardRoute = location.pathname === '/dashboards/admin';
+  const inpatientEnabled = shouldMonitor && isInpatientDoctor && (!rust || reads.inpatientPreview);
+  const adminEnabled = shouldMonitor && isAdmin && !isAdminDashboardRoute && (!rust || reads.dashboardSnapshot);
 
   const { data: nurseAlerts = [], hasNextPage: moreNursingAlerts = false, isError: nursingAlertsFailed = false } = useActiveAlerts({
     enabled: shouldMonitor && isNurse,
@@ -55,23 +64,23 @@ export default function CriticalAlertsMonitor() {
     enabled: shouldMonitor && isNurse,
   });
 
-  const { data: inpatientDashboardData } = useInpatientDashboard({
-    enabled: shouldMonitor && isInpatientDoctor,
+  const inpatientQuery = useInpatientDashboard({
+    ...(rust ? { queryKey: [...dashboardKeys.inpatient(), scope] } : {}),
+    enabled: inpatientEnabled,
     refetchInterval: 30000,
     refetchIntervalInBackground: false,
   });
 
-  const { data: adminDashboardData } = useAdminDashboard({
-    enabled: shouldMonitor && isAdmin && !isAdminDashboardRoute,
+  const adminQuery = useAdminDashboard({
+    ...(rust ? { queryKey: [...dashboardKeys.admin(), scope] } : {}),
+    enabled: adminEnabled,
     refetchInterval: 30000,
     refetchIntervalInBackground: false,
   });
 
-  const dashboardData = isInpatientDoctor
-    ? inpatientDashboardData
-    : isAdmin
-    ? adminDashboardData
-    : null;
+  const inpatientData = !rust || (inpatientEnabled && !inpatientQuery.isError) ? inpatientQuery.data : null;
+  const adminData = !rust || (adminEnabled && !adminQuery.isError) ? adminQuery.data : null;
+  const dashboardData = isInpatientDoctor ? inpatientData : isAdmin ? adminData : null;
 
   useEffect(() => {
     const notice = shouldMonitor && isNurse ? (nursingAlertsFailed ? 'unavailable' : moreNursingAlerts ? 'partial' : null) : null;

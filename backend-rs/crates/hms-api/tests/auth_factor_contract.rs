@@ -485,3 +485,98 @@ async fn privileged_write_audit_failure_rolls_back_every_family_business_change(
         );
     }
 }
+
+#[tokio::test]
+async fn actual_break_glass_audit_wait_cannot_borrow_newer_password_proof_for_old_signed_token() {
+    let matrix = Matrix::new().await;
+    let app = &matrix.app;
+    let (token, _, _) = login(app.clone(), "owner@hms.local").await;
+    let pool = app.db_pool().await;
+    let mut claims = access_claims(&token);
+    // A deliberately aged, valid signed test token retains the actual current
+    // session and genuine passkey. Its older password proof must not borrow the
+    // newer durable password after the protected publication waits on audit.
+    let observed: chrono::DateTime<Utc> = sqlx::query_scalar("SELECT clock_timestamp()")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let old_password = observed - chrono::Duration::minutes(15) + chrono::Duration::seconds(4);
+    claims.auth_time = Some(old_password.timestamp() as usize);
+    let deadline = chrono::DateTime::from_timestamp(claims.auth_time.unwrap() as i64, 0).unwrap()
+        + chrono::Duration::minutes(15);
+    let aged_token = encode(
+        &Header::default(),
+        &claims,
+        &EncodingKey::from_secret(b"test-only-hms-v2-jwt-secret"),
+    )
+    .unwrap();
+    sqlx::raw_sql("CREATE FUNCTION wait_break_glass_clock_audit() RETURNS trigger LANGUAGE plpgsql AS $$BEGIN IF NEW.event_type='patient.break_glass.started' THEN PERFORM pg_advisory_xact_lock(17002301);END IF;RETURN NEW;END$$;CREATE TRIGGER wait_break_glass_clock_audit BEFORE INSERT ON audit_events FOR EACH ROW EXECUTE FUNCTION wait_break_glass_clock_audit();")
+        .execute(&pool).await.unwrap();
+    let mut gate = pool.acquire().await.unwrap();
+    let pid: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
+        .fetch_one(&mut *gate)
+        .await
+        .unwrap();
+    sqlx::query("SELECT pg_advisory_lock(17002301)")
+        .execute(&mut *gate)
+        .await
+        .unwrap();
+    let before = matrix.evidence().await;
+    let audit_before: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM audit_events WHERE event_type='patient.break_glass.started'",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let operation = matrix
+        .operations
+        .iter()
+        .find(|op| op.name == "break glass")
+        .unwrap()
+        .clone();
+    let pending_app = app.clone();
+    let pending_op = operation.clone();
+    let pending = tokio::spawn(async move { pending_op.send(&pending_app, &aged_token).await });
+    await_real_row_wait(&pool, pid, &pending).await;
+    sqlx::query(
+        "SELECT pg_sleep(GREATEST(0,extract(epoch FROM($1::timestamptz-clock_timestamp())))+0.03)",
+    )
+    .bind(deadline)
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query("SELECT pg_advisory_unlock(17002301)")
+        .execute(&mut *gate)
+        .await
+        .unwrap();
+    let response = pending.await.unwrap();
+    let status = response.status();
+    let body = json_body(response).await;
+    assert_eq!(
+        status,
+        StatusCode::FORBIDDEN,
+        "post-audit original proof deadline error {}",
+        body["error"]["code"].as_str().unwrap_or("none")
+    );
+    assert_eq!(matrix.evidence().await, before);
+    let audit_after: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM audit_events WHERE event_type='patient.break_glass.started'",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(audit_after, audit_before);
+    sqlx::query("DROP TRIGGER wait_break_glass_clock_audit ON audit_events")
+        .execute(&pool)
+        .await
+        .unwrap();
+    let positive = operation.send(app, &token).await;
+    let status = positive.status();
+    let body = json_body(positive).await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "independent current signed proof remains usable: {}",
+        body["error"]["code"].as_str().unwrap_or("none")
+    );
+}

@@ -50,6 +50,7 @@ export function AppointmentCreateTimePanel({
   watchClinicId,
   watchPractitionerId,
   seriesEntry,
+  serviceAvailable = true,
 }) {
   return (
     <div className="p-6 overflow-y-auto bg-background">
@@ -80,6 +81,12 @@ export function AppointmentCreateTimePanel({
           icon={Stethoscope}
           title="Select a Doctor"
           description="This clinic books directly to a doctor, so select a doctor to view available slots."
+        />
+      ) : !serviceAvailable ? (
+        <AppointmentCreateEmptyState
+          icon={Clock}
+          title="Confirm an active service"
+          description="Choose a current active service before loading availability. The original service constraint is kept; no replacement is selected."
         />
       ) : (
         <FormField

@@ -5,7 +5,7 @@ use hms_domain::scheduling::{
     ArriveAppointmentRequest, AvailabilityQuery, AvailabilityResponse, BookAppointmentRequest,
     BookAppointmentResponse, BookableServiceListItem, BookableSessionListItem,
     BookableSessionListQuery, BookableSessionTemplateListItem, BookableSessionTemplateListQuery,
-    CancelBookableSessionRequest, CreateBookableServiceRequest, CreateBookableSessionRequest,
+    CancelBookableSessionRequest, CreateBookableSessionRequest,
     CreateBookableSessionTemplateRequest, GenerateBookableSessionsRequest,
     GenerateBookableSessionsResponse, SchedulingExceptionItem, SchedulingExceptionListQuery,
     SchedulingExceptionRequest, SchedulingListQuery,
@@ -39,33 +39,6 @@ pub async fn list_services(
         state
             .scheduling_service()
             .list_services(&user, query)
-            .await?,
-    ))
-}
-
-#[utoipa::path(
-    post,
-    path = "/api/v2/scheduling/services",
-    operation_id = "postSchedulingServices",
-    tag = "scheduling",
-    security(("bearerAuth" = [])),
-    request_body = CreateBookableServiceRequest,
-    responses(
-        (status = 200, description = "Bookable service created", body = ObjectResponse<BookableServiceListItem>),
-        (status = 400, description = "Invalid service request", body = ApiErrorResponse),
-        (status = 401, description = "Authentication required", body = ApiErrorResponse),
-        (status = 403, description = "Permission denied", body = ApiErrorResponse)
-    )
-)]
-pub async fn create_service(
-    State(state): State<AppState>,
-    RequestContext(user): RequestContext,
-    Json(payload): Json<CreateBookableServiceRequest>,
-) -> Result<Json<ObjectResponse<BookableServiceListItem>>, ApiError> {
-    Ok(Json(
-        state
-            .scheduling_service()
-            .create_service(&user, payload)
             .await?,
     ))
 }

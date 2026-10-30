@@ -19,7 +19,7 @@ async fn historical(pool: &hms_db::PgPool, before: i64) {
         .expect("historical migrations apply");
 }
 #[tokio::test]
-async fn new_runtime_requires_location_epoch_while_probe_preserves_historical_epochs() {
+async fn new_runtime_requires_type_epoch_while_probe_preserves_historical_epochs() {
     let database = hms_db::test_support::TestDatabase::create().unwrap();
     let pool = hms_db::connect(database.database_url()).await.unwrap();
     assert_eq!(committed_breaking_epoch(&pool).await.unwrap(), 0);
@@ -46,8 +46,11 @@ async fn new_runtime_requires_location_epoch_while_probe_preserves_historical_ep
     historical(&pool, 202610170028).await;
     assert_eq!(committed_breaking_epoch(&pool).await.unwrap(), 202610170027);
     assert!(require_runtime_schema(&pool).await.is_err());
-    hms_db::migrate::run(&pool).await.unwrap();
+    historical(&pool, 202610180029).await;
     assert_eq!(committed_breaking_epoch(&pool).await.unwrap(), 202610170028);
+    assert!(require_runtime_schema(&pool).await.is_err());
+    hms_db::migrate::run(&pool).await.unwrap();
+    assert_eq!(committed_breaking_epoch(&pool).await.unwrap(), 202610180029);
     require_runtime_schema(&pool).await.unwrap();
     let identities:(i64,i64,i64)=sqlx::query_as("SELECT (SELECT count(*) FROM facilities),(SELECT count(*) FROM users),(SELECT count(*) FROM audit_events)").fetch_one(&pool).await.unwrap();
     assert_eq!(identities, (0, 0, 0));
@@ -834,3 +837,6 @@ async fn location_guards_reference_arguments_and_actual_index_keys_are_required(
         require_runtime_schema(&pool).await.unwrap();
     }
 }
+
+#[path = "schema_compatibility/appointment_types.rs"]
+mod appointment_types;

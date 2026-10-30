@@ -1,3 +1,5 @@
+import { bookableServiceRouteAccess } from '@/features/appointments/services/access'
+import { isRustV2ApiMode } from '@/lib/api/v2/runtime'
 import { organizationRouteAccess } from '@/features/admin/organization/access'
 import { storageLocationParentAccess, storageLocationRouteAccess } from '@/features/inventory/locations/access'
 const DEFAULT_EMPTY_OBJECT = {};
@@ -297,6 +299,7 @@ const globalSections = [
           roles: ROLE_GROUPS.APPOINTMENTS,
           exact: true,
         }),
+        ...(isRustV2ApiMode() ? [item({ key: 'bookable-services', label: 'Services', href: '/appointments/services', icon: Calendar, ...bookableServiceRouteAccess(), exact: true })] : []),
         item({
           key: 'availability',
           label: 'Availability',

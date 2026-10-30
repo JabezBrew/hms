@@ -1,3 +1,4 @@
+import { serverClock } from '@/shared/lib/serverClock';
 const validTime = (value) => typeof value === 'string' && Number.isFinite(Date.parse(value));
 const nonempty = (value) => typeof value === 'string' && value.length > 0;
 export function authenticatedResult(value) {
@@ -12,7 +13,7 @@ export function authenticatedResult(value) {
 export function loginResult(value) {
   if (value?.status === 'authenticated') return authenticatedResult(value);
   if (!['factor_required', 'setup_required'].includes(value?.status) || !nonempty(value.login_grant) || !validTime(value.expires_at)
-    || Date.parse(value.expires_at) <= Date.now() || Object.keys(value).some((key) => !['status', 'login_grant', 'expires_at', 'methods', 'reason'].includes(key))) throw new Error('The sign-in challenge could not be confirmed. Restart sign-in.');
+    || !(serverClock(value)?.remaining(value.expires_at) > 0) || Object.keys(value).some((key) => !['status', 'login_grant', 'expires_at', 'methods', 'reason', 'auth_clock'].includes(key))) throw new Error('The sign-in challenge could not be confirmed. Restart sign-in.');
   if (value.status === 'factor_required' && (typeof value.methods?.passkey !== 'boolean' || typeof value.methods?.recovery_code !== 'boolean' || (!value.methods.passkey && !value.methods.recovery_code))) throw new Error('No supported sign-in factor was returned. Restart sign-in or contact your administrator.');
   if (value.status === 'setup_required' && value.reason !== 'operator_bootstrap_required') throw new Error('Account setup could not be confirmed. Contact your administrator.');
   return value;
@@ -24,7 +25,7 @@ export function assuranceResult(value) {
     || (proof.method !== null && (!validTime(proof.verified_at) || !validTime(proof.expires_at) || Date.parse(proof.expires_at) <= Date.parse(proof.verified_at)))) throw new Error('Current factor assurance could not be confirmed.');
   return value;
 }
-export const hasFreshPasskey = (value, now = Date.now()) => value?.method === 'passkey' && typeof value.credential_id === 'string' && Date.parse(value.verified_at) <= now && now < Date.parse(value.expires_at) && Date.parse(value.expires_at) <= Date.parse(value.verified_at) + 900000;
+export const hasFreshPasskey = value => value?.method === 'passkey' && typeof value.credential_id === 'string' && (serverClock(value)?.remaining(value.expires_at) || 0) > 0;
 export function sameSessionIdentity(current, result) {
   const user = authenticatedResult(result).user; const access = current?.accessContext;
   if (current?.id !== user.id || access?.facility_id !== user.facility_id || access?.active_profile !== user.active_profile

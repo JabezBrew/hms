@@ -14,6 +14,7 @@ import { FluidPanel } from '@/features/nursing/fluid/FluidPanel';
 import { NetworkAccessBoundary } from '../NetworkAccessBoundary';
 import { networkKeys } from '../hooks';
 import { networkDecision, networkUser } from './fixtures';
+import { actor as actorId, facility, token as authToken, jwtFor, fixtureClock } from '@/features/auth/__tests__/fixtures';
 
 const patientId = 'f1000000-0000-4000-8000-000000000001';
 const admissionId = 'f1000000-0000-4000-8000-000000000002';
@@ -22,9 +23,10 @@ const privateNote = 'SYNTHETIC-PRIVATE-FLUID-NOTE';
 const originalFetch = globalThis.fetch;
 const originalRuntime = window.__HMS_RUNTIME_CONFIG__;
 const prototypeDescriptors = ['hasPointerCapture', 'setPointerCapture', 'releasePointerCapture', 'scrollIntoView'].map((name) => [name, Object.getOwnPropertyDescriptor(Element.prototype, name)]);
-const user = { ...networkUser, accessContext: { ...networkUser.accessContext, session_version: 1, features: ['nursing'], patient_visibility: ['demographics', 'full_clinical'] }, adminAccess: { capabilities: ['nursing.task.manage'] } };
+const user = { ...networkUser, id: actorId, accessContext: { ...networkUser.accessContext, facility_id: facility, session_version: 1, features: ['nursing'], patient_visibility: ['demographics', 'full_clinical'] }, adminAccess: { capabilities: ['nursing.task.manage'] } };
 const rules = { version: 0, configured: false, values: { min_daily_intake_target: 1500, max_daily_output_threshold: 3000, negative_balance_alert_threshold: -500, positive_balance_alert_threshold: 2000, enable_intake_alerts: false, enable_output_alerts: false, enable_balance_alerts: false } };
 const json = (value, status = 200) => new Response(JSON.stringify(value), { status, headers: { 'content-type': 'application/json' } });
+function mint(subject = actorId, passwordTime = Math.floor(Date.now() / 1000) - 840) { const raw = authToken(); raw.user.id = subject; raw.user.permission_version = 3; return jwtFor(raw, { auth_time: passwordTime }); }
 let client; let token; let expiresAt; let posts; let rows; let responseMode;
 
 beforeAll(() => {
@@ -38,14 +40,14 @@ afterAll(() => {
 beforeEach(() => {
   sessionStorage.clear();
   __resetV2ApiClientForTests();
-  token = 'SYNTHETIC-PRIVATE-TOKEN'; expiresAt = Date.now() + 60000; posts = []; rows = []; responseMode = 'lost';
+  token = mint(); expiresAt = Date.now() + 60000; posts = []; rows = []; responseMode = 'lost';
   window.__HMS_RUNTIME_CONFIG__ = { apiMode: 'rust-v2', v2ApiBaseUrl: 'http://localhost:8080/api/v2' };
   configureV2ApiClient({ getAccessToken: () => token, setAccessToken: (value) => { token = value; }, getFacilityCode: () => 'HMS', canRefreshSession: () => false });
   client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { retry: 1, retryDelay: 0 } } });
   globalThis.fetch = vi.fn(async (url, options = {}) => {
     const parsed = new URL(url); const path = parsed.pathname;
     // A delayed/cached decision does not get to extend its signed-in deadline.
-    if (path.endsWith('/auth/network-access')) return json({ data: { ...networkDecision, classification: 'offsite', mode: 'fresh_reauth', reason: 'offsite_fresh_reauth', read_only: false, reauth_required: false, reauth_expires_at: new Date(expiresAt).toISOString() } });
+    if (path.endsWith('/auth/network-access')) return json({ data: { ...networkDecision, classification: 'offsite', mode: 'fresh_reauth', reason: 'offsite_fresh_reauth', read_only: false, reauth_required: false, reauth_expires_at: new Date(expiresAt).toISOString(), evaluated_at: new Date(Date.now()).toISOString(), auth_clock: fixtureClock(Date.now(), token) } });
     if (options.method === 'POST' && path.endsWith('/fluid-observations')) {
       const body = JSON.parse(options.body); posts.push(body);
       rows = [{ id: entryId, root_entry_id: entryId, patient_id: patientId, admission_case_id: admissionId, current: true, revision: 1, created_at: new Date().toISOString(), recorded_by_display_name: 'Synthetic clinician', values: body.values }];
@@ -72,7 +74,7 @@ afterEach(() => {
 
 function Harness({ initialUser = user }) {
   const [actor, setActor] = useState(initialUser);
-  const login = async () => { token += '-confirmed'; expiresAt = Date.now() + 60000; setActor({ ...initialUser }); return initialUser; };
+  const login = async () => { token = mint(initialUser.id, Math.floor(Date.now() / 1000)); expiresAt = Date.now() + 900000; setActor({ ...initialUser }); return initialUser; };
   return <AuthContext.Provider value={{ user: actor, login, logout: vi.fn() }}><QueryClientProvider client={client}><MemoryRouter><HelmetProvider><BreadcrumbProvider><NetworkAccessBoundary><FluidPanel open patient={{ id: patientId, name: 'Synthetic patient' }} admission={{ id: admissionId }} onClose={vi.fn()} /></NetworkAccessBoundary></BreadcrumbProvider></HelmetProvider></MemoryRouter></QueryClientProvider></AuthContext.Provider>;
 }
 async function fillObservation(note) {
@@ -146,15 +148,15 @@ it('isolates another actor while preserving the earlier actor barrier across a s
   await screen.findByRole('button', { name: 'Retry exact observation' });
   expect(posts).toHaveLength(1);
   view.unmount();
-  token = 'SYNTHETIC-PRIVATE-TOKEN-B';
+  token = mint('99999999-0000-4000-8000-000000000098');
   responseMode = 'confirmed';
-  view = render(<Harness initialUser={{ ...user, id: 'synthetic-other-actor', email: 'synthetic-other@example.test' }} />);
+  view = render(<Harness initialUser={{ ...user, id: '99999999-0000-4000-8000-000000000098', email: 'synthetic-other@example.test' }} />);
   await fillObservation('SYNTHETIC-OTHER-PRIVATE-NOTE');
   await screen.findByText('Fluid observation saved.');
   expect(posts).toHaveLength(2);
   view.unmount();
   resetWriteUncertaintyForTests({ preserveStorage: true });
-  token = 'SYNTHETIC-PRIVATE-TOKEN-A-RETURNED';
+  token = mint();
   render(<Harness />);
   await fillObservation('Synthetic earlier actor new attempt after reload');
   expect(posts).toHaveLength(2);

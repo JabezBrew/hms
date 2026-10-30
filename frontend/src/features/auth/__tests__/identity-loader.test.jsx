@@ -65,7 +65,7 @@ it('keeps the actual provider and network-authorized draft mounted when the opti
   function Host() { auth = useAuth(); return <><button onClick={() => auth.login('synthetic@example.test', 'Synthetic password', 'HMS')}>Synthetic sign-in</button>{auth.user && <NetworkAccessBoundary><Draft /></NetworkAccessBoundary>}</>; }
   vi.stubGlobal('fetch', vi.fn(async (input) => new URL(input).pathname.endsWith('/auth/login') ? json(token()) : json(networkDecision())));
   render(<QueryClientProvider client={queryClient}><MemoryRouter><HelmetProvider><BreadcrumbProvider><AuthProvider><Host /></AuthProvider></BreadcrumbProvider></HelmetProvider></MemoryRouter></QueryClientProvider>);
-  fireEvent.click(screen.getByText('Synthetic sign-in'));
+  fireEvent.click(await screen.findByText('Synthetic sign-in'));
   fireEvent.change(await screen.findByLabelText('Synthetic clinical draft'), { target: { value: 'SYNTHETIC PRIVATE PROVIDER DRAFT' } });
   signal(auth.user); await screen.findByText(/Identity verification could not be loaded/);
   expect(screen.getByDisplayValue('SYNTHETIC PRIVATE PROVIDER DRAFT')).toBeInTheDocument();

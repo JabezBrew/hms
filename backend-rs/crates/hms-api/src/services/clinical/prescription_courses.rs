@@ -10,6 +10,8 @@ pub(crate) fn authorization(
     deadline: DateTime<Utc>,
 ) -> repository::PrescriptionAuthorization {
     repository::PrescriptionAuthorization {
+        ordinary_reauth_required: ctx.offsite == hms_access::OffsiteState::OffsiteFreshReauth,
+        original_password_verified_at: ctx.password_verified_at,
         resolved_network_policy_version: ctx.resolved_network_policy_version,
         session_id: ctx.session_id,
         session_version: ctx.session_version,
@@ -21,6 +23,18 @@ pub(crate) fn authorization(
             deadline
         },
     }
+}
+pub(crate) fn ordinary_authorization(
+    ctx: &hms_access::RequestContext,
+    deadline: DateTime<Utc>,
+) -> Result<repository::PrescriptionAuthorization, ApiError> {
+    let raw = ctx.password_verified_at.ok_or_else(|| {
+        ApiError::forbidden("reauth_required", "Current credential proof is required.")
+    })?;
+    let mut proof = authorization(ctx, deadline);
+    proof.ordinary_reauth_required = true;
+    proof.original_password_verified_at = Some(raw);
+    Ok(proof)
 }
 fn actor(
     ctx: &hms_access::RequestContext,

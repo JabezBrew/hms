@@ -8,6 +8,7 @@ Scope: appointments, availability, schedule slots, and appointment forms.
 ## Routes
 
 - `/appointments`
+- `/appointments/services` (governed Rust service administration; legacy redirects)
 - `/appointments/create`
 - `/appointments/new`
 - `/appointments/:id`
@@ -36,3 +37,11 @@ future-only cancellation retains history and shows the actual saved result.
 See [series/README.md](series/README.md) for contracts and regression coverage.
 Recurring clinic-session templates create capacity, while typed patient recurrence
 patterns remain a separate workflow.
+
+## Bookable service administration
+
+Current view authority can browse bounded active and retired service pages.
+Current management authority can review versioned name/duration corrections and
+booking availability changes without cancelling booked care. See
+[services/README.md](services/README.md) for exact proof, recovery and booking
+selection behavior. The Django form remains separate.

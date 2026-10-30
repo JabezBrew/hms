@@ -725,6 +725,7 @@ pub(crate) fn auth_response(
     (
         headers,
         Json(object(AuthTokenResponse {
+            ordinary_confirmation: outcome.ordinary_confirmation,
             access_token: outcome.access_token,
             token_type: "Bearer".to_owned(),
             expires_in_seconds: outcome.access_token_expires_in_seconds,

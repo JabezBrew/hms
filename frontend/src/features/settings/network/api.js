@@ -1,3 +1,4 @@
+import { transferServerClock } from '@/shared/lib/serverClock';
 import { v2Api } from '@/lib/api/v2/client';
 import { acknowledgeWriteResponse, markWriteResponseUncertain } from '@/lib/api/v2/writeUncertainty';
 import { equalNetworks, NETWORK_MODES, NETWORK_REASONS } from './model';
@@ -15,7 +16,7 @@ export function confirmedNetworkDecision(value, { candidate = false } = {}) {
     throw new Error('The current network access decision could not be confirmed.');
   }
   // Ordinary status never exposes an address or the facility network list.
-  return Object.fromEntries(['classification', 'provenance', 'policy_version', 'mode', 'access_allowed', 'read_only', 'reauth_required', 'reauth_expires_at', 'evaluated_at', 'reason'].map((key) => [key, value[key]]));
+  return transferServerClock(value, Object.fromEntries(['classification', 'provenance', 'policy_version', 'mode', 'access_allowed', 'read_only', 'reauth_required', 'reauth_expires_at', 'evaluated_at', 'reason'].map((key) => [key, value[key]])));
 }
 export function confirmedNetworkPolicy(value) {
   if (typeof value?.configured !== 'boolean' || !version(value.version) || !Array.isArray(value.onsite_cidrs)
@@ -30,9 +31,10 @@ export class NetworkPolicyUnconfirmedError extends Error {
 }
 const uncertain = (error) => !error?.status || error.status >= 500 || (error?.data?.error?.code || error?.code || '').endsWith('_unconfirmed');
 export const networkApi = {
-  async current({ signal } = {}) { return confirmedNetworkDecision((await v2Api.getAuthNetworkAccess({ signal }))?.data); },
+  async current({ signal } = {}) { const value = (await v2Api.getAuthNetworkAccess({ signal }))?.data; (await import('@/features/auth/clock')).observeNetworkDecision(value); return confirmedNetworkDecision(value); },
   async policy({ signal } = {}) {
     const value = (await v2Api.getAdminNetworkPolicy({ signal }))?.data;
+    (await import('@/features/auth/clock')).observeNetworkDecision(value?.current_access, value);
     if (typeof value?.can_update !== 'boolean') throw new Error('Network policy administration could not be confirmed.');
     return { policy: confirmedNetworkPolicy(value.policy), current_access: confirmedNetworkDecision(value.current_access), can_update: value.can_update };
   },

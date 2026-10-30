@@ -1,7 +1,8 @@
 import { webcrypto } from 'node:crypto';
 import { beforeEach, afterEach, expect, it, vi } from 'vitest';
 import { configureV2ApiClient, __resetV2ApiClientForTests, getV2ClientScopeKey, v2Request } from '@/lib/api/v2/client';
-import { bindNetworkAccessGuard, isNetworkWorkflowWrite } from '@/lib/api/v2/networkAccessGuard';
+import { isNetworkWorkflowWrite } from '@/lib/api/v2/networkAccessGuard';
+import { bindModeledNetworkGuard as bindNetworkAccessGuard } from '@/tests/networkClockModel';
 import { activateWriteUncertainty, getWriteUncertaintySnapshot, acknowledgeWriteReview } from '@/lib/api/v2/writeUncertainty';
 import { previewNoteTemplate } from '../api/templatePreview';
 import { actorId, encounterId, facilityId, ids, json, patientId, revision } from './fixtures';

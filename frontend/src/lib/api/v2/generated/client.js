@@ -446,6 +446,39 @@ export const operations = {
     ],
     "hasBody": false
   },
+  "getAppointmentTypeAdministration": {
+    "operationId": "getAppointmentTypeAdministration",
+    "method": "GET",
+    "path": "/api/v2/scheduling/services/administration",
+    "pathParamNames": [],
+    "queryParamNames": [
+      "cursor",
+      "limit",
+      "search",
+      "is_active"
+    ],
+    "hasBody": false
+  },
+  "getAppointmentTypeAdministrationById": {
+    "operationId": "getAppointmentTypeAdministrationById",
+    "method": "GET",
+    "path": "/api/v2/scheduling/services/{id}/administration",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [],
+    "hasBody": false
+  },
+  "getAppointmentTypeCommand": {
+    "operationId": "getAppointmentTypeCommand",
+    "method": "GET",
+    "path": "/api/v2/scheduling/services/commands/{client_request_id}",
+    "pathParamNames": [
+      "client_request_id"
+    ],
+    "queryParamNames": [],
+    "hasBody": false
+  },
   "getAppointmentTypes": {
     "operationId": "getAppointmentTypes",
     "method": "GET",
@@ -3658,6 +3691,44 @@ export const operations = {
     "queryParamNames": [],
     "hasBody": true
   },
+  "postAppointmentTypeCreate": {
+    "operationId": "postAppointmentTypeCreate",
+    "method": "POST",
+    "path": "/api/v2/scheduling/services",
+    "pathParamNames": [],
+    "queryParamNames": [],
+    "hasBody": true
+  },
+  "postAppointmentTypeMetadata": {
+    "operationId": "postAppointmentTypeMetadata",
+    "method": "POST",
+    "path": "/api/v2/scheduling/services/{id}/metadata",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [],
+    "hasBody": true
+  },
+  "postAppointmentTypeReactivate": {
+    "operationId": "postAppointmentTypeReactivate",
+    "method": "POST",
+    "path": "/api/v2/scheduling/services/{id}/reactivate",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [],
+    "hasBody": true
+  },
+  "postAppointmentTypeRetire": {
+    "operationId": "postAppointmentTypeRetire",
+    "method": "POST",
+    "path": "/api/v2/scheduling/services/{id}/retire",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [],
+    "hasBody": true
+  },
   "postAuthAssuranceOptions": {
     "operationId": "postAuthAssuranceOptions",
     "method": "POST",
@@ -5080,14 +5151,6 @@ export const operations = {
     "queryParamNames": [],
     "hasBody": true
   },
-  "postSchedulingServices": {
-    "operationId": "postSchedulingServices",
-    "method": "POST",
-    "path": "/api/v2/scheduling/services",
-    "pathParamNames": [],
-    "queryParamNames": [],
-    "hasBody": true
-  },
   "postSchedulingSessionCancel": {
     "operationId": "postSchedulingSessionCancel",
     "method": "POST",
@@ -5520,6 +5583,9 @@ export function createGeneratedClient(request) {
     getAdmissionPlacementContext: createOperation(request, operations.getAdmissionPlacementContext),
     getAppointmentById: createOperation(request, operations.getAppointmentById),
     getAppointments: createOperation(request, operations.getAppointments),
+    getAppointmentTypeAdministration: createOperation(request, operations.getAppointmentTypeAdministration),
+    getAppointmentTypeAdministrationById: createOperation(request, operations.getAppointmentTypeAdministrationById),
+    getAppointmentTypeCommand: createOperation(request, operations.getAppointmentTypeCommand),
     getAppointmentTypes: createOperation(request, operations.getAppointmentTypes),
     getAuthAssurance: createOperation(request, operations.getAuthAssurance),
     getAuthMe: createOperation(request, operations.getAuthMe),
@@ -5792,6 +5858,10 @@ export function createGeneratedClient(request) {
     postAppointmentCancel: createOperation(request, operations.postAppointmentCancel),
     postAppointments: createOperation(request, operations.postAppointments),
     postAppointmentsSearch: createOperation(request, operations.postAppointmentsSearch),
+    postAppointmentTypeCreate: createOperation(request, operations.postAppointmentTypeCreate),
+    postAppointmentTypeMetadata: createOperation(request, operations.postAppointmentTypeMetadata),
+    postAppointmentTypeReactivate: createOperation(request, operations.postAppointmentTypeReactivate),
+    postAppointmentTypeRetire: createOperation(request, operations.postAppointmentTypeRetire),
     postAuthAssuranceOptions: createOperation(request, operations.postAuthAssuranceOptions),
     postAuthAssuranceVerify: createOperation(request, operations.postAuthAssuranceVerify),
     postAuthLogin: createOperation(request, operations.postAuthLogin),
@@ -5949,7 +6019,6 @@ export function createGeneratedClient(request) {
     postSchedulingAppointmentSeries: createOperation(request, operations.postSchedulingAppointmentSeries),
     postSchedulingAppointmentSeriesCancelFuture: createOperation(request, operations.postSchedulingAppointmentSeriesCancelFuture),
     postSchedulingExceptions: createOperation(request, operations.postSchedulingExceptions),
-    postSchedulingServices: createOperation(request, operations.postSchedulingServices),
     postSchedulingSessionCancel: createOperation(request, operations.postSchedulingSessionCancel),
     postSchedulingSessions: createOperation(request, operations.postSchedulingSessions),
     postSchedulingTemplates: createOperation(request, operations.postSchedulingTemplates),

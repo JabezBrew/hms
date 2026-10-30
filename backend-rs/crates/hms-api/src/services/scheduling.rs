@@ -2,9 +2,9 @@ use chrono::{DateTime, NaiveDate, Utc};
 use hms_access::require_patient_demographics_access;
 use hms_db::care::NewVisit;
 use hms_db::scheduling::{
-    AvailabilityFilters, ExceptionFilters, GenerateSessionFilters, NewBookableService,
-    NewBookableSession, NewBookableSessionTemplate, NewSchedulingException, SchedulingCursor,
-    SessionFilters, TemplateFilters,
+    AvailabilityFilters, ExceptionFilters, GenerateSessionFilters, NewBookableSession,
+    NewBookableSessionTemplate, NewSchedulingException, SchedulingCursor, SessionFilters,
+    TemplateFilters,
 };
 use hms_domain::care::{AppointmentStatus, VisitListItem};
 use hms_domain::deployment::PermissionCode;
@@ -13,10 +13,10 @@ use hms_domain::scheduling::{
     ArriveAppointmentRequest, AvailabilityQuery, AvailabilityResponse, BookAppointmentRequest,
     BookAppointmentResponse, BookableServiceListItem, BookableSessionListItem,
     BookableSessionListQuery, BookableSessionTemplateListItem, BookableSessionTemplateListQuery,
-    BookableUnitType, CancelBookableSessionRequest, CreateBookableServiceRequest,
-    CreateBookableSessionRequest, CreateBookableSessionTemplateRequest,
-    GenerateBookableSessionsRequest, GenerateBookableSessionsResponse, SchedulingExceptionItem,
-    SchedulingExceptionListQuery, SchedulingExceptionRequest, SchedulingListQuery,
+    BookableUnitType, CancelBookableSessionRequest, CreateBookableSessionRequest,
+    CreateBookableSessionTemplateRequest, GenerateBookableSessionsRequest,
+    GenerateBookableSessionsResponse, SchedulingExceptionItem, SchedulingExceptionListQuery,
+    SchedulingExceptionRequest, SchedulingListQuery,
 };
 use uuid::Uuid;
 
@@ -78,40 +78,6 @@ impl SchedulingService {
         }))
     }
 
-    pub async fn create_service(
-        &self,
-        ctx: &hms_access::RequestContext,
-        payload: CreateBookableServiceRequest,
-    ) -> Result<ObjectResponse<BookableServiceListItem>, ApiError> {
-        require_workflow_access(ctx, self.facility_id(), PermissionCode::AppointmentManage)?;
-        let default_duration_minutes = payload.default_duration_minutes.unwrap_or(30);
-        if default_duration_minutes < 1 {
-            return Err(ApiError::bad_request(
-                "service_duration_invalid",
-                "Service default duration must be positive.",
-            ));
-        }
-        let service = hms_db::scheduling::create_bookable_service(
-            self.pool(),
-            NewBookableService {
-                id: Uuid::new_v4(),
-                facility_id: self.facility_id(),
-                code: validate_required_text(payload.code, MAX_CODE_LEN, "service_code")?,
-                name: validate_required_text(payload.name, MAX_NAME_LEN, "service_name")?,
-                default_duration_minutes,
-                created_by_user_id: ctx.user_id,
-            },
-        )
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "bookable_service_create_failed",
-                "Bookable service could not be created.",
-            )
-        })?;
-        Ok(object(service))
-    }
-
     pub async fn list_sessions(
         &self,
         ctx: &hms_access::RequestContext,
@@ -156,26 +122,7 @@ impl SchedulingService {
         validate_time_range(payload.starts_at, payload.ends_at, "invalid_session")?;
         self.validate_session_targets(&payload).await?;
         let allowed_service_ids = payload.allowed_service_ids.unwrap_or_default();
-        for service_id in &allowed_service_ids {
-            let service_exists = hms_db::scheduling::bookable_service_exists(
-                self.pool(),
-                self.facility_id(),
-                *service_id,
-            )
-            .await
-            .map_err(|_| {
-                ApiError::conflict(
-                    "bookable_service_lookup_failed",
-                    "Bookable service could not be verified.",
-                )
-            })?;
-            if !service_exists {
-                return Err(ApiError::bad_request(
-                    "bookable_service_not_found",
-                    "Bookable service was not found in this facility.",
-                ));
-            }
-        }
+        self.ensure_allowed_services(&allowed_service_ids).await?;
         let session = hms_db::scheduling::create_bookable_session(
             self.pool(),
             NewBookableSession {
@@ -797,9 +744,23 @@ impl SchedulingService {
     }
 
     async fn ensure_allowed_services(&self, service_ids: &[Uuid]) -> Result<(), ApiError> {
-        for service_id in service_ids {
-            self.ensure_bookable_service(*service_id, "bookable_service_not_found")
-                .await?;
+        let exact = hms_db::scheduling::bookable_services_exist(
+            self.pool(),
+            self.facility_id(),
+            service_ids,
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "bookable_service_lookup_failed",
+                "Bookable service could not be verified.",
+            )
+        })?;
+        if !exact {
+            return Err(ApiError::bad_request(
+                "bookable_service_not_found",
+                "Bookable service was not found in this facility.",
+            ));
         }
         Ok(())
     }
@@ -1061,7 +1022,9 @@ fn optional_date_range(
     Ok((Some(starts_at), Some(ends_before)))
 }
 
-fn page_request(query: SchedulingListQuery) -> Result<(Option<SchedulingCursor>, u8), ApiError> {
+pub(super) fn page_request(
+    query: SchedulingListQuery,
+) -> Result<(Option<SchedulingCursor>, u8), ApiError> {
     let page = cursor_list::page_request(
         query.cursor.as_deref(),
         query.limit,
@@ -1072,13 +1035,13 @@ fn page_request(query: SchedulingListQuery) -> Result<(Option<SchedulingCursor>,
     Ok((page.cursor, page.limit))
 }
 
-fn page_response<T, F>(rows: Vec<T>, page_size: u8, cursor_for: F) -> ListResponse<T>
+pub(super) fn page_response<T, F>(rows: Vec<T>, page_size: u8, cursor_for: F) -> ListResponse<T>
 where
     F: Fn(&T) -> String,
 {
     cursor_list::page_response(rows, page_size, cursor_for)
 }
 
-fn encode_cursor(occurred_at: DateTime<Utc>, id: Uuid) -> String {
+pub(super) fn encode_cursor(occurred_at: DateTime<Utc>, id: Uuid) -> String {
     cursor_list::encode_cursor(occurred_at, id)
 }

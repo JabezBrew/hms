@@ -51,7 +51,7 @@ def release(root: Path, *, declared: bool = True) -> None:
     executable(root / 'ops/gcp-staging/verify-edge.sh', '#!/bin/sh\nexit 0\n')
 
 
-def environment(tmp: Path) -> dict[str, str]:
+def environment(tmp: Path, *, target_epoch: str = EPOCH) -> dict[str, str]:
     binary = tmp / 'bin'
     binary.mkdir()
     executable(binary / 'docker', f'''#!{sys.executable}
@@ -97,7 +97,7 @@ if 'schema-compatibility' in a:
     fail('probe'); sys.exit(0)
 if 'run' in a:
     if os.environ.get('ADVANCE_SCHEMA'):
-        pathlib.Path(os.environ['DATABASE_EPOCH_FILE']).write_text('{EPOCH}')
+        pathlib.Path(os.environ['DATABASE_EPOCH_FILE']).write_text('{target_epoch}')
     fail('migrate'); sys.exit(0)
 sys.exit(0)
 ''')

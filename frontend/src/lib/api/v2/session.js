@@ -1,10 +1,12 @@
 import { getClientDeviceLabel } from '@/lib/device-label';
 import { hashQueryValue } from '@/shared/lib/privateQueryKey';
 import { publishFactorRequirement } from '@/shared/lib/factorRequiredSignal';
+import { activeTokenClock, clockGeneration, clockNow, invalidateServerClockReads, recordServerClockResponse, setActiveTokenClock } from '@/shared/lib/serverClock';
 
 import { apiErrorFromEnvelope } from './errors';
+import { attachReadDenial } from './readDenials';
 import { appendV2QueryParams, buildV2ApiUrl } from './runtime';
-import { assertNetworkRequestAllowed, currentConfirmedNetworkDecision, currentNetworkAuthorityScope, currentNetworkPrincipal, isNetworkWorkflowWrite, resetNetworkAccessGuardForTests, waitForNetworkRequestAccess } from './networkAccessGuard';
+import { assertNetworkRequestAllowed, currentConfirmedNetworkDecision, currentNetworkAuthorityScope, currentNetworkPrincipal, currentNetworkReadOwnerValue, isNetworkWorkflowWrite, isOwnSessionRequest, networkClockCurrent, resetNetworkAccessGuardForTests, subscribeNetworkOwner, waitForNetworkRequestAccess } from './networkAccessGuard';
 import { assertWriteAttemptDispatchAllowed, attachWriteResponseMetadata, beginWriteAttempt, captureWriteRecoveryRead, confirmWriteAttempt, markWriteAttemptUncertain, recordWriteRecoveryRead, rejectWriteAttempt, resetWriteUncertaintyForTests } from './writeUncertainty';
 
 let getAccessToken = () => null;
@@ -12,12 +14,25 @@ let setAccessToken = () => {};
 let onRefreshFailure = async () => {};
 let getFacilityCode = () => null;
 let canRefreshSession = () => true;
+let canUseSession = () => true;
 let isRefreshing = false;
 let refreshPromise = null;
 const scopeSubscribers = new Set();
 const FACTOR_REQUIRED_CODES = new Set(['passkey_verification_required', 'password_confirmation_required', 'reauth_required']);
 export function subscribeV2ClientScope(subscriber) { scopeSubscribers.add(subscriber); return () => scopeSubscribers.delete(subscriber); }
-const publishScopeChange = () => scopeSubscribers.forEach((subscriber) => subscriber());
+// Denial currentness follows committed owner transitions, not observation-clock
+// invalidation or equivalent React reconfiguration. Compare the raw transport
+// owner only in private RAM: query-key hashes are not identity attestations.
+// Witnesses retain only the epoch, so every actual A -> B -> A remains obsolete.
+let readOwner = null; let readOwnerEpoch = 0;
+function observeReadOwner() {
+  let owner = null;
+  try { const principal = currentNetworkPrincipal(); owner = [getAccessToken(), getFacilityCode(), currentNetworkAuthorityScope(), currentNetworkReadOwnerValue(), principal?.id, principal?.facility_id, principal?.active_profile, principal?.session_version, principal?.permission_version]; } catch { /* Unknown owner invalidates existing denial witnesses. */ }
+  if (!owner || !readOwner || owner.some((value, index) => !Object.is(value, readOwner[index]))) { readOwner = owner; readOwnerEpoch++; }
+  return readOwnerEpoch;
+}
+subscribeNetworkOwner(observeReadOwner);
+const publishScopeChange = () => { observeReadOwner(); invalidateServerClockReads(); scopeSubscribers.forEach((subscriber) => subscriber()); };
 
 function hashScopeValue(value) {
   let hash = 0;
@@ -35,12 +50,13 @@ export function configureV2ApiClient({
   onRefreshFailure: refreshFailureHandler,
   getFacilityCode: facilityGetter,
   canRefreshSession: canRefreshSessionChecker,
+  canUseSession: sessionUseChecker,
 } = {}) {
   if (typeof tokenGetter === 'function') {
     getAccessToken = tokenGetter;
   }
   if (typeof tokenSetter === 'function') {
-    setAccessToken = (token) => { tokenSetter(token); publishScopeChange(); };
+    setAccessToken = (token, result) => { tokenSetter(token, result); publishScopeChange(); };
   }
   if (typeof refreshFailureHandler === 'function') {
     onRefreshFailure = refreshFailureHandler;
@@ -48,6 +64,7 @@ export function configureV2ApiClient({
   if (typeof facilityGetter === 'function') {
     getFacilityCode = facilityGetter;
   }
+  if (typeof sessionUseChecker === 'function') canUseSession = sessionUseChecker;
   if (typeof canRefreshSessionChecker === 'function') {
     canRefreshSession = canRefreshSessionChecker;
   }
@@ -57,6 +74,9 @@ export function configureV2ApiClient({
 export function __resetV2ApiClientForTests() {
   resetNetworkAccessGuardForTests();
   resetWriteUncertaintyForTests();
+  invalidateServerClockReads();
+  setActiveTokenClock(null, null);
+  canUseSession = () => true;
   getAccessToken = () => null;
   setAccessToken = () => {};
   onRefreshFailure = async () => {};
@@ -82,7 +102,7 @@ export function getV2ClientScopeKey() {
   return getV2ClientScopeForToken(getAccessToken(), getFacilityCode());
 }
 
-export async function performV2TokenRefresh({ notifyFailure = true } = {}) {
+export async function performV2TokenRefresh({ notifyFailure = true, throwFailure = false } = {}) {
   if (!canRefreshSession()) {
     if (notifyFailure) {
       await onRefreshFailure();
@@ -113,15 +133,19 @@ export async function performV2TokenRefresh({ notifyFailure = true } = {}) {
         if (notifyFailure) await onRefreshFailure();
         return null;
       }
+      const { observeTokenResponse } = await import('@/features/auth/clock');
+      if (currentNetworkAuthorityScope() !== refreshAuthority || getV2ClientScopeKey() !== refreshScope) return null;
+      observeTokenResponse(response?.data);
       const accessToken = response?.data?.access_token;
       if (accessToken) {
-        setAccessToken(accessToken);
+        setAccessToken(accessToken, response.data);
       }
       return response?.data || null;
-    } catch {
-      if (notifyFailure && currentNetworkAuthorityScope() === refreshAuthority && getV2ClientScopeKey() === refreshScope) {
+    } catch (error) {
+      if (notifyFailure && error?.status === 401 && currentNetworkAuthorityScope() === refreshAuthority && getV2ClientScopeKey() === refreshScope) {
         await onRefreshFailure();
       }
+      if (throwFailure) throw error;
       return null;
     } finally {
       isRefreshing = false;
@@ -150,8 +174,15 @@ async function rawV2Request(requestConfig, retryWithRefresh = true) {
   } = requestConfig;
 
   if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+  const assertSessionReady = () => { if (!canUseSession() && !isOwnSessionRequest(method, path)) throw apiErrorFromEnvelope(403, { error: { code: 'session_confirmation_pending', message: 'Current session access is being checked. Wait for confirmation before continuing.' } }); };
+  assertSessionReady();
   const originAuthority = currentNetworkAuthorityScope();
   const originTransport = getV2ClientScopeKey();
+  const originReadOwnerValue = currentNetworkReadOwnerValue();
+  const originalSession = activeTokenClock(getAccessToken());
+  const originalSessionCurrent = () => canUseSession() && (!originalSession || originalSession.sessionRemaining() > 0);
+  const originalNetwork = currentConfirmedNetworkDecision(originTransport, originAuthority);
+  const originalNetworkCurrent = () => !originalNetwork || networkClockCurrent(originalNetwork);
   const requestPrincipal = currentNetworkPrincipal();
   const originPrincipal = requestPrincipal ? { ...requestPrincipal } : null;
   assertNetworkRequestAllowed({ method, path, transportScope: originTransport });
@@ -172,6 +203,7 @@ async function rawV2Request(requestConfig, retryWithRefresh = true) {
     if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
     if (currentNetworkAuthorityScope() !== originAuthority || getV2ClientScopeKey() !== originTransport) throw apiErrorFromEnvelope(403, { error: { code: 'request_scope_changed', message: 'The request context changed. Review this workflow before submitting it again.' } });
     assertNetworkRequestAllowed({ method, path, transportScope: originTransport });
+    assertSessionReady();
   } catch (error) { rejectWriteAttempt(attempt); throw error; }
   const headers = { ...(requestHeaders || {}) };
 
@@ -202,7 +234,8 @@ async function rawV2Request(requestConfig, retryWithRefresh = true) {
   }
 
   let response;
-  try { assertWriteAttemptDispatchAllowed(attempt); } catch (error) { rejectWriteAttempt(attempt); throw error; }
+  try { assertSessionReady(); assertWriteAttemptDispatchAllowed(attempt); } catch (error) { rejectWriteAttempt(attempt); throw error; }
+  const clockStarted = clockNow(); const clockEpoch = clockGeneration(); const admittedReadOwner = observeReadOwner();
   try {
     response = await fetch(url, {
       method,
@@ -218,6 +251,17 @@ async function rawV2Request(requestConfig, retryWithRefresh = true) {
     throw failure;
   }
 
+  const sameReadOwner = () => !signal?.aborted && Boolean(originAuthority && originPrincipal?.id) && originReadOwnerValue !== null
+    && currentNetworkReadOwnerValue() === originReadOwnerValue
+    && currentNetworkAuthorityScope() === originAuthority && getV2ClientScopeKey() === originTransport
+    && ['id', 'facility_id', 'active_profile', 'session_version', 'permission_version'].every((key) => currentNetworkPrincipal()?.[key] === originPrincipal[key]);
+  const admittedReadDenial = response.status === 403 && method === 'GET' && !tracked
+    && admittedReadOwner === observeReadOwner() && sameReadOwner();
+  if (response.status === 403 && !signal?.aborted && currentNetworkAuthorityScope() === originAuthority && getV2ClientScopeKey() === originTransport) invalidateServerClockReads(true);
+  // Capture the actual committed owner after the existing invalidation; no
+  // observation-clock budget is extended and no epoch arithmetic predicts it.
+  const deniedReadOwner = admittedReadDenial ? observeReadOwner() : null;
+  const currentReadDenial = () => deniedReadOwner !== null && deniedReadOwner === observeReadOwner() && sameReadOwner();
   // Authorization denial invalidates earlier review even if its body is malformed.
   if (response.status === 403 && !signal?.aborted) { try { await recordWriteRecoveryRead({ resolvedPath }, null, { denied: true, readEvidence, isCurrentScope: () => !signal?.aborted && currentNetworkAuthorityScope() === originAuthority && getV2ClientScopeKey() === originTransport }); } catch { /* A denial must not depend on recovery bookkeeping. */ } }
   let data;
@@ -233,8 +277,9 @@ async function rawV2Request(requestConfig, retryWithRefresh = true) {
       throw failure;
     }
     confirmWriteAttempt(attempt, data);
-    if (!tracked) { try { await recordWriteRecoveryRead({ resolvedPath, pathParams: pathSnapshot, query: querySnapshot, body: bodySnapshot }, data, { principal: originPrincipal, readEvidence, isCurrentScope: () => !signal?.aborted && currentNetworkAuthorityScope() === originAuthority && getV2ClientScopeKey() === originTransport && Boolean(currentConfirmedNetworkDecision(originTransport, originAuthority)) }); } catch { /* Recovery storage failures must not prevent authorized reads. */ } }
+    if (!tracked) { try { await recordWriteRecoveryRead({ resolvedPath, pathParams: pathSnapshot, query: querySnapshot, body: bodySnapshot }, data, { principal: originPrincipal, readEvidence, isCurrentScope: () => !signal?.aborted && currentNetworkAuthorityScope() === originAuthority && getV2ClientScopeKey() === originTransport && originalSessionCurrent() && originalNetworkCurrent() && Boolean(currentConfirmedNetworkDecision(originTransport, originAuthority)) }); } catch { /* Recovery storage failures must not prevent authorized reads. */ } }
     if (!tracked && signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+    if (resolvedPath.startsWith('/api/v2/auth/') || resolvedPath === '/api/v2/admin/network-policy') recordServerClockResponse(data, { started: clockStarted, generation: clockEpoch, signal, token, method, path: resolvedPath, current: () => currentNetworkAuthorityScope() === originAuthority && getV2ClientScopeKey() === originTransport });
     return data;
   }
 
@@ -274,7 +319,9 @@ async function rawV2Request(requestConfig, retryWithRefresh = true) {
     && ['id', 'facility_id', 'active_profile'].every((key) => currentNetworkPrincipal()?.[key] === originPrincipal[key])) {
     publishFactorRequirement(hashQueryValue(JSON.stringify([originTransport, originAuthority])));
   }
-  const failure = apiErrorFromEnvelope(response.status, data); attachWriteResponseMetadata(failure, attempt); throw failure;
+  const failure = apiErrorFromEnvelope(response.status, data); attachWriteResponseMetadata(failure, attempt);
+  if (admittedReadDenial && currentReadDenial()) attachReadDenial(failure, currentReadDenial);
+  throw failure;
 }
 
 async function parseResponseBody(response) {

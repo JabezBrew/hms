@@ -32,48 +32,79 @@ Password confirmation is explicit; passkey-only proof cannot renew its timestamp
 never retries the denied clinical/admin mutation. Security and signal scopes
 always use the strict current request identity.
 
+## Clock observations and session readiness
+
+Trusted auth responses separate raw database proof/session time from the
+issuer's signed access-token lifetime. The client accepts clock observations
+only with actual current transport response provenance. Lossless timestamp
+comparison and monotonic elapsed time conservatively shorten budgets; browser
+wall time and configured token TTL cannot establish a fresh proof. Clock fields
+are observational and excluded from persisted user identity; real security,
+permission, version, scope and denial facts remain part of identity checks.
+
+Reloaded stored sessions require the existing real refresh before publishing
+ready authentication. A current-user read alone cannot establish all current
+session horizons. Clinical dispatch checks current readiness before allocating
+a write ledger and again immediately before fetch after asynchronous work.
+Expired evidence cannot revive an old read or acknowledge an uncertain write
+merely because later evidence has the same visible scope.
+The UI's module discovery additionally requires the existing explicit
+`system.deployment_capabilities.view` permission. Successful sign-in alone does
+not grant it; a capability denial must remain a denial.
+
+The capability-read permission alone does not imply an admin role. Optional
+global reads require their actual permission and feature, and clear unavailable
+data without representing it as zero. A new clock sample cannot revive a
+previous result after denial. The denial-only GET witness uses the actual thrown
+error and a separate exact committed owner value held in private memory; it does
+not change the flat refresh principal, query keys or successful-response/write
+admission. A committed owner change invalidates older witnesses permanently,
+even when the owner later returns to its prior visible values.
+
 ## Draft continuity after verified proof
 
-The actual token/transport scope stays strict. The shared workflow continuity
-registry is separate and volatile: it contains only opaque hashes and a coarse
-address-free network decision. It is installed only after the returned token
-matches the original JWT session, actor, facility, profile, permissions,
-features, visibility and account security facts. The ordinary response must advance the actual assurance revision, preserve factor
-version and all security facts, and carry a coherent same-session JWT with
-nondecreasing password time admitted for this exact confirmation attempt. An
-ephemeral timestamp captured directly before generated dispatch permits only the
-explicit two-second client/signer tolerance; it does not compare admission with
-response time and is never a request field or persisted receipt. Password proof
-never introduces or extends factor evidence.
-Exact unchanged evidence can preserve workflow continuity. A server-cleared
-naturally expired factor permits applying an otherwise valid same-session token
-without retaining the old workflow; JWT whole-second rounding is respected.
-Passkey proof retains its existing fresh-factor predicate.
+The actual token/transport scope stays strict. A separate volatile continuity
+registry stores only opaque hashes and a coarse address-free network decision.
+An ordinary confirmation can establish this command's continuity only when its
+actual returned witness binds its own admission, published raw proof, session
+and assurance revision to the exact current response and original dispatch.
+The existing signed password time remains nondecreasing and follows the
+canonical min(floor(stored proof), issuer iat) rule. A well-formed independently
+current result may apply without being accepted as this command's successful
+confirmation. No two-second browser-wall-clock tolerance is used for admission.
+Password confirmation never introduces or extends factor evidence.
 
-Before installing that token, a fixed GET reads network access using the exact
-new token. A matching known/readable policy decision can seed its exact new query
-binding for at most five seconds while the normal authoritative recheck runs.
-Errors, denial, unknown classification, changed policy or changed authority do
-not retain the old clinical workspace. Dispatch still requires the exact actual
-token guard; workflow continuity cannot authorize a request in the intervening
-frame. The registry expires no later than the new access/session deadline or
-fifteen minutes. It never stores patient identifiers, drafts, passwords or JWTs.
+Before installing a proof transition, a fixed GET reads network access with the
+exact new token. Matching current readable policy evidence can seed the new
+binding briefly while authoritative rechecking runs. Every budget is shortened
+by its actual response lifetime. Errors, denial, unknown classification, changed
+policy or changed authority do not retain the clinical workspace. A continuity
+registry cannot authorize a business request or automatically replay one.
 
-Note, fluid, admission follow-up and prescribing controller scopes use this
-selective continuity. Already-dispatched pending work is aborted on a strict
-credential transition and retained as its original unconfirmed command; late
-old-proof callbacks cannot publish. Known receipts remain known. Exact UUID/body
-retry or validated immutable receipt lookup stays explicit. General network
-denial, checking or authority changes continue to remove clinical content. Older
-controllers keyed directly to raw transport may still remount; this is not a
-claim that every legacy draft survives verification.
+A previously ready authorized workspace can remain concealed and inert during
+renewal/checking; initial unready sessions mount no clinical content. Confirmed
+denial, logout or visible authority/security/proof changes retain the clearing
+policy. A DOM-only key bridge across an exact verified refresh compares the
+observable signed proof and authority. The refresh DTO cannot establish equality
+of same-second high-resolution predecessor password proofs when session-local
+assurance resets; no such stronger claim is made. Canonical issuer clamping can
+conservatively clear an instance even when its underlying proof is unchanged.
+Strict transport, query, write, acknowledgment and submit scopes still rotate.
 
-Synthetic fetch/Host tests cover restricted sign-in, old-session retirement,
-cancel/expiry/late completion, same-session proof, current-factor management,
-note/fluid/advisory draft continuity, fluid pending/unknown exact replay, and old
-401/refresh fences. They do not verify hardware enrollment, real biometric
-interaction or production RP/origin readiness. Browser clock checks are UI
-expiry guards, not cryptographic proof; the server remains authoritative.
+Note, fluid, admission follow-up and prescribing scopes use selective continuity.
+Already-dispatched old-scope work is aborted and remains its original uncertain
+command; late callbacks cannot publish. Known receipts remain known. Exact
+UUID/body retry or validated immutable receipt lookup stays explicit. Controllers
+keyed directly to strict transport may still remount or clear their drafts;
+instance retention does not promise survival of every downstream workflow.
+
+Synthetic fetch/Host and real provider controls cover skewed browser clocks,
+response provenance, pending grants, current budgets, cancel/late completion,
+same-session confirmation, selective draft continuity, policy/assurance expiry
+and old response/refresh fences. Modeled compatibility fixtures are separately
+classified and do not manufacture actual response provenance. These tests do
+not verify JWT signatures, hardware ceremonies, rendered usability or production
+RP/origin readiness; native/backend and real-browser evidence is recorded separately.
 
 The initial app loads only lightweight factor-signal and restricted-login gates.
 The factor form loads after a pending grant; protected-action verification loads

@@ -11,7 +11,7 @@ import ChronicleWorkspaceHost from '@/features/patients/components/ChronicleWork
 import { ChronicleClinicalPermissionsContext } from '@/features/patients/chronicle/clinicalPermissions';
 import { NetworkAccessBoundary } from '@/features/settings/network/NetworkAccessBoundary';
 import { FactorLogin } from '@/features/auth/FactorLogin';
-import { credential, jwtFor, networkDecision, options, pending, token } from '@/features/auth/__tests__/fixtures';
+import { credential, jwtFor, networkDecision, options, pending, token, fixtureClock } from '@/features/auth/__tests__/fixtures';
 import { __resetV2ApiClientForTests, getV2ClientScopeKey } from '@/lib/api/v2/client';
 import { getWriteUncertaintySnapshot } from '@/lib/api/v2/writeUncertainty';
 import { clearWorkflowContinuity } from '@/shared/lib/workflowContinuity';
@@ -27,7 +27,7 @@ function Harness() {
 beforeEach(() => {
   localStorage.clear(); sessionStorage.clear(); queryClient.clear(); queryClient.setDefaultOptions({ queries: { retry: false, gcTime: 0 }, mutations: { retry: false } }); __resetV2ApiClientForTests(); clearWorkflowContinuity(); window.__HMS_RUNTIME_CONFIG__ = { apiMode: 'rust-v2', v2ApiBaseUrl: 'http://localhost/api/v2', defaultFacilityCode: 'HMS' };
   vi.stubGlobal('crypto', webcrypto); vi.stubGlobal('PublicKeyCredential', class {}); vi.stubGlobal('navigator', { ...navigator, credentials: { get: vi.fn().mockResolvedValue(credential()) } });
-  initial = token('passkey', { id: actorId, facility_id: facilityId, permissions: ['patient.demographics.view', 'referral.manage'], features: ['patients', 'referrals'], patient_visibility: ['full_clinical'] }); initial.access_token = jwtFor(initial, { auth_time: Math.floor(Date.now() / 1000) - 60 }); upgraded = structuredClone(initial); upgraded.user.auth_security.assurance_version += 1; upgraded.user.auth_security.session_assurance.verified_at = new Date().toISOString(); upgraded.access_token = jwtFor(upgraded, { auth_time: Math.floor(Date.now() / 1000) }); posts = []; lose = false; hold = false; oldSignal = null;
+  initial = token('passkey', { id: actorId, facility_id: facilityId, permissions: ['patient.demographics.view', 'referral.manage'], features: ['patients', 'referrals'], patient_visibility: ['full_clinical'] }); initial.access_token = jwtFor(initial, { auth_time: Math.floor(Date.now() / 1000) - 60 }); upgraded = structuredClone(initial); upgraded.user.auth_security.assurance_version += 1; upgraded.user.auth_security.session_assurance.verified_at = new Date().toISOString(); upgraded.access_token = jwtFor(upgraded, { auth_time: Math.floor(Date.now() / 1000) }); upgraded.user.auth_security.auth_clock = fixtureClock(Date.now(), upgraded.access_token); posts = []; lose = false; hold = false; oldSignal = null;
   vi.stubGlobal('fetch', vi.fn(async (input, request = {}) => {
     const path = new URL(input).pathname;
     if (path.endsWith('/auth/login')) return json({ data: pending() });
@@ -49,7 +49,7 @@ beforeEach(() => {
 afterEach(() => { cleanup(); queryClient.clear(); clearWorkflowContinuity(); __resetV2ApiClientForTests(); localStorage.clear(); sessionStorage.clear(); window.__HMS_RUNTIME_CONFIG__ = runtime; vi.unstubAllGlobals(); });
 async function mountAndDraft() {
   render(<QueryClientProvider client={queryClient}><MemoryRouter><HelmetProvider><BreadcrumbProvider><AuthProvider><Harness /></AuthProvider></BreadcrumbProvider></HelmetProvider></MemoryRouter></QueryClientProvider>);
-  fireEvent.click(screen.getByText('Begin synthetic sign-in')); fireEvent.click(await screen.findByText('Use an existing passkey')); await screen.findByText('Synthetic authorized response workspace'); fireEvent.click(await screen.findByRole('button', { name: 'Draft or complete response' })); fireEvent.change(screen.getByLabelText('Specialist notes'), { target: { value: 'SYNTHETIC PRIVATE RESPONSE DRAFT' } });
+  fireEvent.click(await screen.findByText('Begin synthetic sign-in')); fireEvent.click(await screen.findByText('Use an existing passkey')); await screen.findByText('Synthetic authorized response workspace'); fireEvent.click(await screen.findByRole('button', { name: 'Draft or complete response' })); fireEvent.change(screen.getByLabelText('Specialist notes'), { target: { value: 'SYNTHETIC PRIVATE RESPONSE DRAFT' } });
 }
 async function confirmProof() { const old = getV2ClientScopeKey(); fireEvent.click(screen.getByText('Confirm same-session proof')); await waitFor(() => expect(auth.user.accessContext.auth_security.assurance_version).toBe(upgraded.user.auth_security.assurance_version)); expect(getV2ClientScopeKey()).not.toBe(old); }
 async function dispatch() { fireEvent.click(screen.getByRole('button', { name: 'Review draft save' })); fireEvent.click(await screen.findByRole('checkbox', { name: /I confirmed this patient/ })); fireEvent.click(screen.getByRole('button', { name: 'Save response draft', exact: true })); await waitFor(() => expect(posts).toHaveLength(1)); }

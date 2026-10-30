@@ -1,7 +1,7 @@
 import Search from 'lucide-react/dist/esm/icons/search.js';
 import X from 'lucide-react/dist/esm/icons/x.js';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback, forwardRef } from "react";
 
 const DEFAULT_EMPTY_ARRAY = [];
 
@@ -22,7 +22,7 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
 
-const SearchBar = ({
+const SearchBar = forwardRef(function SearchBar({
   options = DEFAULT_EMPTY_ARRAY,
   value,
   onChange,
@@ -35,10 +35,25 @@ const SearchBar = ({
   maxHeight = "15rem",
   searchPlaceholder = "Type to search...",
   isLoading = false,
-}) => {
+  id,
+  name,
+  onBlur,
+  onFocus,
+  'aria-label': ariaLabel,
+  'aria-labelledby': ariaLabelledBy,
+  'aria-describedby': ariaDescribedBy,
+  'aria-invalid': ariaInvalid,
+  'aria-required': ariaRequired,
+  'data-slot': dataSlot,
+}, forwardedRef) {
   const [open, setOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const inputRef = useRef(null);
+  const setInputRef = useCallback(node => {
+    inputRef.current = node;
+    if (typeof forwardedRef === 'function') forwardedRef(node);
+    else if (forwardedRef) forwardedRef.current = node;
+  }, [forwardedRef]);
   const selectedOption = options.find((option) => option.value === value);
 
   // Focus input when popover opens
@@ -93,7 +108,17 @@ const SearchBar = ({
             <div className="relative flex-grow">
               <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
               <Input
-                ref={inputRef}
+                ref={setInputRef}
+                id={id}
+                name={name}
+                onBlur={onBlur}
+                onFocus={onFocus}
+                aria-label={ariaLabel}
+                aria-labelledby={ariaLabelledBy}
+                aria-describedby={ariaDescribedBy}
+                aria-invalid={ariaInvalid}
+                aria-required={ariaRequired}
+                data-slot={dataSlot || 'input'}
                 value={selectedOption ? displayValue ? displayValue(value) : selectedOption.label : searchQuery}
                 onChange={(e) => {
                   if (!selectedOption) {
@@ -178,6 +203,6 @@ const SearchBar = ({
       </Popover>
     </div>
   );
-};
+});
 
 export { SearchBar };

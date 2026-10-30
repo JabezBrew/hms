@@ -9,7 +9,31 @@ pub fn routes() -> Router<AppState> {
         .merge(super::appointment_series::routes())
         .route(
             "/api/v2/scheduling/services",
-            get(scheduling::list_services).post(scheduling::create_service),
+            get(scheduling::list_services).post(crate::handlers::appointment_types::create),
+        )
+        .route(
+            "/api/v2/scheduling/services/administration",
+            get(crate::handlers::appointment_types::list),
+        )
+        .route(
+            "/api/v2/scheduling/services/commands/:client_request_id",
+            get(crate::handlers::appointment_types::receipt),
+        )
+        .route(
+            "/api/v2/scheduling/services/:id/administration",
+            get(crate::handlers::appointment_types::detail),
+        )
+        .route(
+            "/api/v2/scheduling/services/:id/metadata",
+            post(crate::handlers::appointment_types::metadata),
+        )
+        .route(
+            "/api/v2/scheduling/services/:id/retire",
+            post(crate::handlers::appointment_types::retire),
+        )
+        .route(
+            "/api/v2/scheduling/services/:id/reactivate",
+            post(crate::handlers::appointment_types::reactivate),
         )
         .route(
             "/api/v2/scheduling/sessions",

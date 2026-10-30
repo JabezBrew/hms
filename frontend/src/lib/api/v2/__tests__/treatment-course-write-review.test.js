@@ -1,7 +1,7 @@
 import { webcrypto } from 'node:crypto';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { __resetV2ApiClientForTests, configureV2ApiClient, getV2ClientScopeKey, v2Request } from '../client';
-import { bindNetworkAccessGuard } from '../networkAccessGuard';
+import { bindModeledNetworkGuard as bindNetworkAccessGuard } from '@/tests/networkClockModel';
 import { activateWriteUncertainty, getWriteUncertaintySnapshot, resetWriteUncertaintyForTests, WRITE_UNCERTAINTY_KEY } from '../writeUncertainty';
 const ids = Array.from({ length: 9 }, (_, i) => `71000000-0000-4000-8000-${String(i + 1).padStart(12, '0')}`);
 const [actor, facility, patient, admission, course, requestId, otherAdmission, otherCourse] = ids;

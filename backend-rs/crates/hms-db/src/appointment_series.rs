@@ -288,7 +288,7 @@ pub async fn create_series(
     .fetch_optional(&mut *tx)
     .await?;
     let service: Option<Uuid> = sqlx::query_scalar(
-        "SELECT id FROM appointment_types WHERE facility_id=$1 AND id=$2 AND is_active FOR SHARE",
+        "SELECT id FROM appointment_types WHERE facility_id=$1 AND id=$2 AND is_active",
     )
     .bind(actor.facility_id)
     .bind(data.service_id)
@@ -307,6 +307,16 @@ pub async fn create_series(
             .map_err(|_| SeriesError::SlotChanged)?;
         sessions.insert(id, session);
     }
+    let mut type_ids = vec![data.service_id];
+    for session in sessions.values() {
+        care::validate_new_session_source_tx(&mut tx, actor.facility_id, session)
+            .await
+            .map_err(|_| SeriesError::SlotChanged)?;
+        if matches!(session.owner_type, care::ClinicSessionOwnerType::Service) {
+            type_ids.push(session.owner_id.ok_or(SeriesError::References)?);
+        }
+    }
+    crate::appointment_types::retain_active_types_tx(&mut tx, actor.facility_id, &type_ids).await?;
     let mut practitioners: Vec<_> = sessions
         .values()
         .filter_map(|s| s.practitioner_user_id)

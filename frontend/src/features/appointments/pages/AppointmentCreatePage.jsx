@@ -1,3 +1,6 @@
+import { Button } from '@/components/ui/button';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
 /* oxlint-disable react-doctor/prefer-useReducer -- Booking state is owned by useAppointmentCreateController; a reducer would not improve the render shell. */
 import { Form } from '@/components/ui/form';
 import { PageShell } from '@/shared/components/page/PageShell';
@@ -34,6 +37,7 @@ const AppointmentCreatePage = () => {
         progress={controller.progress}
       />
 
+      {controller.serviceMessage && <Alert><AlertTitle>Service selection</AlertTitle><AlertDescription><div className="flex flex-wrap items-center gap-3"><p>{controller.serviceMessage}</p><Button type="button" variant="outline" disabled={!controller.canRefreshServices} onClick={() => { void controller.refreshServiceChoices(); }}>Refresh service choices</Button></div></AlertDescription></Alert>}
       <div className="flex-1 overflow-hidden">
         <Form {...controller.form}>
           <form onSubmit={controller.form.handleSubmit(controller.onSubmit)} className="h-full">
@@ -68,7 +72,8 @@ const AppointmentCreatePage = () => {
               />
 
               <AppointmentCreateTimePanel
-                seriesEntry={<SeriesBookingEntry disabled={controller.isWaitlistPromotion || controller.submitting} context={{ patientId: controller.watchPatientId, clinicId: controller.watchClinicId, serviceId: controller.watchAppointmentTypeId, practitionerId: controller.requiresPractitioner ? controller.watchPractitionerId : undefined, patientName: controller.selectedPatientName, clinicName: controller.selectedClinic?.name, serviceName: controller.selectedTypeName }} />}
+                serviceAvailable={!isRustV2ApiMode() || controller.serviceAvailable}
+                seriesEntry={<SeriesBookingEntry serviceAvailable={controller.serviceAvailable} disabled={controller.isWaitlistPromotion || controller.submitting} context={{ patientId: controller.watchPatientId, clinicId: controller.watchClinicId, serviceId: controller.watchAppointmentTypeId, practitionerId: controller.requiresPractitioner ? controller.watchPractitionerId : undefined, patientName: controller.selectedPatientName, clinicName: controller.selectedClinic?.name, serviceName: controller.selectedTypeName }} />}
                 form={controller.form}
                 handleSlotSelect={controller.handleSlotSelect}
                 isPoolClinic={controller.isPoolClinic}

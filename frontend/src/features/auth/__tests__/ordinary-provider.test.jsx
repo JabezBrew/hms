@@ -10,7 +10,7 @@ import { __resetV2ApiClientForTests, configureV2ApiClient, getV2ClientScopeKey, 
 import { getWorkflowContinuity, clearWorkflowContinuity } from '@/shared/lib/workflowContinuity';
 import { dismissFactorRequirement } from '@/shared/lib/factorRequiredSignal';
 import { getWriteUncertaintySnapshot } from '@/lib/api/v2/writeUncertainty';
-import { token, jwtFor, json, failure, networkDecision } from './fixtures';
+import { token, jwtFor, json, failure, networkDecision, ordinaryToken, fixtureClock } from './fixtures';
 
 const runtime = window.__HMS_RUNTIME_CONFIG__;
 let auth, initial, fresh, handler, requests, deferred, network;
@@ -18,20 +18,29 @@ const password = ' Synthetic exact password with spaces ';
 function Probe() { auth = useAuth(); return <><button onClick={() => auth.login('synthetic@example.test', 'Synthetic login password', 'HMS').catch(() => {})}>Begin ordinary session</button>{auth.user && <NetworkAccessBoundary><p>Synthetic current workspace</p></NetworkAccessBoundary>}</>; }
 async function mount() {
   render(<QueryClientProvider client={queryClient}><MemoryRouter><AuthProvider><Probe /></AuthProvider></MemoryRouter></QueryClientProvider>);
-  fireEvent.click(screen.getByText('Begin ordinary session')); await screen.findByText('Synthetic current workspace');
+  fireEvent.click(await screen.findByText('Begin ordinary session')); await screen.findByText('Synthetic current workspace');
 }
 async function confirm(options) { let result; await act(async () => { result = await auth.reauthenticate(auth.user.email, password, 'HMS', options).catch(error => error); }); return result; }
-function renew() { fresh = structuredClone(initial); fresh.user.auth_security.assurance_version += 1; fresh.access_token = jwtFor(fresh, { auth_time: Math.floor(Date.now() / 1000) }); }
+function renew() {
+  fresh = structuredClone(initial); fresh.user.auth_security.assurance_version += 1;
+  const database = fresh.user.auth_security.auth_clock.database_observed_at;
+  const issued = Date.now(); const second = Math.floor(issued / 1000);
+  fresh.access_token = jwtFor(fresh, { auth_time: Math.min(Math.floor(Date.parse(database) / 1000), second), iat: second, exp: second + 600 });
+  fresh.user.auth_security.auth_clock = { ...fixtureClock(issued, fresh.access_token), database_observed_at: database };
+  ordinaryToken(fresh);
+}
+function initialAssurance(assurance) { initial.user.auth_security.session_assurance = assurance; initial.user.auth_security.auth_clock = fixtureClock(Date.now(), initial.access_token); }
 beforeEach(() => {
   vi.stubGlobal('crypto', webcrypto); localStorage.clear(); sessionStorage.clear(); queryClient.clear(); queryClient.setDefaultOptions({ queries: { retry: false, gcTime: 0 }, mutations: { retry: false } }); __resetV2ApiClientForTests(); clearWorkflowContinuity(); dismissFactorRequirement();
   window.__HMS_RUNTIME_CONFIG__ = { apiMode: 'rust-v2', v2ApiBaseUrl: 'http://localhost/api/v2', defaultFacilityCode: 'HMS' };
   initial = token(null, { permissions: ['inventory.view', 'inventory.manage', 'patient.demographics.view'], features: ['inventory'], patient_visibility: ['demographics'] });
-  initial.access_token = jwtFor(initial, { auth_time: Math.floor(Date.now() / 1000) - 120 }); renew(); requests = []; deferred = null; network = null;
+  const issued = Date.now(); const second = Math.floor(issued / 1000);
+  initial.access_token = jwtFor(initial, { auth_time: second - 120, iat: second, exp: second + 600 }); initial.user.auth_security.auth_clock = fixtureClock(issued, initial.access_token); renew(); requests = []; deferred = null; network = null;
   handler = async path => path.endsWith('/auth/reauthenticate') ? json(fresh) : failure('synthetic_route_unavailable', 404);
   vi.stubGlobal('fetch', vi.fn(async (url, request = {}) => {
     const path = new URL(url).pathname; requests.push({ path, request });
     if (path.endsWith('/auth/login')) return json(initial);
-    if (path.endsWith('/auth/network-access')) return network && request.headers.Authorization === `Bearer ${fresh.access_token}` ? network : json(networkDecision());
+    if (path.endsWith('/auth/network-access')) return network && request.headers.Authorization === `Bearer ${fresh.access_token}` ? network : json(networkDecision(request.headers.Authorization?.replace('Bearer ', '')));
     return handler(path, request);
   }));
 });
@@ -47,18 +56,17 @@ it('uses the actual generated password-only operation and preserves exact same-s
   expect(auth.user.accessContext.auth_security.session_assurance).toEqual(initial.user.auth_security.session_assurance);
 });
 it('preserves a coherent unchanged imported recovery proof without strengthening it', async () => {
-  initial.user.auth_security.session_assurance = token('recovery').user.auth_security.session_assurance; renew(); await mount(); await confirm();
+  initialAssurance(token('recovery').user.auth_security.session_assurance); renew(); await mount(); await confirm();
   expect(auth.getAccessToken()).toBe(fresh.access_token); expect(getWorkflowContinuity()).not.toBeNull(); expect(auth.user.accessContext.auth_security.session_assurance).toEqual(initial.user.auth_security.session_assurance);
 });
 it('accepts actual same-second password time with an advanced assurance revision', async () => {
-  const second = Math.floor(Date.now() / 1000); initial.access_token = jwtFor(initial, { auth_time: second, iat: second }); renew(); fresh.access_token = jwtFor(fresh, { auth_time: second, iat: second });
+  const second = Math.floor(Date.now() / 1000); initial.access_token = jwtFor(initial, { auth_time: second, iat: second, exp: second + 600 }); initial.user.auth_security.auth_clock = fixtureClock(Date.now(), initial.access_token); renew(); fresh.access_token = jwtFor(fresh, { auth_time: second, iat: second, exp: second + 600 }); fresh.user.auth_security.auth_clock = { ...fixtureClock(Date.now(), fresh.access_token), database_observed_at: fresh.user.auth_security.auth_clock.database_observed_at };
   await mount(); await confirm(); expect(auth.getAccessToken()).toBe(fresh.access_token); expect(auth.user.accessContext.auth_security.assurance_version).toBe(2); expect(getWorkflowContinuity()).not.toBeNull();
 });
-it.each([2, 3])('applies only the explicit two-second admission clock tolerance, offset=%s', async offset => {
-  const now = Date.now(); vi.spyOn(Date, 'now').mockReturnValue(now);
-  fresh.access_token = jwtFor(fresh, { auth_time: Math.floor(now / 1000) - offset }); await mount(); const result = await confirm();
-  if (offset === 2) { expect(result).not.toBeInstanceOf(Error); expect(auth.getAccessToken()).toBe(fresh.access_token); }
-  else { expect(result).toBeInstanceOf(Error); expect(auth.getAccessToken()).not.toBe(fresh.access_token); }
+it.each([2, 3])('rejects stale server admission without a browser wall-clock tolerance, age=%s seconds', async offset => {
+  const point = Date.parse(fresh.user.auth_security.auth_clock.database_observed_at) - offset * 1000;
+  ordinaryToken(fresh, new Date(point).toISOString()); fresh.access_token = jwtFor(fresh, { auth_time: Math.floor(point / 1000) });
+  await mount(); const result = await confirm(); expect(result).toBeInstanceOf(Error); expect(auth.getAccessToken()).not.toBe(fresh.access_token);
 });
 it('accepts real dispatch admission time even when the retained response arrives much later', async () => {
   let now = Date.now(); vi.spyOn(Date, 'now').mockImplementation(() => now); await mount();
@@ -68,9 +76,9 @@ it('accepts real dispatch admission time even when the retained response arrives
 });
 it('applies an exact same-session token after genuine subsecond proof expiry and clears workflow continuity', async () => {
   const second = Math.floor(Date.now() / 1000) * 1000; let now = second + 100; vi.spyOn(Date, 'now').mockImplementation(() => now);
-  initial.user.auth_security.session_assurance = { method: 'recovery', verified_at: new Date(second - 899500).toISOString(), expires_at: new Date(second + 500).toISOString(), credential_id: null };
+  initialAssurance({ method: 'recovery', verified_at: new Date(second - 899500).toISOString(), expires_at: new Date(second + 500).toISOString(), credential_id: null });
   initial.access_token = jwtFor(initial, { auth_time: second / 1000 - 120 }); renew(); fresh.user.auth_security.session_assurance = token().user.auth_security.session_assurance;
-  await mount(); now = second + 800; await confirm();
+  await mount(); now = second + 800; fresh.user.auth_security.auth_clock = fixtureClock(now, fresh.access_token); ordinaryToken(fresh, new Date(now).toISOString()); await confirm();
   expect(auth.getAccessToken()).toBe(fresh.access_token); expect(getWorkflowContinuity()).toBeNull(); expect(auth.user.accessContext.auth_security.session_assurance.method).toBeNull();
 });
 const invalid = [
@@ -105,7 +113,7 @@ it.each(invalid)('rejects %s before applying any same-session token', async (lab
   expect(requests.filter(({ path }) => path.endsWith('/auth/reauthenticate'))).toHaveLength(1); expect(requests.some(({ path }) => path.includes('/assurance/') || path.endsWith('/auth/refresh'))).toBe(false);
 });
 it.each(['extended', 'cleared before expiry'])('rejects %s existing factor evidence', async change => {
-  initial.user.auth_security.session_assurance = token('recovery').user.auth_security.session_assurance; renew();
+  initialAssurance(token('recovery').user.auth_security.session_assurance); renew();
   if (change === 'extended') fresh.user.auth_security.session_assurance.expires_at = new Date(Date.parse(fresh.user.auth_security.session_assurance.expires_at) + 1000).toISOString();
   else fresh.user.auth_security.session_assurance = token().user.auth_security.session_assurance;
   await mount(); expect(await confirm()).toBeInstanceOf(Error); expect(auth.getAccessToken()).not.toBe(fresh.access_token); expect(getWorkflowContinuity()).toBeNull();

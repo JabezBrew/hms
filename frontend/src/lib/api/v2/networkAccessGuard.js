@@ -1,5 +1,6 @@
 import { apiErrorFromEnvelope } from './errors';
 import { invalidateWriteRecoveryReads } from './writeUncertainty';
+import { invalidateServerClockReads, serverClock } from '@/shared/lib/serverClock';
 
 // Keep exact method/route templates aligned with the Rust network middleware.
 const AUTH_POSTS = new Set(['/api/v2/auth/login', '/api/v2/auth/refresh', '/api/v2/auth/logout', '/api/v2/auth/password',
@@ -13,7 +14,12 @@ const READ_POSTS = new Set(['/api/v2/patients/search', '/api/v2/patients/:patien
   '/api/v2/nhis/claims/search', '/api/v2/nhis/remittance-imports/:id/lines/search']);
 let enabled = false; let active = null;
 const subscribers = new Set();
-const notify = () => subscribers.forEach((subscriber) => subscriber());
+const ownerSubscribers = new Set();
+// Internal observer of committed owner facts; checking/decision changes do not
+// themselves create a new owner. Consumers compare the actual facts.
+export const subscribeNetworkOwner = (subscriber) => { ownerSubscribers.add(subscriber); return () => ownerSubscribers.delete(subscriber); };
+const notifyOwners = () => ownerSubscribers.forEach((subscriber) => { try { subscriber(); } catch { /* Observation must not interrupt the established guard lifecycle. */ } });
+const notify = () => { subscribers.forEach((subscriber) => subscriber()); notifyOwners(); };
 function routeTemplate(path) {
   path = String(path || '');
   const full = path.startsWith('/api/v2/') ? path : `/api/v2${path.startsWith('/') ? '' : '/'}${path}`;
@@ -25,25 +31,30 @@ function routeTemplate(path) {
     .replace(/^(\/api\/v2\/nhis\/remittance-imports\/)[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(\/lines\/search)$/i, '$1:id$2');
 }
 function writeError(code = 'network_access_unconfirmed') { return apiErrorFromEnvelope(403, { error: { code, message: 'The current connection does not have confirmed permission to change workflows. Review the network access notice before continuing.' } }); }
+export function networkClockCurrent(value) { const clock = serverClock(value); return Boolean(clock && clock.tokenRemaining() > 0 && (!(value.classification === 'offsite' && value.mode === 'fresh_reauth') || clock.remaining(value.reauth_expires_at) > 0)); }
 function freshWritable(binding) {
   const value = binding?.decision;
   if (!binding?.confirmed || !value?.access_allowed || value.read_only || value.classification === 'unknown' || value.policy_version === null) return false;
-  return !(value.classification === 'offsite' && value.mode === 'fresh_reauth') || (Number.isFinite(Date.parse(value.reauth_expires_at)) && Date.now() < Date.parse(value.reauth_expires_at));
+  return networkClockCurrent(value);
 }
-export function bindNetworkAccessGuard({ transportScope, authorityScope, principal }) {
-  enabled = true; const binding = { transportScope, authorityScope, principal, confirmed: false, decision: null }; active = binding; notify();
-  return { update(snapshot) { if (active === binding) { Object.assign(binding, snapshot); if (binding.confirmed && binding.decision?.access_allowed === false) { try { invalidateWriteRecoveryReads(); } catch { /* Access denial must not depend on recovery storage. */ } } notify(); } }, release() { if (active === binding) { active = null; notify(); } } };
+export function bindNetworkAccessGuard({ transportScope, authorityScope, principal, readOwnerValue = null }) {
+  invalidateServerClockReads();
+  enabled = true; const binding = { transportScope, authorityScope, principal, readOwnerValue: typeof readOwnerValue === 'string' ? readOwnerValue : null, confirmed: false, decision: null }; active = binding; notify();
+  return { observeReadOwner(value) { value = typeof value === 'string' ? value : null; if (active === binding && binding.readOwnerValue !== value) { binding.readOwnerValue = value; notifyOwners(); } }, update(snapshot) { if (active === binding) { Object.assign(binding, snapshot); if (binding.confirmed && binding.decision?.access_allowed === false) { invalidateServerClockReads(true); try { invalidateWriteRecoveryReads(); } catch { /* Access denial must not depend on recovery storage. */ } } notify(); } }, release() { if (active === binding) { invalidateServerClockReads(); active = null; notify(); } } };
 }
 export const currentNetworkAuthorityScope = () => active?.authorityScope || null;
+export const currentNetworkReadOwnerValue = () => active?.readOwnerValue ?? null;
 export const currentNetworkPrincipal = () => active?.principal || null;
 export function currentConfirmedNetworkDecision(transportScope, authorityScope) {
   if (!active?.confirmed || active.transportScope !== transportScope || active.authorityScope !== authorityScope) return null;
   const value = active.decision;
   if (!value?.access_allowed || value.classification === 'unknown' || value.policy_version === null) return null;
-  if (value.classification === 'offsite' && value.mode === 'fresh_reauth' && !(Date.now() < Date.parse(value.reauth_expires_at))) return null;
+  if (!networkClockCurrent(value)) return null;
   return value;
 }
 function ownSecurityOperation(verb, route) { return (verb === 'POST' && AUTH_POSTS.has(route)) || (verb === 'PATCH' && route === '/api/v2/auth/mfa/passkeys/:id'); }
+const AUTH_GETS = new Set(['/api/v2/auth/me', '/api/v2/auth/network-access', '/api/v2/auth/sessions', '/api/v2/auth/mfa/status', '/api/v2/auth/assurance', '/api/v2/auth/mfa/passkeys']);
+export function isOwnSessionRequest(method, path) { const verb = method.toUpperCase(); const route = routeTemplate(path); return ownSecurityOperation(verb, route) || (verb === 'GET' && AUTH_GETS.has(route)) || (['GET', 'HEAD'].includes(verb) && ['/api/v2/health/alive', '/api/v2/health/ready'].includes(route)); }
 export function isNetworkWorkflowWrite(method, path) { const verb = method.toUpperCase(); const route = routeTemplate(path); return enabled && !['GET', 'HEAD', 'OPTIONS'].includes(verb) && !ownSecurityOperation(verb, route) && !(verb === 'POST' && (READ_POSTS.has(route) || route === '/api/v2/observability/rum')); }
 export function assertNetworkRequestAllowed({ method, path, transportScope }) {
   const verb = method.toUpperCase(); const route = routeTemplate(path);
@@ -74,4 +85,4 @@ export function waitForNetworkRequestAccess({ method, path, ...options }) {
   if (['GET', 'HEAD', 'OPTIONS'].includes(verb) || ownSecurityOperation(verb, routeTemplate(path))) return Promise.resolve();
   return waitForBinding({ ...options, assertAllowed: () => assertNetworkRequestAllowed({ method, path, transportScope: options.transportScope }) });
 }
-export function resetNetworkAccessGuardForTests() { enabled = false; active = null; subscribers.clear(); }
+export function resetNetworkAccessGuardForTests() { enabled = false; active = null; subscribers.clear(); notifyOwners(); }

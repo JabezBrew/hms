@@ -863,6 +863,9 @@ async fn seed_demo_hospital_context(
     transaction: &mut Transaction<'_, Postgres>,
     baseline: &BaselineProvisioning,
 ) -> anyhow::Result<DemoHospitalContext> {
+    let appointment_type_id: Uuid = sqlx::query_scalar("SELECT id FROM appointment_types WHERE facility_id=$1 AND code='general' AND is_active FOR SHARE NOWAIT")
+        .bind(baseline.facility_id).fetch_optional(&mut **transaction).await?
+        .ok_or_else(|| anyhow::anyhow!("demo_seed_general_service_unavailable"))?;
     let owner_user_id = Uuid::from_u128(OWNER_USER_ID);
     for (department_index, department) in demo_departments().iter().enumerate() {
         organization_units::retain(
@@ -987,7 +990,7 @@ async fn seed_demo_hospital_context(
             )
             .bind(baseline.facility_id)
             .bind(session_id)
-            .bind(Uuid::from_u128(DEFAULT_APPOINTMENT_TYPE_GENERAL_ID))
+            .bind(appointment_type_id)
             .execute(&mut **transaction)
             .await?;
         }
@@ -1183,7 +1186,7 @@ async fn seed_demo_hospital_context(
     Ok(DemoHospitalContext {
         facility_id: baseline.facility_id,
         owner_user_id,
-        appointment_type_id: Uuid::from_u128(DEFAULT_APPOINTMENT_TYPE_GENERAL_ID),
+        appointment_type_id: appointment_type_id,
         doctors,
         nurses,
         lab_techs,
@@ -7034,11 +7037,7 @@ async fn seed_default_appointment_types(
             default_duration_minutes
         )
         VALUES ($1, $2, 'general', 'General', 30)
-        ON CONFLICT (facility_id, code) DO UPDATE
-        SET id = EXCLUDED.id,
-            name = EXCLUDED.name,
-            default_duration_minutes = EXCLUDED.default_duration_minutes,
-            is_active = TRUE
+        ON CONFLICT (facility_id, code) DO NOTHING
         "#,
     )
     .bind(Uuid::from_u128(DEFAULT_APPOINTMENT_TYPE_GENERAL_ID))

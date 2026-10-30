@@ -1,4 +1,6 @@
+use hms_domain::authorization_clock::AuthorizationClock;
 use std::collections::HashMap;
+use std::time::Instant;
 
 use chrono::{DateTime, Duration, Utc};
 use hms_domain::auth::{
@@ -84,6 +86,7 @@ struct SessionUserRow {
 
 #[derive(Clone, Debug, FromRow)]
 struct RequestContextFactsRow {
+    observed_at: DateTime<Utc>,
     id: Uuid,
     email: String,
     display_name: String,
@@ -111,6 +114,7 @@ struct RequestContextFactsRow {
 
 #[derive(Clone, Copy, Debug)]
 pub struct UserAuthVersions {
+    pub authorization_clock: AuthorizationClock,
     pub session_version: i64,
     pub permission_version: i64,
     pub active_profile: DeploymentProfile,
@@ -122,6 +126,7 @@ pub struct UserAuthVersions {
 
 #[derive(Clone, Debug)]
 pub struct RequestContextAuthFacts {
+    pub authorization_clock: AuthorizationClock,
     pub user: AuthUser,
     pub feature_flags: HashMap<FeatureKey, bool>,
     pub active_authorities: Vec<ActiveAuthority>,
@@ -130,6 +135,18 @@ pub struct RequestContextAuthFacts {
     /// Cache staleness bound only; factor expiry does not end ordinary access.
     pub cache_expires_at: DateTime<Utc>,
     pub password_verified_at: DateTime<Utc>,
+    /// Eligibility captured only from the original source hydration. A later
+    /// version-probe clock must not manufacture formerly absent proof.
+    pub password_verified_at_admitted: bool,
+}
+
+impl RequestContextAuthFacts {
+    /// A fresh probe may shorten cached time authority, never renew its stored TTL.
+    /// Going backwards requires fresh authority/permission hydration as well.
+    pub fn cache_is_current_at(&self, clock: AuthorizationClock) -> bool {
+        clock.observed_at() >= self.authorization_clock.observed_at()
+            && clock.remaining_until(self.cache_expires_at).is_some()
+    }
 }
 
 #[derive(Clone, Debug, FromRow)]
@@ -607,10 +624,14 @@ async fn auth_versions_inner(
     facility_id: Uuid,
     session: Option<Uuid>,
 ) -> anyhow::Result<Option<UserAuthVersions>> {
-    let row = hms_observability::observe_db_query(
+    let (row, started_at) = hms_observability::observe_db_query(
         "auth.user_auth_versions_for_facility",
-        sqlx::query_as::<_, (i64, i64, bool, i64, String, Option<DateTime<Utc>>, i64) >(
+        async {
+            let mut connection = pool.acquire().await?;
+            let started_at = Instant::now();
+            let row = sqlx::query_as::<_, (i64, i64, bool, i64, String, Option<DateTime<Utc>>, i64, DateTime<Utc>) >(
             r#"
+            WITH security_point AS MATERIALIZED (SELECT clock_timestamp() AS at)
             SELECT users.session_version, users.auth_factor_version, users.password_change_required,
                    users.permission_version,
                    facilities.deployment_profile AS active_profile,
@@ -619,22 +640,24 @@ async fn auth_versions_inner(
                        FROM facility_feature_entitlements
                        WHERE facility_feature_entitlements.facility_id = users.facility_id
                    ) AS feature_entitlements_updated_at,
-                   COALESCE((SELECT assurance_version FROM refresh_sessions WHERE session_id=$3),0) AS assurance_version
-            FROM users
+                   COALESCE((SELECT assurance_version FROM refresh_sessions WHERE session_id=$3),0) AS assurance_version,
+                   security_point.at AS observed_at
+            FROM users CROSS JOIN security_point
             JOIN facilities ON facilities.id = users.facility_id
             WHERE users.id = $1
               AND users.facility_id = $2
               AND users.is_active = TRUE
               AND facilities.is_active = TRUE
-              AND ($3::uuid IS NULL OR EXISTS(SELECT 1 FROM refresh_sessions s WHERE s.session_id=$3 AND s.user_id=users.id AND s.facility_id=users.facility_id AND s.session_version=users.session_version AND s.permission_version_at_issue=users.permission_version AND s.revoked_at IS NULL AND LEAST(s.expires_at,s.idle_expires_at,s.absolute_expires_at)>clock_timestamp()))
+              AND ($3::uuid IS NULL OR EXISTS(SELECT 1 FROM refresh_sessions s WHERE s.session_id=$3 AND s.user_id=users.id AND s.facility_id=users.facility_id AND s.session_version=users.session_version AND s.permission_version_at_issue=users.permission_version AND s.revoked_at IS NULL AND LEAST(s.expires_at,s.idle_expires_at,s.absolute_expires_at)>security_point.at))
             "#,
         )
         .bind(user_id)
         .bind(facility_id)
         .bind(session)
-        .fetch_optional(pool),
-    )
-    .await?;
+        .fetch_optional(&mut *connection).await?;
+            Ok::<_, sqlx::Error>((row, started_at))
+        },
+    ).await?;
 
     row.map(
         |(
@@ -645,8 +668,10 @@ async fn auth_versions_inner(
             active_profile,
             feature_entitlements_updated_at,
             assurance_version,
+            observed_at,
         )| {
             Ok(UserAuthVersions {
+                authorization_clock: AuthorizationClock::new(observed_at, started_at),
                 session_version,
                 permission_version,
                 active_profile: codec::decode(&active_profile)?,
@@ -667,11 +692,16 @@ pub async fn request_context_facts(
     session_id: Uuid,
     fallback_profile: DeploymentProfile,
 ) -> anyhow::Result<Option<RequestContextAuthFacts>> {
-    let row = hms_observability::observe_db_query(
+    let (row, started_at) = hms_observability::observe_db_query(
         "auth.request_context_facts",
-        sqlx::query_as::<_, RequestContextFactsRow>(
+        async {
+            let mut connection = pool.acquire().await?;
+            let started_at = Instant::now();
+            let row = sqlx::query_as::<_, RequestContextFactsRow>(
             r#"
-            SELECT users.id,
+            WITH security_point AS MATERIALIZED (SELECT clock_timestamp() AS at)
+            SELECT security_point.at AS observed_at,
+                   users.id,
                    users.email,
                    users.display_name,
                    users.facility_id,
@@ -786,7 +816,7 @@ pub async fn request_context_facts(
                     CROSS JOIN LATERAL (VALUES (b.starts_at), (b.ends_at)) boundary(boundary_at)
                     WHERE b.user_id = users.id AND b.facility_id = users.facility_id AND boundary_at > now())
 	                   ) AS session_expires_at
-	            FROM users
+	            FROM users CROSS JOIN security_point
 	            JOIN facilities ON facilities.id = users.facility_id
 	            JOIN refresh_sessions
 	              ON refresh_sessions.session_id = $3
@@ -803,7 +833,7 @@ pub async fn request_context_facts(
                 FROM auth_session_assurance a LEFT JOIN auth_webauthn_credentials k ON k.id=a.credential_id AND k.facility_id=a.facility_id AND k.user_id=a.user_id
                 WHERE a.session_id=refresh_sessions.session_id AND a.user_id=users.id AND a.facility_id=users.facility_id
                 AND a.session_version=users.session_version AND a.permission_version=users.permission_version AND a.factor_version=users.auth_factor_version
-                AND a.active_profile=facilities.deployment_profile AND a.verified_at<=clock_timestamp() AND a.expires_at>clock_timestamp()
+                AND a.active_profile=facilities.deployment_profile AND a.verified_at<=security_point.at AND a.expires_at>security_point.at AND a.expires_at<=a.verified_at+interval '15 minutes'
                 AND (a.method='recovery' OR k.id IS NOT NULL AND k.disabled_at IS NULL)
             ) factor ON TRUE
             LEFT JOIN LATERAL (
@@ -838,11 +868,12 @@ pub async fn request_context_facts(
         .bind(user_id)
         .bind(facility_id)
         .bind(session_id)
-        .fetch_optional(pool),
-    )
-    .await?;
+        .fetch_optional(&mut *connection).await?;
+            Ok::<_, sqlx::Error>((row, started_at))
+        },
+    ).await?;
 
-    hydrate_request_context_facts(row, fallback_profile)
+    hydrate_request_context_facts(row, fallback_profile, started_at)
 }
 
 pub async fn user_by_email_and_facility(
@@ -1345,28 +1376,29 @@ pub async fn refresh_session_by_token_hash(
     pool: &PgPool,
     token_hash: &str,
 ) -> anyhow::Result<Option<RefreshSessionRow>> {
-    Ok(sqlx::query_as::<_, RefreshSessionRow>(
-        r#"
-        SELECT session_id,
-               session_family_id,
-               user_id,
-               facility_id,
-               session_version,
-               permission_version_at_issue,
-               csrf_token_hash,
-               expires_at,
-               session_started_at,
-               idle_expires_at,
-               absolute_expires_at,
-               revoked_at,
-               device_label
-        FROM refresh_sessions
-        WHERE token_hash = $1
-        "#,
+    Ok(refresh_session_by_token_hash_clocked(pool, token_hash)
+        .await?
+        .map(|(row, _)| row))
+}
+pub async fn refresh_session_by_token_hash_clocked(
+    pool: &PgPool,
+    token_hash: &str,
+) -> anyhow::Result<Option<(RefreshSessionRow, AuthorizationClock)>> {
+    let mut connection = pool.acquire().await?;
+    let started = Instant::now();
+    let row = sqlx::query(
+        "SELECT s.session_id,s.session_family_id,s.user_id,s.facility_id,s.session_version,s.permission_version_at_issue,s.csrf_token_hash,s.expires_at,s.session_started_at,s.idle_expires_at,s.absolute_expires_at,s.revoked_at,s.device_label,clock_timestamp() AS observed_at FROM refresh_sessions s WHERE token_hash=$1",
     )
     .bind(token_hash)
-    .fetch_optional(pool)
-    .await?)
+    .fetch_optional(&mut *connection)
+    .await?;
+    row.map(|row| {
+        Ok((
+            RefreshSessionRow::from_row(&row)?,
+            AuthorizationClock::new(sqlx::Row::try_get(&row, "observed_at")?, started),
+        ))
+    })
+    .transpose()
 }
 
 pub async fn list_active_user_sessions(
@@ -2274,7 +2306,7 @@ pub async fn start_break_glass_grant_authorized(
 
 async fn start_break_glass_grant_inner(
     pool: &PgPool,
-    command: StartBreakGlassGrant,
+    mut command: StartBreakGlassGrant,
     authorization: Option<crate::auth::assurance::BusinessFactorActor>,
 ) -> anyhow::Result<BreakGlassGrantOutcome> {
     let mut transaction = pool.begin().await?;
@@ -2296,7 +2328,8 @@ async fn start_break_glass_grant_inner(
     if actor.is_none() {
         anyhow::bail!("break-glass actor was not found in this facility");
     }
-    let privileged_deadline = if let Some(mut actor) = authorization {
+    let authorized = authorization.is_some();
+    let mut privileged_deadline = if let Some(mut actor) = authorization {
         Some(
             crate::auth::assurance::require_family_business_tx(
                 &mut transaction,
@@ -2311,16 +2344,7 @@ async fn start_break_glass_grant_inner(
     } else {
         None
     };
-    if !reauth_is_fresh(command.reauth_verified_at, command.now) {
-        return deny_break_glass_grant(
-            transaction,
-            &command,
-            BreakGlassGrantDenialReason::ReauthRequired,
-        )
-        .await;
-    }
-
-    let has_permission = sqlx::query_scalar::<_, bool>(
+    let (has_permission,observed_at) = sqlx::query_as::<_, (bool,DateTime<Utc>)>(
         r#"
         SELECT EXISTS (
             SELECT 1
@@ -2330,7 +2354,7 @@ async fn start_break_glass_grant_inner(
               AND users.facility_id = $2
               AND users.is_active = TRUE
               AND user_permissions.permission_code = $3
-        )
+        ),clock_timestamp()
         "#,
     )
     .bind(command.user_id)
@@ -2338,6 +2362,22 @@ async fn start_break_glass_grant_inner(
     .bind(BREAK_GLASS_PERMISSION_CODE)
     .fetch_one(&mut *transaction)
     .await?;
+    if authorized {
+        command.now = observed_at;
+        if let Some(original) = command.reauth_verified_at {
+            privileged_deadline =
+                privileged_deadline.map(|end| end.bound_original_password(original));
+        }
+    }
+    if !reauth_is_fresh(command.reauth_verified_at, command.now) {
+        return deny_break_glass_grant(
+            transaction,
+            &command,
+            BreakGlassGrantDenialReason::ReauthRequired,
+        )
+        .await;
+    }
+
     if !has_permission {
         return deny_break_glass_grant(
             transaction,
@@ -2787,6 +2827,7 @@ fn hydrate_session_user(row: Option<SessionUserRow>) -> anyhow::Result<Option<Se
 fn hydrate_request_context_facts(
     row: Option<RequestContextFactsRow>,
     fallback_profile: DeploymentProfile,
+    started_at: Instant,
 ) -> anyhow::Result<Option<RequestContextAuthFacts>> {
     let Some(row) = row else {
         return Ok(None);
@@ -2802,7 +2843,9 @@ fn hydrate_request_context_facts(
     let authority_rows: Vec<crate::admin::ActiveAuthorityRow> =
         serde_json::from_value(row.active_authorities)?;
 
+    let authorization_clock = AuthorizationClock::new(row.observed_at, started_at);
     Ok(Some(RequestContextAuthFacts {
+        authorization_clock,
         user: AuthUser {
             id: row.id,
             email: row.email,
@@ -2834,7 +2877,9 @@ fn hydrate_request_context_facts(
                 security.assurance_version = row.assurance_version;
                 security.session_assurance = serde_json::from_value(row.session_assurance)?;
                 security.privileged_actions_allowed = !security.passkey_required
-                    || security.session_assurance.is_fresh_passkey_at(Utc::now());
+                    || authorization_clock
+                        .now()
+                        .is_some_and(|now| security.session_assurance.is_fresh_passkey_at(now));
                 security
             },
         },
@@ -2849,6 +2894,7 @@ fn hydrate_request_context_facts(
             end.min(row.session_expires_at)
         }),
         password_verified_at: row.password_verified_at,
+        password_verified_at_admitted: row.password_verified_at <= row.observed_at,
     }))
 }
 
@@ -2907,6 +2953,25 @@ mod tests {
             now,
             reauth_verified_at: Some(now),
         }
+    }
+
+    #[test]
+    fn break_glass_clock_model_current_db_proof_does_not_use_ahead_or_behind_host() {
+        let host = Utc::now();
+        for offset in [-3600, 3600] {
+            let database = host + Duration::seconds(offset);
+            assert!(
+                reauth_is_fresh(Some(database), database),
+                "authorized proof must use its actual DB observation"
+            );
+        }
+    }
+    #[test]
+    fn break_glass_clock_model_aligned_current_and_expired_controls() {
+        let point = Utc::now();
+        assert!(reauth_is_fresh(Some(point), point));
+        assert!(!reauth_is_fresh(Some(point - Duration::minutes(16)), point));
+        assert!(!reauth_is_fresh(Some(point + Duration::seconds(1)), point));
     }
 
     #[tokio::test]

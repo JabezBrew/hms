@@ -3,6 +3,7 @@ pub mod admin_access;
 pub mod admission_advisories;
 pub mod admission_moves;
 pub mod appointment_series;
+pub mod appointment_types;
 pub mod auth;
 pub mod auth_factor;
 pub mod billing;

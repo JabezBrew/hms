@@ -323,3 +323,13 @@ retain active same-facility locations; unchanged historical links remain usable
 for closure. The supported deployment protocol refuses runtime027 or earlier
 after028 commits. The new runtime refuses schema027 before provisioning or
 readiness; older binaries are not assumed to know future migrations.
+
+
+Migration `202610180029` requires runtime epoch `202610180029`. Appointment
+service commands retain permanent identity, immutable original-actor receipts,
+versioned metadata and reviewed retirement/reactivation. New references retain
+active same-facility services; existing booked care keeps its closure path.
+The supported deployment protocol refuses runtime 028 or earlier after 029 commits.
+The new runtime refuses schema 028 before provisioning, listening or worker
+readiness. Older artifacts are not assumed to recognize future migrations.
+Local schema/protocol tests do not establish a live migration or rollback drill.

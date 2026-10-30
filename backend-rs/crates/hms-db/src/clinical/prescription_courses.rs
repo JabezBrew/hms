@@ -71,6 +71,8 @@ impl std::error::Error for PrescriptionCourseError {}
 
 #[derive(Clone)]
 pub struct PrescriptionAuthorization {
+    pub ordinary_reauth_required: bool,
+    pub original_password_verified_at: Option<DateTime<Utc>>,
     pub session_id: Uuid,
     pub session_version: i64,
     pub permission_version: i64,
@@ -356,11 +358,11 @@ pub(crate) async fn verify_identity_actor(
         {
             return Err(PrescriptionCourseError::InvalidActor.into());
         }
-        let session:Option<DateTime<Utc>>=hms_observability::observe_db_query("clinical.prescription.proof.session", sqlx::query_scalar("SELECT LEAST(expires_at,idle_expires_at,absolute_expires_at) FROM refresh_sessions WHERE facility_id=$1 AND user_id=$2 AND session_id=$3 AND session_version=$4 AND permission_version_at_issue=$5 AND revoked_at IS NULL AND LEAST(expires_at,idle_expires_at,absolute_expires_at)>clock_timestamp() FOR SHARE")
+        let session:Option<(DateTime<Utc>,DateTime<Utc>)>=hms_observability::observe_db_query("clinical.prescription.proof.session", sqlx::query_as("SELECT LEAST(expires_at,idle_expires_at,absolute_expires_at),password_verified_at FROM refresh_sessions WHERE facility_id=$1 AND user_id=$2 AND session_id=$3 AND session_version=$4 AND permission_version_at_issue=$5 AND revoked_at IS NULL AND LEAST(expires_at,idle_expires_at,absolute_expires_at)>clock_timestamp() FOR SHARE")
             .bind(actor.facility_id).bind(actor.user_id).bind(proof.session_id).bind(proof.session_version).bind(proof.permission_version).fetch_optional(&mut **tx)).await?;
         proof.valid_until = proof
             .valid_until
-            .min(session.ok_or(PrescriptionCourseError::InvalidActor)?);
+            .min(session.ok_or(PrescriptionCourseError::InvalidActor)?.0);
     }
     check_authorization(tx, actor).await
 }
@@ -371,8 +373,11 @@ pub(crate) async fn check_authorization(
     if let Some(proof) = actor.authorization.as_ref() {
         let valid: bool = hms_observability::observe_db_query(
             "clinical.prescription.proof.deadline",
-            sqlx::query_scalar("SELECT clock_timestamp()<$1")
+            sqlx::query_scalar("WITH point AS MATERIALIZED(SELECT clock_timestamp() AS at) SELECT point.at<$1 AND (NOT $2::boolean OR ($3::timestamptz IS NOT NULL AND $3<=point.at AND EXISTS(SELECT 1 FROM refresh_sessions s WHERE s.facility_id=$4 AND s.user_id=$5 AND s.session_id=$6 AND s.session_version=$7 AND s.permission_version_at_issue=$8 AND s.revoked_at IS NULL AND s.password_verified_at<=point.at AND point.at<s.password_verified_at+interval '15 minutes'))) FROM point")
                 .bind(proof.valid_until)
+                .bind(proof.ordinary_reauth_required)
+                .bind(proof.original_password_verified_at)
+                .bind(actor.facility_id).bind(actor.user_id).bind(proof.session_id).bind(proof.session_version).bind(proof.permission_version)
                 .fetch_one(&mut **tx),
         )
         .await?;

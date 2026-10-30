@@ -689,6 +689,7 @@ pub(crate) struct SessionMaterial {
 
 #[derive(Clone, Debug)]
 pub struct LoginOutcome {
+    pub ordinary_confirmation: Option<hms_domain::auth_assurance::OrdinaryConfirmationWitness>,
     pub access_token: String,
     pub refresh_token: String,
     pub csrf_token: String,
@@ -1491,29 +1492,41 @@ impl AppState {
             return Ok(None);
         }
 
-        if !self.current_auth_versions_match(claims).await? {
+        let Some(current_clock) = self.current_auth_versions_match(claims).await? else {
             self.invalidate_auth_cache_for_user(claims.facility_id, claims.sub);
             return Ok(None);
-        }
+        };
 
         let cache_key = AuthCacheKey::from_claims(claims);
-        if let Some(user) = self.cached_auth_user_for_claims(&cache_key, claims) {
+        if let Some(user) = self.cached_auth_user_for_claims(&cache_key, claims, current_clock) {
             return Ok(Some(user));
         }
 
         let hydration_lock = self.inner.auth_cache.hydration_lock(&cache_key);
         let _hydration_guard = hydration_lock.lock().await;
-        if let Some(user) = self.cached_auth_user_for_claims(&cache_key, claims) {
+        if let Some(user) = self.cached_auth_user_for_claims(&cache_key, claims, current_clock) {
             return Ok(Some(user));
         }
 
         let facts = self
             .request_context_facts(claims.sub, self.facility_id(), claims.session_id)
             .await?;
-        let user = facts.as_ref().map(|facts| facts.user.clone());
+        let mut user = facts.as_ref().map(|facts| facts.user.clone());
+        if let Some(user) = user.as_mut() {
+            install_response_clock(
+                user,
+                facts
+                    .as_ref()
+                    .map(|facts| facts.authorization_clock)
+                    .unwrap_or(current_clock),
+                claims,
+            )?;
+        }
         if let Some(facts) = facts {
             if auth_user_matches_claims(&facts.user, claims) {
-                if let Some(ttl) = self.auth_cache_ttl_until(facts.cache_expires_at) {
+                if let Some(ttl) =
+                    self.auth_cache_ttl_until(facts.cache_expires_at, facts.authorization_clock)
+                {
                     self.inner
                         .auth_cache
                         .put_user(cache_key.clone(), facts.user.clone(), ttl);
@@ -1527,7 +1540,10 @@ impl AppState {
         Ok(user)
     }
 
-    async fn current_auth_versions_match(&self, claims: &AccessClaims) -> Result<bool> {
+    async fn current_auth_versions_match(
+        &self,
+        claims: &AccessClaims,
+    ) -> Result<Option<hms_domain::authorization_clock::AuthorizationClock>> {
         let Some(versions) = hms_db::auth::session_auth_versions_for_facility(
             &self.inner.auth_pool,
             claims.sub,
@@ -1536,18 +1552,29 @@ impl AppState {
         )
         .await?
         else {
-            return Ok(false);
+            return Ok(None);
         };
         let key = AuthCacheKey::from_claims(claims);
-        if self
-            .inner
-            .auth_cache
-            .get_request_context(&key)
-            .is_some_and(|facts| {
-                facts.user.auth_security.factor_version != versions.auth_factor_version
-                    || facts.user.auth_security.assurance_version != versions.assurance_version
-                    || facts.user.password_change_required != versions.password_change_required
-            })
+        // A backwards DB observation invalidates timed authority projections;
+        // it is not a cache key or security-version equality component.
+        let clock_rolled_back =
+            self.inner
+                .auth_cache
+                .get_request_context(&key)
+                .is_some_and(|facts| {
+                    versions.authorization_clock.observed_at()
+                        < facts.authorization_clock.observed_at()
+                });
+        if clock_rolled_back
+            || self
+                .inner
+                .auth_cache
+                .get_request_context(&key)
+                .is_some_and(|facts| {
+                    facts.user.auth_security.factor_version != versions.auth_factor_version
+                        || facts.user.auth_security.assurance_version != versions.assurance_version
+                        || facts.user.password_change_required != versions.password_change_required
+                })
             || self.inner.auth_cache.get_user(&key).is_some_and(|u| {
                 u.auth_security.factor_version != versions.auth_factor_version
                     || u.auth_security.assurance_version != versions.assurance_version
@@ -1556,25 +1583,35 @@ impl AppState {
         {
             self.invalidate_auth_cache_for_user(claims.facility_id, claims.sub);
         }
-        Ok(versions.session_version == claims.session_version
+        Ok((versions.session_version == claims.session_version
             && versions.permission_version == claims.permission_version
             && deployment_profile_claim_value(versions.active_profile).as_deref()
                 == Some(claims.active_profile.as_str()))
+        .then_some(versions.authorization_clock))
     }
 
     fn cached_auth_user_for_claims(
         &self,
         cache_key: &AuthCacheKey,
         claims: &AccessClaims,
+        clock: hms_domain::authorization_clock::AuthorizationClock,
     ) -> Option<AuthUser> {
-        if let Some(user) = self.inner.auth_cache.get_user(cache_key) {
+        if let Some(mut user) = self.inner.auth_cache.get_user(cache_key) {
+            refresh_security_clock(&mut user, clock);
+            if install_response_clock(&mut user, clock, claims).is_err() {
+                return None;
+            }
             return Some(user);
         }
-        let facts = self.inner.auth_cache.get_request_context(cache_key)?;
+        let mut facts = self.inner.auth_cache.get_request_context(cache_key)?;
+        refresh_security_clock(&mut facts.user, clock);
+        if install_response_clock(&mut facts.user, clock, claims).is_err() {
+            return None;
+        }
         if !auth_user_matches_claims(&facts.user, claims) {
             return None;
         }
-        let ttl = self.auth_cache_ttl_until(facts.cache_expires_at)?;
+        let ttl = self.auth_cache_ttl_until(facts.cache_expires_at, facts.authorization_clock)?;
         self.inner
             .auth_cache
             .put_user_if_absent(cache_key.clone(), facts.user.clone(), ttl);
@@ -1608,20 +1645,34 @@ impl AppState {
             return Ok(None);
         }
 
-        if !self.current_auth_versions_match(claims).await? {
+        let Some(current_clock) = self.current_auth_versions_match(claims).await? else {
             self.invalidate_auth_cache_for_user(claims.facility_id, claims.sub);
             return Ok(None);
-        }
+        };
 
         let cache_key = AuthCacheKey::from_claims(claims);
-        if let Some(facts) = self.inner.auth_cache.get_request_context(&cache_key) {
+        if let Some(mut facts) = self
+            .inner
+            .auth_cache
+            .get_request_context(&cache_key)
+            .filter(|facts| facts.cache_is_current_at(current_clock))
+        {
+            facts.authorization_clock = current_clock;
+            refresh_security_clock(&mut facts.user, current_clock);
             hms_observability::record_request_context_cache_hit(route_pattern, facility_safe);
             return Ok(Some(facts));
         }
 
         let hydration_lock = self.inner.auth_cache.hydration_lock(&cache_key);
         let _hydration_guard = hydration_lock.lock().await;
-        if let Some(facts) = self.inner.auth_cache.get_request_context(&cache_key) {
+        if let Some(mut facts) = self
+            .inner
+            .auth_cache
+            .get_request_context(&cache_key)
+            .filter(|facts| facts.cache_is_current_at(current_clock))
+        {
+            facts.authorization_clock = current_clock;
+            refresh_security_clock(&mut facts.user, current_clock);
             hms_observability::record_request_context_cache_hit(route_pattern, facility_safe);
             return Ok(Some(facts));
         }
@@ -1638,7 +1689,9 @@ impl AppState {
         );
         if let Some(facts) = &facts {
             if auth_user_matches_claims(&facts.user, claims) {
-                if let Some(ttl) = self.auth_cache_ttl_until(facts.cache_expires_at) {
+                if let Some(ttl) =
+                    self.auth_cache_ttl_until(facts.cache_expires_at, facts.authorization_clock)
+                {
                     self.inner.auth_cache.put_request_context(
                         cache_key.clone(),
                         facts.clone(),
@@ -1832,8 +1885,9 @@ impl AppState {
         let token_hash = hash_refresh_token(refresh_token);
         let csrf_token_hash = hash_refresh_token(csrf_token);
         let old_session =
-            hms_db::auth::refresh_session_by_token_hash(&self.inner.pool, &token_hash).await?;
-        let Some(old_session) = old_session else {
+            hms_db::auth::refresh_session_by_token_hash_clocked(&self.inner.pool, &token_hash)
+                .await?;
+        let Some((old_session, refresh_clock)) = old_session else {
             return Ok(None);
         };
 
@@ -1863,12 +1917,7 @@ impl AppState {
             );
             return Ok(None);
         }
-        if old_session.expires_at <= Utc::now() {
-            return Ok(None);
-        }
-        if old_session.idle_expires_at <= Utc::now()
-            || old_session.absolute_expires_at <= Utc::now()
-        {
+        if !refresh_deadlines_current(&old_session, refresh_clock) {
             return Ok(None);
         }
         if old_session.csrf_token_hash != csrf_token_hash {
@@ -1894,6 +1943,7 @@ impl AppState {
             old_session.device_label.as_deref(),
             Some(old_session.session_started_at),
             Some(old_session.absolute_expires_at),
+            Some(refresh_clock),
         )?
         else {
             return Ok(None);
@@ -2247,11 +2297,12 @@ impl AppState {
         ))
     }
 
-    fn auth_cache_ttl_until(&self, session_expires_at: DateTime<Utc>) -> Option<Duration> {
-        let remaining = session_expires_at
-            .signed_duration_since(Utc::now())
-            .to_std()
-            .ok()?;
+    fn auth_cache_ttl_until(
+        &self,
+        session_expires_at: DateTime<Utc>,
+        clock: hms_domain::authorization_clock::AuthorizationClock,
+    ) -> Option<Duration> {
+        let remaining = clock.remaining_until(session_expires_at)?;
         if remaining.is_zero() {
             return None;
         }
@@ -2266,8 +2317,8 @@ impl AppState {
         &self,
         existing_session_started_at: Option<DateTime<Utc>>,
         existing_absolute_expires_at: Option<DateTime<Utc>>,
+        now: DateTime<Utc>,
     ) -> Result<Option<SessionDeadlines>> {
-        let now = Utc::now();
         let session_started_at = existing_session_started_at.unwrap_or(now);
         let absolute_expires_at = match existing_absolute_expires_at {
             Some(expires_at) => expires_at,
@@ -2310,13 +2361,19 @@ impl AppState {
         device_label: Option<&str>,
         existing_session_started_at: Option<DateTime<Utc>>,
         existing_absolute_expires_at: Option<DateTime<Utc>>,
+        refresh_clock: Option<hms_domain::authorization_clock::AuthorizationClock>,
     ) -> Result<Option<SessionMaterial>> {
         let session_id = Uuid::new_v4();
         let session_family_id = session_family_id.unwrap_or(session_id);
         let refresh_token = generate_secret_token();
         let csrf_token = generate_secret_token();
-        let Some(deadlines) =
-            self.session_deadlines(existing_session_started_at, existing_absolute_expires_at)?
+        let Some(deadlines) = self.session_deadlines(
+            existing_session_started_at,
+            existing_absolute_expires_at,
+            refresh_clock
+                .map_or_else(|| Some(Utc::now()), |clock| clock.now())
+                .ok_or_else(|| anyhow::anyhow!("Authentication clock unavailable"))?,
+        )?
         else {
             return Ok(None);
         };
@@ -2384,8 +2441,23 @@ impl AppState {
                 .request_context_facts(user.id, user.facility_id, session_id)
                 .await?
             {
+                if facts.password_verified_at > facts.authorization_clock.observed_at() {
+                    return Ok(None);
+                }
                 auth_user = facts.user.clone();
-                if let Some(ttl) = self.auth_cache_ttl_until(facts.cache_expires_at) {
+                let claims = self.verify_access_token(&access_token)?;
+                let window = crate::auth_clock::window(&claims)
+                    .ok_or_else(|| anyhow::anyhow!("Authentication clock unavailable"))?;
+                auth_user.auth_security.auth_clock = Some(
+                    crate::auth_clock::observation(
+                        facts.authorization_clock.observed_at(),
+                        Some(window),
+                    )
+                    .ok_or_else(|| anyhow::anyhow!("Authentication clock unavailable"))?,
+                );
+                if let Some(ttl) =
+                    self.auth_cache_ttl_until(facts.cache_expires_at, facts.authorization_clock)
+                {
                     self.inner
                         .auth_cache
                         .put_user(cache_key.clone(), auth_user.clone(), ttl);
@@ -2395,8 +2467,12 @@ impl AppState {
                 }
             }
         }
+        if auth_user.auth_security.auth_clock.is_none() {
+            return Ok(None);
+        }
 
         Ok(Some(LoginOutcome {
+            ordinary_confirmation: None,
             access_token,
             refresh_token,
             csrf_token,
@@ -2419,7 +2495,8 @@ impl AppState {
         request: Option<String>,
         password_at: DateTime<Utc>,
     ) -> Result<Option<LoginOutcome>> {
-        let Some(material) = self.prepare_session(user, family, old, device, started, absolute)?
+        let Some(material) =
+            self.prepare_session(user, family, old, device, started, absolute, None)?
         else {
             return Ok(None);
         };
@@ -2759,4 +2836,125 @@ mod fluid_cache_tests {
         assert_eq!(cached.get(&same), Some(&"yesterday's derived conditions"));
         assert_eq!(cached.get(&next), None);
     }
+}
+
+// Re-evaluate a returned snapshot at this request's existing version-probe sample.
+// This never mutates a stored cache value, cache key, revision or expiry.
+fn refresh_security_clock(
+    user: &mut AuthUser,
+    clock: hms_domain::authorization_clock::AuthorizationClock,
+) {
+    let proof = &user.auth_security.session_assurance;
+    user.auth_security.privileged_actions_allowed = !user.auth_security.passkey_required
+        || (proof
+            .verified_at
+            .is_some_and(|at| clock.admits_verified_at(at))
+            && clock
+                .now()
+                .is_some_and(|now| proof.is_fresh_passkey_at(now)));
+}
+
+#[cfg(test)]
+mod clock_cache_tests {
+    use super::*;
+    use hms_domain::authorization_clock::AuthorizationClock;
+    #[test]
+    fn returned_cache_clone_keeps_stored_monotonic_expiry_and_observation() {
+        let original_started = Instant::now();
+        let original_at = Utc::now();
+        let original = AuthorizationClock::new(original_at, original_started);
+        let expires = Instant::now() + Duration::from_secs(30);
+        let entries = RwLock::new(HashMap::from([(
+            1u8,
+            CachedValue {
+                value: original,
+                expires_at: expires,
+                last_accessed_tick: AtomicU64::new(0),
+            },
+        )]));
+        let mut returned = cache_get(&entries, &1, 1).unwrap();
+        assert_eq!(returned.observed_at(), original_at);
+        returned =
+            AuthorizationClock::new(original_at + chrono::Duration::seconds(10), Instant::now());
+        assert!(returned.observed_at() > original_at);
+        let stored = entries.read().unwrap();
+        assert_eq!(stored.get(&1).unwrap().expires_at, expires);
+        assert_eq!(stored.get(&1).unwrap().value.observed_at(), original_at);
+        drop(stored);
+        entries.write().unwrap().get_mut(&1).unwrap().expires_at =
+            Instant::now() - Duration::from_nanos(1);
+        assert!(
+            cache_get(&entries, &1, 2).is_none(),
+            "fresh clone cannot renew expired stored entry"
+        );
+    }
+}
+
+#[cfg(test)]
+mod refresh_clock_tests {
+    use super::*;
+    use hms_domain::authorization_clock::AuthorizationClock;
+    fn session(deadline: DateTime<Utc>) -> hms_db::auth::RefreshSessionRow {
+        hms_db::auth::RefreshSessionRow {
+            session_id: Uuid::new_v4(),
+            session_family_id: Uuid::new_v4(),
+            user_id: Uuid::new_v4(),
+            facility_id: Uuid::new_v4(),
+            session_version: 1,
+            permission_version_at_issue: 1,
+            csrf_token_hash: String::new(),
+            expires_at: deadline,
+            session_started_at: deadline - chrono::Duration::hours(1),
+            idle_expires_at: deadline,
+            absolute_expires_at: deadline,
+            revoked_at: None,
+            device_label: None,
+        }
+    }
+    #[test]
+    fn refresh_database_current_deadline_ignores_unrelated_ahead_host() {
+        let host = Utc::now();
+        let database = host - chrono::Duration::hours(1);
+        assert!(refresh_deadlines_current(
+            &session(database + chrono::Duration::minutes(15)),
+            AuthorizationClock::new(database, Instant::now())
+        ));
+    }
+    #[test]
+    fn refresh_expired_database_deadline_stays_expired_with_behind_host() {
+        let host = Utc::now();
+        let database = host + chrono::Duration::hours(1);
+        assert!(!refresh_deadlines_current(
+            &session(database - chrono::Duration::minutes(1)),
+            AuthorizationClock::new(database, Instant::now())
+        ));
+    }
+}
+
+fn refresh_deadlines_current(
+    session: &hms_db::auth::RefreshSessionRow,
+    clock: hms_domain::authorization_clock::AuthorizationClock,
+) -> bool {
+    clock
+        .remaining_until(
+            session
+                .expires_at
+                .min(session.idle_expires_at)
+                .min(session.absolute_expires_at),
+        )
+        .is_some()
+}
+
+fn install_response_clock(
+    user: &mut AuthUser,
+    clock: hms_domain::authorization_clock::AuthorizationClock,
+    claims: &AccessClaims,
+) -> Result<()> {
+    let window = crate::auth_clock::window(claims)
+        .ok_or_else(|| anyhow::anyhow!("Authentication clock unavailable"))?;
+    user.auth_security.auth_clock = Some(
+        crate::auth_clock::observation(clock.observed_at(), Some(window))
+            .ok_or_else(|| anyhow::anyhow!("Authentication clock unavailable"))?,
+    );
+    Ok(())
 }

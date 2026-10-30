@@ -29,39 +29,50 @@ async function selected() {
   fireEvent.click(await screen.findByRole('button', { name: /Session 1/ })); fireEvent.click(screen.getByRole('button', { name: /Session 2/ })); fireEvent.click(screen.getByRole('button', { name: 'Review appointments' }));
 }
 describe('multiple-appointment review and recovery', () => {
+  it('keeps an unknown original request recoverable after its selected service retires', async () => {
+    seriesApi.create.mockRejectedValueOnce(Object.assign(new Error('May be saved'), { name: 'AppointmentSeriesUnconfirmedError' }));
+    const view = render(<SeriesBookingEntry serviceAvailable context={context} />, { wrapper }); await selected(); fireEvent.click(screen.getByRole('button', { name: 'Confirm all appointments' })); await screen.findByText('Booking status unknown');
+    const original = structuredClone(seriesApi.create.mock.calls[0][0]); fireEvent.click(screen.getByRole('button', { name: 'Close booking' })); view.rerender(<SeriesBookingEntry serviceAvailable={false} context={context} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Review existing booking request' })); await screen.findByText('Booking status unknown'); fireEvent.click(screen.getByRole('button', { name: 'Check saved booking' })); await screen.findByText('Saved booking found');
+    expect(seriesApi.recover.mock.calls[0][0]).toBe(original.client_request_id); expect(seriesApi.create).toHaveBeenCalledTimes(1);
+  });
+  it('invalidates an unsent group review when its selected service becomes unavailable', async () => {
+    const view = render(<SeriesBookingEntry serviceAvailable context={context} />, { wrapper }); await selected(); view.rerender(<SeriesBookingEntry serviceAvailable={false} context={context} />);
+    expect(screen.queryByRole('button', { name: 'Confirm all appointments' })).not.toBeInTheDocument(); expect(screen.getByRole('button', { name: 'Review appointments' })).toBeDisabled(); expect(seriesApi.create).not.toHaveBeenCalled(); expect(screen.queryByRole('region', { name: 'Choose appointment slots' })).not.toBeInTheDocument();
+  });
   it('collects actual slots and requires final explicit review before one atomic request', async () => {
-    render(<form onSubmit={vi.fn()}><SeriesBookingEntry context={context} /></form>, { wrapper }); await selected(); expect(seriesApi.create).not.toHaveBeenCalled();
+    render(<form onSubmit={vi.fn()}><SeriesBookingEntry serviceAvailable context={context} /></form>, { wrapper }); await selected(); expect(seriesApi.create).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: 'Confirm all appointments' })); await screen.findByText('Booking confirmed');
     expect(seriesApi.create).toHaveBeenCalledTimes(1); expect(seriesApi.create.mock.calls[0][0]).toMatchObject({ patient_id: detail.patient_id, occurrences: slots.map((slot) => ({ session_id: slot.session_id, starts_at: slot.start, ends_at: slot.end })) }); expect(screen.getByRole('link', { name: 'Review this appointment group' })).toHaveAttribute('href', '/appointments/series/series-1');
   });
   it('freezes uncertain payload and key across close/reopen and explicitly retries the same request', async () => {
     seriesApi.create.mockRejectedValueOnce(Object.assign(new Error('May be saved'), { name: 'AppointmentSeriesUnconfirmedError' }));
-    render(<SeriesBookingEntry context={context} />, { wrapper }); await selected(); fireEvent.click(screen.getByRole('button', { name: 'Confirm all appointments' })); await screen.findByText('Booking status unknown');
+    render(<SeriesBookingEntry serviceAvailable context={context} />, { wrapper }); await selected(); fireEvent.click(screen.getByRole('button', { name: 'Confirm all appointments' })); await screen.findByText('Booking status unknown');
     const first = structuredClone(seriesApi.create.mock.calls[0][0]); expect(seriesApi.create).toHaveBeenCalledTimes(1); expect(screen.queryByRole('button', { name: 'Change selection' })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Close booking' })); fireEvent.click(screen.getByRole('button', { name: 'Several appointments' })); await screen.findByText('Booking status unknown');
     fireEvent.click(screen.getByRole('button', { name: 'Retry same booking request' })); await screen.findByText('Saved booking found'); expect(seriesApi.create.mock.calls[1][0]).toEqual(first);
   });
   it('checks the saved result by the original request key without another booking write', async () => {
     seriesApi.create.mockRejectedValueOnce(Object.assign(new Error('May be saved'), { name: 'AppointmentSeriesUnconfirmedError' }));
-    render(<SeriesBookingEntry context={context} />, { wrapper }); await selected(); fireEvent.click(screen.getByRole('button', { name: 'Confirm all appointments' })); await screen.findByText('Booking status unknown');
+    render(<SeriesBookingEntry serviceAvailable context={context} />, { wrapper }); await selected(); fireEvent.click(screen.getByRole('button', { name: 'Confirm all appointments' })); await screen.findByText('Booking status unknown');
     fireEvent.click(screen.getByRole('button', { name: 'Check saved booking' })); await screen.findByText('Saved booking found'); expect(seriesApi.recover.mock.calls[0][0]).toBe(seriesApi.create.mock.calls[0][0].client_request_id); expect(seriesApi.create).toHaveBeenCalledTimes(1);
   });
   it('blocks pending dismissal and duplicate submission', async () => {
     let finish; seriesApi.create.mockImplementationOnce(() => new Promise((resolve) => { finish = () => resolve(detail); }));
-    render(<SeriesBookingEntry context={context} />, { wrapper }); await selected(); const confirm = screen.getByRole('button', { name: 'Confirm all appointments' }); fireEvent.click(confirm); fireEvent.click(confirm);
+    render(<SeriesBookingEntry serviceAvailable context={context} />, { wrapper }); await selected(); const confirm = screen.getByRole('button', { name: 'Confirm all appointments' }); fireEvent.click(confirm); fireEvent.click(confirm);
     await screen.findByRole('button', { name: 'Booking…' }); fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' }); expect(screen.getByRole('dialog')).toBeInTheDocument(); expect(seriesApi.create).toHaveBeenCalledTimes(1); finish(); await screen.findByText('Booking confirmed');
   });
   it('discards the old draft when patient or authorization identity changes', async () => {
-    const view = render(<SeriesBookingEntry context={context} />, { wrapper }); await selected(); view.rerender(<SeriesBookingEntry context={{ ...context, patientId: 'patient-2', patientName: 'Other synthetic patient' }} />);
+    const view = render(<SeriesBookingEntry serviceAvailable context={context} />, { wrapper }); await selected(); view.rerender(<SeriesBookingEntry serviceAvailable context={{ ...context, patientId: 'patient-2', patientName: 'Other synthetic patient' }} />);
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument(); fireEvent.click(screen.getByRole('button', { name: 'Several appointments' })); expect(screen.getByText('Selected appointments · 0 / 50')).toBeInTheDocument(); expect(seriesApi.create).not.toHaveBeenCalled();
   });
   it('discards a draft when the active profile changes even for the same patient', async () => {
-    const tree = (actor) => <AuthContext.Provider value={{ user: actor }}><QueryClientProvider client={client}><MemoryRouter><SeriesBookingEntry context={context} /></MemoryRouter></QueryClientProvider></AuthContext.Provider>;
+    const tree = (actor) => <AuthContext.Provider value={{ user: actor }}><QueryClientProvider client={client}><MemoryRouter><SeriesBookingEntry serviceAvailable context={context} /></MemoryRouter></QueryClientProvider></AuthContext.Provider>;
     const view = render(tree(user)); await selected(); view.rerender(tree({ ...user, accessContext: { ...user.accessContext, active_profile: 'profile-2' } }));
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument(); fireEvent.click(screen.getByRole('button', { name: 'Several appointments' })); expect(screen.getByText('Selected appointments · 0 / 50')).toBeInTheDocument(); expect(seriesApi.create).not.toHaveBeenCalled();
   });
   it('requires explicit permission before exposing series creation', () => {
-    render(<AuthContext.Provider value={{ user: { ...user, adminAccess: { capabilities: [] } } }}><SeriesBookingEntry context={context} /></AuthContext.Provider>, { wrapper }); expect(screen.queryByRole('button', { name: 'Several appointments' })).not.toBeInTheDocument();
+    render(<AuthContext.Provider value={{ user: { ...user, adminAccess: { capabilities: [] } } }}><SeriesBookingEntry serviceAvailable context={context} /></AuthContext.Provider>, { wrapper }); expect(screen.queryByRole('button', { name: 'Several appointments' })).not.toBeInTheDocument();
   });
 });
 describe('future-only cancellation', () => {

@@ -944,10 +944,10 @@ export const appointmentsApi = {
    * Get all appointment types
    * @returns {Promise<Array>} List of appointment types
    */
-  getAppointmentTypes: async (_options = {}) => {
+  getAppointmentTypes: async (options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        const response = await v2Api.getAppointmentTypes({ query: { limit: 100 } });
+        const response = await v2Api.getAppointmentTypes({ query: { limit: 100 }, signal: options.signal });
         return (response?.data || []).map(adaptV2AppointmentType);
       }
 
@@ -965,11 +965,11 @@ export const appointmentsApi = {
    * @param {string} id - Appointment type ID
    * @returns {Promise<Object>} Appointment type data
    */
-  getAppointmentType: async (id, _options = {}) => {
+  getAppointmentType: async (id, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        const response = await v2Api.getAppointmentTypes({ query: { limit: 100 } });
-        return (response?.data || []).map(adaptV2AppointmentType).find((type) => type.id === id) || null;
+        const response = await v2Api.getAppointmentTypeAdministrationById({ id }, { signal: options.signal });
+        return adaptV2AppointmentType(response?.data);
       }
 
       return await apiClient.get(`/appointments/types/${id}/`);

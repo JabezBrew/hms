@@ -1124,6 +1124,15 @@ pub(crate) async fn create_booked_appointment_in_transaction(
     } else {
         None
     };
+    let mut types: Vec<Uuid> = appointment.appointment_type_id.into_iter().collect();
+    if let Some(session) = &session {
+        validate_new_session_source_tx(transaction, appointment.facility_id, session).await?;
+        if matches!(session.owner_type, ClinicSessionOwnerType::Service) {
+            types.push(session.owner_id.ok_or(BookingRejection::InactiveSession)?);
+        }
+    }
+    crate::appointment_types::retain_active_types_tx(transaction, appointment.facility_id, &types)
+        .await?;
     let clinic_id = if let Some(clinic_id) = appointment.clinic_id {
         Some(clinic_id)
     } else if let Some(session) = &session {
@@ -2771,6 +2780,39 @@ pub(crate) async fn load_clinic_session_for_update(
     .ok_or(BookingRejection::InactiveSession)?;
 
     clinic_session_from_row(row)
+}
+
+/// New publications prove the full retained parent source. Existing care uses
+/// its original identity and the unchanged rescheduling/closure validation.
+pub(crate) async fn validate_new_session_source_tx(
+    transaction: &mut sqlx::Transaction<'_, Postgres>,
+    facility_id: Uuid,
+    session: &ClinicSessionListItem,
+) -> anyhow::Result<()> {
+    if matches!(session.owner_type, ClinicSessionOwnerType::Facility)
+        && session.owner_id.is_some_and(|owner| owner != facility_id)
+    {
+        return Err(BookingRejection::InactiveSession.into());
+    }
+    let malformed: bool = sqlx::query_scalar(
+        r#"
+        SELECT EXISTS (
+            SELECT 1
+            FROM clinic_session_appointment_types allowed
+            LEFT JOIN appointment_types typ ON typ.id=allowed.appointment_type_id
+            WHERE allowed.clinic_session_id=$1
+              AND (allowed.facility_id<>$2 OR typ.facility_id IS DISTINCT FROM $2)
+        )
+        "#,
+    )
+    .bind(session.id)
+    .bind(facility_id)
+    .fetch_one(&mut **transaction)
+    .await?;
+    if malformed {
+        return Err(BookingRejection::AppointmentTypeNotAllowed.into());
+    }
+    Ok(())
 }
 
 async fn validate_session_booking(

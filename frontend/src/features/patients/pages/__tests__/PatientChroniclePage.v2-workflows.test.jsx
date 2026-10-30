@@ -8,9 +8,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import PatientChroniclePage from '../PatientChroniclePage'
 import { SidebarProvider } from '@/components/ui/sidebar'
-import { ReadOnlyModeProvider } from '@/contexts/ReadOnlyModeContext'
+import { ModeledReadOnlyModeProvider as ReadOnlyModeProvider } from '@/tests/networkClockModel'
 import { __resetV2ApiClientForTests, configureV2ApiClient, getV2ClientScopeKey } from '@/lib/api/v2/client'
-import { bindNetworkAccessGuard } from '@/lib/api/v2/networkAccessGuard'
+import { bindModeledNetworkGuard as bindNetworkAccessGuard } from '@/tests/networkClockModel';
 import { activateWriteUncertainty } from '@/lib/api/v2/writeUncertainty'
 import { authorizationIdentity } from '@/shared/lib/authorizationScope'
 import { inputDigest, redactedIntent } from '@/features/referrals/consultations/model'

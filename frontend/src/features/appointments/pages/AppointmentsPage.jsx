@@ -7,9 +7,10 @@ import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js';
 import Settings from 'lucide-react/dist/esm/icons/settings.js';
 import UsersRound from 'lucide-react/dist/esm/icons/users-round.js';
 import { useEffect, useMemo, useState } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
+import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
 
 import AppointmentList from '@/features/appointments/components/AppointmentList';
 import BookableServicesPanel from '@/features/appointments/components/BookableServicesPanel';
@@ -357,4 +358,7 @@ const AppointmentsPage = () => {
   );
 };
 
-export default AppointmentsPage;
+export default function ScheduleRoute() {
+  const location = useLocation();
+  return isRustV2ApiMode() && new URLSearchParams(location.search).get('tab') === 'services' ? <Navigate to="/appointments/services" replace /> : <AppointmentsPage />;
+}

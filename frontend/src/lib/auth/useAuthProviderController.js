@@ -7,10 +7,12 @@ import { loginResult, sameSessionIdentity } from '@/features/auth/model'
 import { getV2ClientScopeKey, getV2ClientScopeForToken, hasV2RefreshSessionHint } from '../api/v2/session'
 import { currentConfirmedNetworkDecision } from '../api/v2/networkAccessGuard'
 import { authorizationIdentity, requestAuthorizationScope } from '@/shared/lib/authorizationScope'
-import { clearWorkflowContinuity, installWorkflowContinuity } from '@/shared/lib/workflowContinuity'
+import { clearWorkflowContinuity, getWorkflowContinuity, installWorkflowContinuity } from '@/shared/lib/workflowContinuity'
 import { hashQueryValue } from '@/shared/lib/privateQueryKey'
 import { providerUser } from '@/features/auth/providerUser'
+import { tokenClaims } from '@/features/auth/clock'
 import { networkKeys } from '@/features/settings/network/keys'
+import { serverClock, clockNow, setActiveTokenClock } from '@/shared/lib/serverClock'
 import { notifications } from "../notifications"
 import { setAuthTokenProvider, setFacilityCodeProvider, performTokenRefresh } from "../api-client"
 import { configureV2ApiClient, performV2TokenRefresh } from "../api/v2/session"
@@ -114,13 +116,23 @@ export function useAuthProviderController() {
   const [mfaEnrollmentRequired, setMfaEnrollmentRequired] = useState(false)
   const [mfaAvailableMethods, setMfaAvailableMethods] = useState(null)
   const defaultFacilityCode = getDefaultFacilityCode()
+  const facilityRef = useRef(defaultFacilityCode)
+  const providerMounted = useRef(true)
   const accessTokenRef = useRef(null)
+  const userRef = useRef(null)
+  const applied = useRef(null)
+  const applyRef = useRef(null)
+  const [sessionReady, setSessionReady] = useState(false)
+  const [workspaceInstanceKey, setWorkspaceInstanceKey] = useState(null)
+  const workspaceKeyRef = useRef(null)
   const logoutPromiseRef = useRef(null)
   const justLoggedInRef = useRef(false)
   const [pendingFactor, setPendingFactor] = useState(null)
   const factorRef = useRef(null)
+  const authorityEpoch = useRef(0)
   const authLifetime = useRef({ generation: 0, request: null, blocked: false })
   const cancelAuthOperation = useCallback(() => {
+    authorityEpoch.current += 1
     clearWorkflowContinuity()
     authLifetime.current.generation += 1
     authLifetime.current.request?.abort()
@@ -128,14 +140,23 @@ export function useAuthProviderController() {
     factorRef.current = null
     setPendingFactor(null)
   }, [])
-  useLayoutEffect(() => () => { authLifetime.current.generation += 1; authLifetime.current.request?.abort() }, [])
+  useLayoutEffect(() => { providerMounted.current = true; return () => { providerMounted.current = false; authLifetime.current.generation += 1; authLifetime.current.request?.abort() } }, [])
 
-  const getAccessToken = useCallback(() => {
-    return !authLifetime.current.blocked && isStoredSessionValid() ? accessTokenRef.current : null
+  const getSessionBudget = useCallback(() => {
+    if (authLifetime.current.blocked || !applied.current) return { remaining: 0, localRemaining: 0, checking: true }
+    const localRemaining = SESSION_IDLE_TIMEOUT_MS - (clockNow() - applied.current.activity)
+    return { remaining: applied.current.clock.sessionRemaining(), idleRemaining: applied.current.clock.idleRemaining(), absoluteRemaining: applied.current.clock.absoluteRemaining(), localRemaining, checking: Boolean(applied.current.checking) }
   }, [])
-
-  const setAccessToken = useCallback((token) => {
+  const isReady = useCallback(() => {
+    if (!isRustV2ApiMode()) return !authLifetime.current.blocked && isStoredSessionValid()
+    const value = getSessionBudget()
+    return value.remaining > 0 && value.localRemaining > 0 && !value.checking
+  }, [getSessionBudget])
+  const getRawAccessToken = useCallback(() => providerMounted.current && !authLifetime.current.blocked ? accessTokenRef.current : null, [])
+  const getAccessToken = useCallback(() => isReady() ? accessTokenRef.current : null, [isReady])
+  const setAccessToken = useCallback((token, result) => {
     if (token && authLifetime.current.blocked) return
+    if (result && isRustV2ApiMode()) return applyRef.current?.(adaptV2AuthTokenResponse({ data: result }), { sameSession: true, refresh: true })
     accessTokenRef.current = token
   }, [])
 
@@ -152,12 +173,16 @@ export function useAuthProviderController() {
     const normalized = code ? String(code).toUpperCase() : null
     if (normalized !== facilityCode) {
       cancelAuthOperation()
+      workspaceKeyRef.current = null; setWorkspaceInstanceKey(null)
+      if (isRustV2ApiMode()) { if (applied.current) applied.current.checking = true; setSessionReady(false) }
       void clearCockpitCache('facility-change')
     }
+    facilityRef.current = normalized
     setFacilityCodeState(normalized)
     queryClient.clear()
     if (user) {
       const updatedUser = { ...user, facilityCode: normalized }
+      userRef.current = updatedUser
       setAuthValue("user", JSON.stringify(updatedUser))
       setUser(updatedUser)
     } else if (mfaUser) {
@@ -166,14 +191,12 @@ export function useAuthProviderController() {
   }, [cancelAuthOperation, clearCockpitCache, facilityCode, user, mfaUser])
 
   const clearPasswordChangeRequirement = useCallback(() => {
-    setUser((currentUser) => {
-      if (!currentUser || !currentUser.passwordChangeRequired) {
-        return currentUser
-      }
-      const updatedUser = { ...currentUser, passwordChangeRequired: false }
-      setAuthValue("user", JSON.stringify(updatedUser))
-      return updatedUser
-    })
+    const currentUser = userRef.current
+    if (!currentUser || !currentUser.passwordChangeRequired) return
+    const updatedUser = { ...currentUser, passwordChangeRequired: false }
+    userRef.current = updatedUser
+    setAuthValue("user", JSON.stringify(updatedUser))
+    setUser(updatedUser)
   }, [])
 
   const clearLocalAuthState = useCallback(async (reason = 'auth-clear') => {
@@ -183,6 +206,12 @@ export function useAuthProviderController() {
     removeAuthValue("refreshTokenIssuedAt")
     removeAuthValue("sessionIdleExpiresAt")
     removeAuthValue("sessionAbsoluteExpiresAt")
+    userRef.current = null
+    applied.current = null
+    workspaceKeyRef.current = null
+    setWorkspaceInstanceKey(null)
+    setSessionReady(false)
+    setActiveTokenClock(null, null)
     setUser(null)
     setAccessToken(null)
     setFacilityCodeState(null)
@@ -231,8 +260,8 @@ export function useAuthProviderController() {
   }, [cancelAuthOperation, clearLocalAuthState, notifyBackendLogout])
 
   const isSessionValid = useCallback(() => {
-    return !authLifetime.current.blocked && isStoredSessionValid()
-  }, [])
+    return isReady()
+  }, [isReady])
 
   const handleRefreshFailure = useCallback(async () => {
     await logout(false, 'session-expired')
@@ -240,30 +269,23 @@ export function useAuthProviderController() {
   }, [logout])
 
   const refreshAccessToken = useCallback(async () => {
-    if (!isSessionValid()) {
-      await handleRefreshFailure()
-      return null
-    }
-
-    const tokenResponse = isRustV2ApiMode()
-      ? await performV2TokenRefresh({ notifyFailure: false })
-      : null
-    const newToken = isRustV2ApiMode()
-      ? tokenResponse?.access_token
-      : await performTokenRefresh()
-
-    if (!newToken) {
-      await handleRefreshFailure()
-      return null
-    }
-
     if (isRustV2ApiMode()) {
-      persistSessionTiming(tokenResponse)
-    } else {
-      setAuthValue("refreshTokenIssuedAt", Date.now().toString())
+      if (authLifetime.current.blocked) return null
+      if (applied.current) applied.current.checking = true
+      setSessionReady(false)
+      try {
+        const response = await performV2TokenRefresh({ notifyFailure: false, throwFailure: true })
+        return response?.access_token || null
+      } catch (failure) {
+        if (failure?.status === 401 || failure?.code === 'auth_proof_invalid') await handleRefreshFailure()
+        return null
+      }
     }
-
-    return newToken
+    if (!isSessionValid()) { await handleRefreshFailure(); return null }
+    const token = await performTokenRefresh()
+    if (!token) { await handleRefreshFailure(); return null }
+    setAuthValue('refreshTokenIssuedAt', Date.now().toString())
+    return token
   }, [isSessionValid, handleRefreshFailure])
 
   useEffect(() => {
@@ -274,7 +296,7 @@ export function useAuthProviderController() {
         try {
           const userData = JSON.parse(storedUser)
 
-          if (!isSessionValid()) {
+          if (!isRustV2ApiMode() && !isSessionValid()) {
             void notifyBackendLogout()
             await clearLocalAuthState('session-expired')
             setLoading(false)
@@ -282,8 +304,10 @@ export function useAuthProviderController() {
           }
 
           if (authLifetime.current.blocked || authLifetime.current.generation !== generation) return
-          setUser(userData)
-          setFacilityCodeState(userData.facilityCode || defaultFacilityCode)
+          // Persisted Rust metadata is a restore hint, never current authority.
+          if (!isRustV2ApiMode()) { setUser(userData); userRef.current = userData }
+          facilityRef.current = userData.facilityCode || defaultFacilityCode
+          if (!isRustV2ApiMode()) setFacilityCodeState(facilityRef.current)
           if (!justLoggedInRef.current && !accessTokenRef.current) {
             try {
               await refreshAccessToken()
@@ -302,17 +326,18 @@ export function useAuthProviderController() {
     initializeAuth()
   }, [clearLocalAuthState, defaultFacilityCode, isSessionValid, notifyBackendLogout, refreshAccessToken])
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     setAuthTokenProvider(getAccessToken, setAccessToken, handleRefreshFailure)
     setFacilityCodeProvider(() => facilityCode)
     configureV2ApiClient({
-      getAccessToken,
+      getAccessToken: isRustV2ApiMode() ? getRawAccessToken : getAccessToken,
       setAccessToken,
+      canUseSession: isReady,
       onRefreshFailure: handleRefreshFailure,
-      getFacilityCode: () => facilityCode,
-      canRefreshSession: isSessionValid,
+      getFacilityCode: () => facilityRef.current,
+      canRefreshSession: () => isRustV2ApiMode() ? !authLifetime.current.blocked : isSessionValid(),
     })
-  }, [getAccessToken, setAccessToken, handleRefreshFailure, facilityCode, isSessionValid])
+  }, [getAccessToken, getRawAccessToken, isReady, setAccessToken, handleRefreshFailure, facilityCode, isSessionValid])
 
   useEffect(() => {
     if (!user) {
@@ -321,17 +346,18 @@ export function useAuthProviderController() {
 
     let lastActivityWriteAt = 0
     const recordActivity = () => {
-      const now = Date.now()
+      const now = isRustV2ApiMode() ? clockNow() : Date.now()
       if (now - lastActivityWriteAt < ACTIVITY_THROTTLE_MS) {
         return
       }
-      if (!recordSessionActivity(now)) {
-        return
-      }
+      if (isRustV2ApiMode()) {
+        if (!isReady() || !applied.current) return
+        applied.current.activity = now
+      } else if (!recordSessionActivity(now)) return
       lastActivityWriteAt = now
     }
 
-    recordActivity()
+    if (!isRustV2ApiMode()) recordActivity()
     ACTIVITY_EVENTS.forEach((event) => {
       const options = PASSIVE_ACTIVITY_EVENTS.has(event) ? { passive: true } : undefined
       window.addEventListener(event, recordActivity, options)
@@ -343,26 +369,49 @@ export function useAuthProviderController() {
         window.removeEventListener(event, recordActivity, options)
       })
     }
-  }, [user])
+  }, [user, isReady])
 
-  const applyAuthResponse = useCallback((response, { sameSession = false } = {}) => {
+  const applyAuthResponse = useCallback((response, { sameSession = false, refresh = false } = {}) => {
     if (!response?.access || !response?.user) {
       return null
     }
 
+    const rust = isRustV2ApiMode()
+    const observation = rust ? serverClock(response) : null
+    if (rust) { observation?.assertResponse(); if (!observation || observation.token !== response.access || observation.sessionRemaining() <= 0) throw new Error('The current server session could not be confirmed.') }
+    const previousToken = accessTokenRef.current
+    const previousUser = userRef.current
+    const previousActivity = applied.current?.activity
     authLifetime.current.blocked = false
-    setAccessToken(response.access)
+    // Activate only the validated current response. No clock facts enter storage.
+    if (rust) observation.activate(() => providerMounted.current && !authLifetime.current.blocked && accessTokenRef.current === response.access && applied.current?.clock === observation)
+    accessTokenRef.current = response.access
+    if (rust) { applied.current = { token: response.access, clock: observation, activity: sameSession && Number.isFinite(previousActivity) ? previousActivity : clockNow(), checking: false }; setActiveTokenClock(response.access, observation); setSessionReady(true) }
 
     const now = Date.now().toString()
     if (!sameSession) {
       setAuthValue("sessionStartTime", now)
-      persistSessionTiming(response, Number.parseInt(now, 10), { recordActivity: true })
-    } else {
+      if (!rust) persistSessionTiming(response, Number.parseInt(now, 10), { recordActivity: true })
+    } else if (!rust) {
       if (response.session_idle_expires_at) setAuthValue('sessionIdleExpiresAt', response.session_idle_expires_at)
       if (response.session_absolute_expires_at) setAuthValue('sessionAbsoluteExpiresAt', response.session_absolute_expires_at)
     }
 
     const userData = providerUser(response, defaultFacilityCode)
+    if (rust) {
+      const exactRefresh = refresh && observation.source.path === '/api/v2/auth/refresh' && observation.source.token === previousToken && previousUser
+        && authorizationIdentity(previousUser) === authorizationIdentity(userData) && Boolean(previousUser.passwordChangeRequired) === Boolean(userData.passwordChangeRequired)
+        && tokenClaims(previousToken).auth_time === tokenClaims(response.access).auth_time
+      const targetScope = requestAuthorizationScope(userData, getV2ClientScopeForToken(response.access, userData.facilityCode))
+      const sourceScope = previousUser && previousToken ? requestAuthorizationScope(previousUser, getV2ClientScopeForToken(previousToken, previousUser.facilityCode)) : null
+      const continuity = getWorkflowContinuity()
+      const verifiedHandoff = sameSession && !refresh && continuity?.until > clockNow() && continuity.source === sourceScope && continuity.target === targetScope
+      const nextKey = (exactRefresh || verifiedHandoff) && workspaceKeyRef.current ? workspaceKeyRef.current : targetScope
+      workspaceKeyRef.current = nextKey; setWorkspaceInstanceKey(nextKey)
+      if (refresh) clearWorkflowContinuity()
+    }
+    userRef.current = userData
+    facilityRef.current = userData.facilityCode || defaultFacilityCode
 
     if (user?.id && user.id !== userData.id) {
       void clearCockpitCache('user-change')
@@ -394,7 +443,13 @@ export function useAuthProviderController() {
     }
 
     return userData
-  }, [clearCockpitCache, defaultFacilityCode, facilityCode, setAccessToken, user])
+  }, [clearCockpitCache, defaultFacilityCode, facilityCode, user])
+  useLayoutEffect(() => {
+    applyRef.current = applyAuthResponse
+    return () => {
+      if (applyRef.current === applyAuthResponse) applyRef.current = null
+    }
+  }, [applyAuthResponse])
 
   const login = useCallback(async (email, password, facility, { setup = false } = {}) => {
     setError(null)
@@ -457,7 +512,7 @@ export function useAuthProviderController() {
   const startPasskeySetup = useCallback((email, password, facility) => login(email, password, facility, { setup: true }), [login])
 
   const completeFactorLogin = useCallback((response, grant) => {
-    if (!factorRef.current || factorRef.current.login_grant !== grant || Date.parse(factorRef.current.expires_at) <= Date.now()) throw new Error('This sign-in request changed or expired. Restart sign-in.')
+    if (!factorRef.current || factorRef.current.login_grant !== grant || !(serverClock(factorRef.current)?.remaining(factorRef.current.expires_at) > 0)) throw new Error('This sign-in request changed or expired. Restart sign-in.')
     const checked = loginResult(response)
     if (checked.status !== 'authenticated') { factorRef.current = checked; setPendingFactor(checked); return null }
     factorRef.current = null; setPendingFactor(null)
@@ -479,33 +534,52 @@ export function useAuthProviderController() {
         import('@/features/auth/api'), import('@/features/auth/proofUpgrade'),
       ])
       current()
-      const { result, ordinary, dispatchStartedAt } = await dispatchCurrentSessionProof(user, password, api, { signal: controller.signal, current }); current()
-      let continuity
+      const { result, ordinary } = await dispatchCurrentSessionProof(user, password, api, { signal: controller.signal, current }); current()
+      let continuity; let commandConfirmed = true
       try {
         sameSessionIdentity(user, result)
-        continuity = ordinary ? ordinarySessionProof(user, result, accessTokenRef.current, result.access_token, dispatchStartedAt) : sameProofSession(user, result, accessTokenRef.current, result.access_token, Boolean(password))
+        if (ordinary) { const proof = ordinarySessionProof(user, result, accessTokenRef.current, result.access_token); continuity = proof.continuity; commandConfirmed = proof.confirmed }
+        else continuity = sameProofSession(user, result, accessTokenRef.current, result.access_token, Boolean(password))
       } catch (error) { clearWorkflowContinuity(); authLifetime.current.blocked = true; await clearLocalAuthState('identity-confirmation-scope-changed'); throw error }
       const adapted = adaptV2AuthTokenResponse({ data: result }); const nextUser = providerUser(adapted, defaultFacilityCode)
       const authority = authorizationIdentity(user)
       const previous = currentConfirmedNetworkDecision(transport, authority)
-      let networkFailure = null
+      let networkFailure = null; let continuityPlan = null
       if (previous && continuity) {
         try {
-          const staged = await stageProofNetwork(result.access_token, user.facilityCode, { signal: controller.signal }); current()
+          const staged = await stageProofNetwork(result.access_token, user.facilityCode, { signal: controller.signal, current }); current()
           const latest = currentConfirmedNetworkDecision(transport, authority)
           const nextTransport = getV2ClientScopeForToken(result.access_token, user.facilityCode)
           if (sameReadableNetwork(latest, staged)) {
             const target = requestAuthorizationScope(nextUser, nextTransport)
-            installWorkflowContinuity({ source: requestAuthorizationScope(user, transport), target, sourceIdentity: hashQueryValue(authority), until: Math.min(Date.now() + result.expires_in_seconds * 1000, Date.parse(result.session_absolute_expires_at)), stagedDecision: staged })
-            queryClient.setQueryData(networkKeys.current(target), staged)
+            continuityPlan = { source: requestAuthorizationScope(user, transport), target, sourceIdentity: hashQueryValue(authority), remaining: serverClock(result).sessionRemaining(), stagedDecision: staged }
           } else clearWorkflowContinuity()
         } catch (error) { current(); clearWorkflowContinuity(); networkFailure = error }
       } else clearWorkflowContinuity()
+      current()
+      if (continuityPlan) {
+        const stagedClock = serverClock(continuityPlan.stagedDecision); const nextTransport = getV2ClientScopeForToken(result.access_token, nextUser.facilityCode); const nextAuthority = authorizationIdentity(nextUser); const networkEpoch = authorityEpoch.current
+        stagedClock.activate(() => providerMounted.current && authorityEpoch.current === networkEpoch && getV2ClientScopeKey() === nextTransport && authorizationIdentity(userRef.current) === nextAuthority, { network: true })
+        installWorkflowContinuity(continuityPlan); queryClient.setQueryData(networkKeys.current(continuityPlan.target), continuityPlan.stagedDecision) }
       const authenticated = applyAuthResponse(adapted, { sameSession: true })
+      if (!commandConfirmed) throw new Error('The session was updated, but this password confirmation was not confirmed. Review the current session and confirm again before continuing.')
       if (networkFailure) throw new Error('Identity was verified, but current network access could not be confirmed. Refresh connection status before continuing.')
       return authenticated
     } finally { signal?.removeEventListener('abort', abort); if (authLifetime.current.request === controller) authLifetime.current.request = null }
   }, [applyAuthResponse, clearLocalAuthState, defaultFacilityCode, login, user])
+
+  useEffect(() => {
+    if (!isRustV2ApiMode() || !user || !sessionReady) return undefined
+    let timer
+    const check = () => {
+      const budget = getSessionBudget()
+      if (budget.localRemaining <= 0) { void logout(false, 'local-inactivity'); return }
+      if (budget.remaining <= 0) { void refreshAccessToken(); return }
+      timer = window.setTimeout(check, Math.min(budget.remaining, budget.localRemaining, 2147483647))
+    }
+    check(); window.addEventListener('focus', check); document.addEventListener('visibilitychange', check)
+    return () => { window.clearTimeout(timer); window.removeEventListener('focus', check); document.removeEventListener('visibilitychange', check) }
+  }, [user, sessionReady, getSessionBudget, logout, refreshAccessToken])
 
   const resetPassword = useCallback(async (email) => {
     setLoading(true)
@@ -528,6 +602,9 @@ export function useAuthProviderController() {
   return useMemo(
     () => ({
       user,
+      sessionReady: !isRustV2ApiMode() || sessionReady,
+      workspaceInstanceKey,
+      getSessionBudget,
       loading,
       error,
       login,
@@ -554,6 +631,9 @@ export function useAuthProviderController() {
     }),
     [
       user,
+      sessionReady,
+      workspaceInstanceKey,
+      getSessionBudget,
       loading,
       error,
       facilityCode,

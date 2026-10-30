@@ -8,9 +8,10 @@ import { BreadcrumbProvider } from '@/components/layout/PageBreadcrumb';
 import { configureV2ApiClient, __resetV2ApiClientForTests } from '@/lib/api/v2/client';
 import AppointmentCreatePage from '../../pages/AppointmentCreatePage';
 import AppointmentSeriesPage from '../AppointmentSeriesPage';
+const sourceProof = vi.hoisted(() => ({ serviceAvailable: true }));
 vi.mock('../../pages/appointment-create/useAppointmentCreateController', async () => {
   const { useForm } = await import('react-hook-form');
-  return { useAppointmentCreateController: () => ({ form: useForm({ defaultValues: { patientId: 'patient-1', clinicId: 'clinic-1', appointmentTypeId: 'service-1' } }), loading: false, progress: { completed: 3, total: 4 }, appointmentTypes: [], clinics: [], patientOptions: [], practitionerOptions: [], watchPatientId: 'patient-1', watchClinicId: 'clinic-1', watchAppointmentTypeId: 'service-1', selectedPatientName: 'Synthetic Patient', selectedClinic: { name: 'Clinic A' }, selectedTypeName: 'Review', formReady: false, isPoolClinic: true, navigateToAppointments: vi.fn(), onSubmit: vi.fn(), handleSlotSelect: vi.fn() }) };
+  return { useAppointmentCreateController: () => ({ form: useForm({ defaultValues: { patientId: 'patient-1', clinicId: 'clinic-1', appointmentTypeId: 'service-1' } }), loading: false, serviceAvailable: sourceProof.serviceAvailable, serviceMessage: null, progress: { completed: 3, total: 4 }, appointmentTypes: [], clinics: [], patientOptions: [], practitionerOptions: [], watchPatientId: 'patient-1', watchClinicId: 'clinic-1', watchAppointmentTypeId: 'service-1', selectedPatientName: 'Synthetic Patient', selectedClinic: { name: 'Clinic A' }, selectedTypeName: 'Review', formReady: false, isPoolClinic: true, navigateToAppointments: vi.fn(), onSubmit: vi.fn(), handleSlotSelect: vi.fn() }) };
 });
 vi.mock('../../pages/appointment-create/AppointmentCreateSidebar', () => ({ AppointmentCreateSidebar: () => <p>Single appointment booking remains available.</p> }));
 const originalFetch = globalThis.fetch; const originalRuntime = window.__HMS_RUNTIME_CONFIG__;
@@ -21,6 +22,7 @@ const original = { id: 'series-1', patient_id: 'patient-1', patient_code: 'SYNTH
 const json = (data, status = 200) => new Response(JSON.stringify(data), { status, headers: { 'content-type': 'application/json' } });
 let client; let saved; let lostCreate; let lostCancel; let readFailure; let conflict; let receipt;
 beforeEach(() => {
+  sourceProof.serviceAvailable = true;
   saved = structuredClone(original); lostCreate = false; lostCancel = false; readFailure = false; conflict = false; receipt = null;
   window.__HMS_RUNTIME_CONFIG__ = { apiMode: 'rust-v2', v2ApiBaseUrl: 'http://localhost:8080/api/v2' }; __resetV2ApiClientForTests(); configureV2ApiClient({ getAccessToken: () => 'synthetic-token', getFacilityCode: () => 'HMS', canRefreshSession: () => false });
   client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: 1 } } });
@@ -40,12 +42,19 @@ beforeEach(() => {
 });
 afterEach(() => { client.clear(); globalThis.fetch = originalFetch; window.__HMS_RUNTIME_CONFIG__ = originalRuntime; __resetV2ApiClientForTests(); });
 function renderPage(route = '/appointments/create') {
-  return render(<HelmetProvider><AuthContext.Provider value={{ user: { id: 'actor-1', facilityCode: 'HMS', accessContext: { facility_id: 'facility-1', active_profile: 'profile-1' }, adminAccess: { capabilities: ['appointment.manage'] } } }}><QueryClientProvider client={client}><MemoryRouter initialEntries={[route]}><BreadcrumbProvider><Routes><Route path="/appointments/create" element={<AppointmentCreatePage />} /><Route path="/appointments/series/:id" element={<AppointmentSeriesPage />} /></Routes></BreadcrumbProvider></MemoryRouter></QueryClientProvider></AuthContext.Provider></HelmetProvider>);
+  const tree = () => (<HelmetProvider><AuthContext.Provider value={{ user: { id: 'actor-1', facilityCode: 'HMS', accessContext: { facility_id: 'facility-1', active_profile: 'profile-1' }, adminAccess: { capabilities: ['appointment.manage'] } } }}><QueryClientProvider client={client}><MemoryRouter initialEntries={[route]}><BreadcrumbProvider><Routes><Route path="/appointments/create" element={<AppointmentCreatePage />} /><Route path="/appointments/series/:id" element={<AppointmentSeriesPage />} /></Routes></BreadcrumbProvider></MemoryRouter></QueryClientProvider></AuthContext.Provider></HelmetProvider>);
+  const view = render(tree()); return { ...view, update: () => view.rerender(tree()) };
 }
 function writes(suffix) { return globalThis.fetch.mock.calls.filter(([url, options]) => options.method === 'POST' && new URL(url).pathname.endsWith(suffix)); }
 async function bookReview() { fireEvent.click(await screen.findByRole('button', { name: 'Several appointments' })); fireEvent.click(await screen.findByRole('button', { name: /Session 1/ })); fireEvent.click(screen.getByRole('button', { name: /Session 2/ })); fireEvent.click(screen.getByRole('button', { name: 'Review appointments' })); }
 async function cancelReview() { fireEvent.click(await screen.findByRole('button', { name: 'Cancel future appointments' })); fireEvent.change(screen.getByLabelText('Reason for cancelling future appointments'), { target: { value: 'Plans changed' } }); }
 describe('appointment series through reachable pages and the real generated client', () => {
+  it('keeps actual original-request GET reachable after an unknown booking and subsequent service retirement', async () => {
+    lostCreate = true; const view = renderPage(); await bookReview(); fireEvent.click(screen.getByRole('button', { name: 'Confirm all appointments' })); await screen.findByText('Booking status unknown');
+    const payload = JSON.parse(writes('/appointment-series')[0][1].body); fireEvent.click(screen.getByRole('button', { name: 'Close booking' })); sourceProof.serviceAvailable = false; view.update();
+    fireEvent.click(screen.getByRole('button', { name: 'Review existing booking request' })); await screen.findByText('Booking status unknown'); fireEvent.click(screen.getByRole('button', { name: 'Check saved booking' })); await screen.findByText('Saved booking found');
+    expect(globalThis.fetch.mock.calls.some(([url, options]) => options.method === 'GET' && new URL(url).pathname.endsWith(`/requests/${payload.client_request_id}`))).toBe(true); expect(writes('/appointment-series')).toHaveLength(1); expect(writes('/appointments/book')).toHaveLength(0);
+  });
   it('reaches final grouped booking from the existing create page without submitting the single form', async () => {
     renderPage(); await bookReview(); expect(writes('/appointment-series')).toHaveLength(0); fireEvent.click(screen.getByRole('button', { name: 'Confirm all appointments' })); await screen.findByText('Booking confirmed');
     expect(writes('/appointment-series')).toHaveLength(1); const payload = JSON.parse(writes('/appointment-series')[0][1].body); expect(payload.occurrences).toEqual(slots.map((slot) => ({ session_id: slot.session_id, starts_at: slot.start, ends_at: slot.end }))); expect(payload).not.toHaveProperty('body');

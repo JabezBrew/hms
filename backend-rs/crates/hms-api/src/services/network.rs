@@ -65,8 +65,18 @@ pub async fn preview(
         updated_at: None,
         updated_by_user_id: None,
     };
-    let mut candidate_access =
-        network_access::evaluate(ctx.network.client, &policy, &ctx.context.reauth, Utc::now());
+    let mut candidate_access = match ctx.context.authorization_clock {
+        Some(clock) => network_access::evaluate_with_clock(
+            ctx.network.client,
+            &policy,
+            &ctx.context.reauth,
+            clock,
+        )?,
+        None => {
+            network_access::evaluate(ctx.network.client, &policy, &ctx.context.reauth, Utc::now())
+        }
+    };
+    candidate_access.auth_clock = ctx.context.user.auth_security.auth_clock.clone();
     candidate_access.policy_version = None;
     Ok(object(NetworkPolicyPreview {
         candidate,

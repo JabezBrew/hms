@@ -17,7 +17,7 @@ runtime's maximum reviewed breaking-schema epoch. An older artifact without the
 declaration supports epoch zero. A migration filename is never evidence that an
 artifact's code is compatible. The shell guard checks the explicit declaration
 against both the actual database and the candidate's known breaking migration.
-The current runtime requires028: a declaration of028 with its required
+The current runtime requires029: a declaration of029 with its required
 migration omitted is an invalid artifact, not an epoch-zero candidate. A fresh
 post-migration probe must report the required epoch before any API or worker is
 started. `--skip-migrations` cannot bypass either the minimum or maximum check.
@@ -118,7 +118,7 @@ No unrelated containers are stopped, pruned or removed.
 Before any rollback tree move or runtime restart, the installer probes with the
 candidate image's `hms-migrator schema-compatibility` command. It emits exactly
 one decimal epoch: `0`, `202610170023`, `202610170024`, `202610170025`,
-`202610170026`, `202610170027` or `202610170028`. It creates no schema,
+`202610170026`, `202610170027`, `202610170028` or `202610180029`. It creates no schema,
 identities, policy or audit data. The DB helper uses a read-only transaction,
 bounded statement/lock/idle waits and SQLx's actual migration advisory lock. Its
 dedicated connection closes on every path, including cancellation, so a session
@@ -227,3 +227,22 @@ migrations. Actual focused gates pass31 cases: database12, migrator9, API5 and
 worker5. The complete local ops gate passes181 cases with four existing opt-in
 skips and unchanged captured source. These focused results do not establish full
 release acceptance, a live deploy or a host rollback drill.
+
+
+## Breaking appointment-service boundary
+
+
+Migration `202610180029` requires runtime epoch `202610180029`. Appointment
+service commands retain permanent identity, immutable original-actor receipts,
+versioned metadata and reviewed retirement/reactivation. New references retain
+active same-facility services; existing booked care keeps its closure path.
+The supported deployment protocol refuses runtime 028 or earlier after 029 commits.
+The new runtime refuses schema 028 before provisioning, listening or worker
+readiness. Older artifacts are not assumed to recognize future migrations.
+Local schema/protocol tests do not establish a live migration or rollback drill.
+
+The final fresh local ops collection passes 196 tests with four existing opt-in
+skips. Actual native migration proves the100-checksum028 chain upgrades to101
+migrations/029, preserving pre-existing service and booked-care rows and repeated
+default provisioning. Full release acceptance is recorded separately in
+`2026-10-18-phase-twenty-three-verification.md`.

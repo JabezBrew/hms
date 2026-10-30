@@ -35,7 +35,7 @@ pub async fn confirm_password(
             "Current password could not be verified.",
         ));
     }
-    db::confirm_ordinary_password(state.db_pool(), actor(ctx), &account, admitted_at)
+    let witness = db::confirm_ordinary_password(state.db_pool(), actor(ctx), &account, admitted_at)
         .await
         .map_err(error)?;
     state.invalidate_auth_cache_for_session(
@@ -43,7 +43,7 @@ pub async fn confirm_password(
         ctx.context.user_id,
         ctx.context.session_id,
     );
-    let result = state
+    let mut result = state
         .existing_session_outcome(ctx.context.user_id, ctx.context.session_id)
         .await
         .map_err(error)?
@@ -59,5 +59,6 @@ pub async fn confirm_password(
     {
         return Err(ApiError::unauthorized());
     }
+    result.ordinary_confirmation = Some(witness);
     Ok(result)
 }

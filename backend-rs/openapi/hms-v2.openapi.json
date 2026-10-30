@@ -2043,6 +2043,93 @@
         ],
         "type": "string"
       },
+      "AppointmentTypeAdministrationQuery": {
+        "properties": {
+          "cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "is_active": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "limit": {
+            "format": "int32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "search": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "AppointmentTypeCommandReceipt": {
+        "properties": {
+          "changed": {
+            "type": "boolean"
+          },
+          "client_request_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "input_digest": {
+            "type": "string"
+          },
+          "recorded_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "recorded_by_user_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "reviewed_input": {
+            "$ref": "#/components/schemas/AppointmentTypeReviewedInput"
+          },
+          "service": {
+            "$ref": "#/components/schemas/GovernedAppointmentType"
+          }
+        },
+        "required": [
+          "client_request_id",
+          "input_digest",
+          "reviewed_input",
+          "recorded_by_user_id",
+          "service",
+          "changed",
+          "recorded_at"
+        ],
+        "type": "object"
+      },
+      "AppointmentTypeLifecycleRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "client_request_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "expected_version": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "client_request_id",
+          "expected_version"
+        ],
+        "type": "object"
+      },
       "AppointmentTypeListItem": {
         "properties": {
           "code": {
@@ -2076,6 +2163,142 @@
           "created_at"
         ],
         "type": "object"
+      },
+      "AppointmentTypeReviewedInput": {
+        "oneOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "action": {
+                "enum": [
+                  "create"
+                ],
+                "type": "string"
+              },
+              "client_request_id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "code": {
+                "type": "string"
+              },
+              "default_duration_minutes": {
+                "format": "int32",
+                "type": "integer"
+              },
+              "name": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "client_request_id",
+              "code",
+              "name",
+              "default_duration_minutes",
+              "action"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "action": {
+                "enum": [
+                  "metadata"
+                ],
+                "type": "string"
+              },
+              "client_request_id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "default_duration_minutes": {
+                "format": "int32",
+                "type": "integer"
+              },
+              "expected_version": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "name": {
+                "type": "string"
+              },
+              "service_id": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "client_request_id",
+              "service_id",
+              "expected_version",
+              "name",
+              "default_duration_minutes",
+              "action"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "action": {
+                "enum": [
+                  "retire"
+                ],
+                "type": "string"
+              },
+              "client_request_id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "expected_version": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "service_id": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "client_request_id",
+              "service_id",
+              "expected_version",
+              "action"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "action": {
+                "enum": [
+                  "reactivate"
+                ],
+                "type": "string"
+              },
+              "client_request_id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "expected_version": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "service_id": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "client_request_id",
+              "service_id",
+              "expected_version",
+              "action"
+            ],
+            "type": "object"
+          }
+        ]
       },
       "ArriveAppointmentRequest": {
         "properties": {
@@ -2152,6 +2375,33 @@
         ],
         "type": "object"
       },
+      "AuthClockObservation": {
+        "additionalProperties": false,
+        "description": "A trusted raw DB observation and independently sampled issuer lifetime.\nObservational response facts confer no permission or credential authority.",
+        "properties": {
+          "access_token_remaining_ms": {
+            "format": "int64",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "database_observed_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "issuer_observed_at": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "database_observed_at",
+          "issuer_observed_at"
+        ],
+        "type": "object"
+      },
       "AuthLoginResponse": {
         "oneOf": [
           {
@@ -2177,6 +2427,9 @@
           },
           {
             "properties": {
+              "auth_clock": {
+                "$ref": "#/components/schemas/AuthClockObservation"
+              },
               "expires_at": {
                 "format": "date-time",
                 "type": "string"
@@ -2201,6 +2454,7 @@
               }
             },
             "required": [
+              "auth_clock",
               "login_grant",
               "expires_at",
               "methods",
@@ -2210,6 +2464,9 @@
           },
           {
             "properties": {
+              "auth_clock": {
+                "$ref": "#/components/schemas/AuthClockObservation"
+              },
               "expires_at": {
                 "format": "date-time",
                 "type": "string"
@@ -2234,6 +2491,7 @@
               }
             },
             "required": [
+              "auth_clock",
               "login_grant",
               "expires_at",
               "methods",
@@ -2248,6 +2506,16 @@
           "assurance_version": {
             "format": "int64",
             "type": "integer"
+          },
+          "auth_clock": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/AuthClockObservation"
+              }
+            ]
           },
           "factor_version": {
             "format": "int64",
@@ -2344,6 +2612,16 @@
             "format": "int64",
             "minimum": 0,
             "type": "integer"
+          },
+          "ordinary_confirmation": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/OrdinaryConfirmationWitness"
+              }
+            ]
           },
           "refresh_expires_at": {
             "format": "date-time",
@@ -5681,6 +5959,32 @@
         ],
         "type": "object"
       },
+      "CreateAppointmentTypeRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "client_request_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "code": {
+            "type": "string"
+          },
+          "default_duration_minutes": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "client_request_id",
+          "code",
+          "name",
+          "default_duration_minutes"
+        ],
+        "type": "object"
+      },
       "CreateAuthorityAppointmentRequest": {
         "properties": {
           "appointment_type": {
@@ -8605,6 +8909,9 @@
           "assurance": {
             "$ref": "#/components/schemas/SessionAssurance"
           },
+          "auth_clock": {
+            "$ref": "#/components/schemas/AuthClockObservation"
+          },
           "password_fresh_until": {
             "format": "date-time",
             "type": "string"
@@ -8615,6 +8922,7 @@
           }
         },
         "required": [
+          "auth_clock",
           "assurance",
           "password_verified_at",
           "password_fresh_until"
@@ -9750,6 +10058,50 @@
           "rejected"
         ],
         "type": "string"
+      },
+      "GovernedAppointmentType": {
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "default_duration_minutes": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "is_active": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "version": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "code",
+          "name",
+          "default_duration_minutes",
+          "is_active",
+          "version",
+          "created_at",
+          "updated_at"
+        ],
+        "type": "object"
       },
       "GovernedNoteTemplateDetail": {
         "allOf": [
@@ -14322,6 +14674,67 @@
                 "supplier_name",
                 "status",
                 "received_at"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "meta": {},
+          "page": {
+            "$ref": "#/components/schemas/PageInfo"
+          }
+        },
+        "required": [
+          "data",
+          "page",
+          "meta"
+        ],
+        "type": "object"
+      },
+      "ListResponse_GovernedAppointmentType": {
+        "properties": {
+          "data": {
+            "items": {
+              "properties": {
+                "code": {
+                  "type": "string"
+                },
+                "created_at": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "default_duration_minutes": {
+                  "format": "int32",
+                  "type": "integer"
+                },
+                "id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "is_active": {
+                  "type": "boolean"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "updated_at": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "version": {
+                  "format": "int64",
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "id",
+                "code",
+                "name",
+                "default_duration_minutes",
+                "is_active",
+                "version",
+                "created_at",
+                "updated_at"
               ],
               "type": "object"
             },
@@ -21424,6 +21837,16 @@
           "access_allowed": {
             "type": "boolean"
           },
+          "auth_clock": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/AuthClockObservation"
+              }
+            ]
+          },
           "classification": {
             "$ref": "#/components/schemas/NetworkClassification"
           },
@@ -23570,6 +23993,54 @@
         ],
         "type": "object"
       },
+      "ObjectResponse_AppointmentTypeCommandReceipt": {
+        "properties": {
+          "data": {
+            "properties": {
+              "changed": {
+                "type": "boolean"
+              },
+              "client_request_id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "input_digest": {
+                "type": "string"
+              },
+              "recorded_at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "recorded_by_user_id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "reviewed_input": {
+                "$ref": "#/components/schemas/AppointmentTypeReviewedInput"
+              },
+              "service": {
+                "$ref": "#/components/schemas/GovernedAppointmentType"
+              }
+            },
+            "required": [
+              "client_request_id",
+              "input_digest",
+              "reviewed_input",
+              "recorded_by_user_id",
+              "service",
+              "changed",
+              "recorded_at"
+            ],
+            "type": "object"
+          },
+          "meta": {}
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "type": "object"
+      },
       "ObjectResponse_AuthLoginResponse": {
         "properties": {
           "data": {
@@ -23597,6 +24068,9 @@
               },
               {
                 "properties": {
+                  "auth_clock": {
+                    "$ref": "#/components/schemas/AuthClockObservation"
+                  },
                   "expires_at": {
                     "format": "date-time",
                     "type": "string"
@@ -23621,6 +24095,7 @@
                   }
                 },
                 "required": [
+                  "auth_clock",
                   "login_grant",
                   "expires_at",
                   "methods",
@@ -23630,6 +24105,9 @@
               },
               {
                 "properties": {
+                  "auth_clock": {
+                    "$ref": "#/components/schemas/AuthClockObservation"
+                  },
                   "expires_at": {
                     "format": "date-time",
                     "type": "string"
@@ -23654,6 +24132,7 @@
                   }
                 },
                 "required": [
+                  "auth_clock",
                   "login_grant",
                   "expires_at",
                   "methods",
@@ -23706,6 +24185,16 @@
                 "format": "int64",
                 "minimum": 0,
                 "type": "integer"
+              },
+              "ordinary_confirmation": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/OrdinaryConfirmationWitness"
+                  }
+                ]
               },
               "refresh_expires_at": {
                 "format": "date-time",
@@ -24137,50 +24626,6 @@
             },
             "required": [
               "appointment"
-            ],
-            "type": "object"
-          },
-          "meta": {}
-        },
-        "required": [
-          "data",
-          "meta"
-        ],
-        "type": "object"
-      },
-      "ObjectResponse_BookableServiceListItem": {
-        "properties": {
-          "data": {
-            "properties": {
-              "code": {
-                "type": "string"
-              },
-              "created_at": {
-                "format": "date-time",
-                "type": "string"
-              },
-              "default_duration_minutes": {
-                "format": "int32",
-                "type": "integer"
-              },
-              "id": {
-                "format": "uuid",
-                "type": "string"
-              },
-              "is_active": {
-                "type": "boolean"
-              },
-              "name": {
-                "type": "string"
-              }
-            },
-            "required": [
-              "id",
-              "code",
-              "name",
-              "default_duration_minutes",
-              "is_active",
-              "created_at"
             ],
             "type": "object"
           },
@@ -25972,6 +26417,9 @@
               "assurance": {
                 "$ref": "#/components/schemas/SessionAssurance"
               },
+              "auth_clock": {
+                "$ref": "#/components/schemas/AuthClockObservation"
+              },
               "password_fresh_until": {
                 "format": "date-time",
                 "type": "string"
@@ -25982,6 +26430,7 @@
               }
             },
             "required": [
+              "auth_clock",
               "assurance",
               "password_verified_at",
               "password_fresh_until"
@@ -26632,6 +27081,60 @@
               "supplier_name",
               "status",
               "received_at"
+            ],
+            "type": "object"
+          },
+          "meta": {}
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "type": "object"
+      },
+      "ObjectResponse_GovernedAppointmentType": {
+        "properties": {
+          "data": {
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "created_at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "default_duration_minutes": {
+                "format": "int32",
+                "type": "integer"
+              },
+              "id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "is_active": {
+                "type": "boolean"
+              },
+              "name": {
+                "type": "string"
+              },
+              "updated_at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "version": {
+                "format": "int64",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "id",
+              "code",
+              "name",
+              "default_duration_minutes",
+              "is_active",
+              "version",
+              "created_at",
+              "updated_at"
             ],
             "type": "object"
           },
@@ -27806,6 +28309,16 @@
             "properties": {
               "access_allowed": {
                 "type": "boolean"
+              },
+              "auth_clock": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/AuthClockObservation"
+                  }
+                ]
               },
               "classification": {
                 "$ref": "#/components/schemas/NetworkClassification"
@@ -34984,6 +35497,44 @@
         "required": [
           "key",
           "reason"
+        ],
+        "type": "object"
+      },
+      "OrdinaryConfirmationPurpose": {
+        "enum": [
+          "ordinary_password_confirmation"
+        ],
+        "type": "string"
+      },
+      "OrdinaryConfirmationWitness": {
+        "additionalProperties": false,
+        "properties": {
+          "admitted_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "assurance_version": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "published_password_verified_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "purpose": {
+            "$ref": "#/components/schemas/OrdinaryConfirmationPurpose"
+          },
+          "session_id": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "purpose",
+          "session_id",
+          "assurance_version",
+          "admitted_at",
+          "published_password_verified_at"
         ],
         "type": "object"
       },
@@ -45092,6 +45643,33 @@
             ]
           }
         },
+        "type": "object"
+      },
+      "UpdateAppointmentTypeMetadataRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "client_request_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "default_duration_minutes": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "expected_version": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "client_request_id",
+          "expected_version",
+          "name",
+          "default_duration_minutes"
+        ],
         "type": "object"
       },
       "UpdateAuthProfileRequest": {
@@ -85413,12 +85991,12 @@
         ]
       },
       "post": {
-        "operationId": "postSchedulingServices",
+        "operationId": "postAppointmentTypeCreate",
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/CreateBookableServiceRequest"
+                "$ref": "#/components/schemas/CreateAppointmentTypeRequest"
               }
             }
           },
@@ -85429,11 +86007,11 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ObjectResponse_BookableServiceListItem"
+                  "$ref": "#/components/schemas/ObjectResponse_AppointmentTypeCommandReceipt"
                 }
               }
             },
-            "description": "Bookable service created"
+            "description": ""
           },
           "400": {
             "content": {
@@ -85443,7 +86021,7 @@
                 }
               }
             },
-            "description": "Invalid service request"
+            "description": ""
           },
           "401": {
             "content": {
@@ -85453,7 +86031,7 @@
                 }
               }
             },
-            "description": "Authentication required"
+            "description": ""
           },
           "403": {
             "content": {
@@ -85463,7 +86041,588 @@
                 }
               }
             },
-            "description": "Permission denied"
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "scheduling"
+        ]
+      }
+    },
+    "/api/v2/scheduling/services/administration": {
+      "get": {
+        "operationId": "getAppointmentTypeAdministration",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "search",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "is_active",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListResponse_GovernedAppointmentType"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "scheduling"
+        ]
+      }
+    },
+    "/api/v2/scheduling/services/commands/{client_request_id}": {
+      "get": {
+        "operationId": "getAppointmentTypeCommand",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "client_request_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_AppointmentTypeCommandReceipt"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "scheduling"
+        ]
+      }
+    },
+    "/api/v2/scheduling/services/{id}/administration": {
+      "get": {
+        "operationId": "getAppointmentTypeAdministrationById",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_GovernedAppointmentType"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "scheduling"
+        ]
+      }
+    },
+    "/api/v2/scheduling/services/{id}/metadata": {
+      "post": {
+        "operationId": "postAppointmentTypeMetadata",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateAppointmentTypeMetadataRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_AppointmentTypeCommandReceipt"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "scheduling"
+        ]
+      }
+    },
+    "/api/v2/scheduling/services/{id}/reactivate": {
+      "post": {
+        "operationId": "postAppointmentTypeReactivate",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AppointmentTypeLifecycleRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_AppointmentTypeCommandReceipt"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "scheduling"
+        ]
+      }
+    },
+    "/api/v2/scheduling/services/{id}/retire": {
+      "post": {
+        "operationId": "postAppointmentTypeRetire",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AppointmentTypeLifecycleRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_AppointmentTypeCommandReceipt"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
           }
         },
         "security": [

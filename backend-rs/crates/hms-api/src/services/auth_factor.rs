@@ -67,6 +67,8 @@ pub async fn login(
 fn pending(raw: &str, g: &db::LoginGrant, recovery: bool) -> PendingFactorLogin {
     let setup = g.state == "setup";
     PendingFactorLogin {
+        auth_clock: crate::auth_clock::observation(g.observed_at, None)
+            .expect("prelogin observation has no issuer bound"),
         status: if setup {
             "setup_required"
         } else {
@@ -207,7 +209,15 @@ pub async fn verify_login(
         };
         let g = ceremony.grant().ok_or_else(ApiError::unauthorized)?;
         let material = state
-            .prepare_session(&user, None, None, g.device_label.as_deref(), None, None)
+            .prepare_session(
+                &user,
+                None,
+                None,
+                g.device_label.as_deref(),
+                None,
+                None,
+                None,
+            )
             .map_err(error)?
             .ok_or_else(ApiError::unauthorized)?;
         ceremony
@@ -243,7 +253,15 @@ pub async fn recovery(
         .map_err(error)?
         .ok_or_else(ApiError::unauthorized)?;
     let material = state
-        .prepare_session(&user, None, None, g.device_label.as_deref(), None, None)
+        .prepare_session(
+            &user,
+            None,
+            None,
+            g.device_label.as_deref(),
+            None,
+            None,
+            None,
+        )
         .map_err(error)?
         .ok_or_else(ApiError::unauthorized)?;
     db::complete_recovery(

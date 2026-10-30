@@ -2,9 +2,10 @@ import { createElement } from 'react';
 import { renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { AuthContext } from '@/lib/auth/AuthContext';
-import { ReadOnlyModeProvider } from '@/contexts/ReadOnlyModeContext';
+import { ModeledReadOnlyModeProvider as ReadOnlyModeProvider } from '@/tests/networkClockModel';
 import { __resetV2ApiClientForTests, configureV2ApiClient, getV2ClientScopeKey } from '@/lib/api/v2/client';
-import { bindNetworkAccessGuard, resetNetworkAccessGuardForTests } from '@/lib/api/v2/networkAccessGuard';
+import { resetNetworkAccessGuardForTests } from '@/lib/api/v2/networkAccessGuard';
+import { bindModeledNetworkGuard as bindNetworkAccessGuard } from '@/tests/networkClockModel';
 import { authorizationIdentity } from '@/shared/lib/authorizationScope';
 import { useScopedNotifications } from '../useScopedNotifications';
 import { toast } from 'sonner';
@@ -22,7 +23,7 @@ it.each(['actor', 'facility', 'profile', 'session', 'permission', 'capability', 
  network = { ...network, decision: { ...network.decision } }; bind(); view.rerender({ target: change === 'context' ? 'opaque-two' : 'opaque-one' }); publisher.success('Private stale success'); publisher.error('Private stale error'); expect(toast.success).not.toHaveBeenCalled(); expect(toast.error).not.toHaveBeenCalled();
 });
 it('checks a rotated live transport immediately, before a React update', () => { const { result } = renderHook(() => useScopedNotifications(), { wrapper }); const publisher = result.current(); token = 'synthetic-rotated-token'; publisher.error('Private stale error'); expect(publisher.isCurrent()).toBe(false); expect(toast.error).not.toHaveBeenCalled(); });
-it('expires an offsite publisher at its actual deadline even without a refetch or render', () => { const start = Date.now(); network.decision = { ...network.decision, classification: 'offsite', mode: 'fresh_reauth', reauth_expires_at: new Date(start + 1000).toISOString() }; bind(); const { result } = renderHook(() => useScopedNotifications(), { wrapper }); const publisher = result.current(); expect(publisher.isCurrent()).toBe(true); vi.spyOn(Date, 'now').mockReturnValue(start + 1000); publisher.success('Private expired completion'); expect(publisher.isCurrent()).toBe(false); expect(toast.success).not.toHaveBeenCalled(); });
+it('expires an offsite publisher at its actual deadline even without a refetch or render', () => { const start = Date.now(); let elapsed = 0; vi.spyOn(performance, 'now').mockImplementation(() => elapsed); network.decision = { ...network.decision, classification: 'offsite', mode: 'fresh_reauth', reauth_expires_at: new Date(start + 1000).toISOString() }; bind(); const { result } = renderHook(() => useScopedNotifications(), { wrapper }); const publisher = result.current(); expect(publisher.isCurrent()).toBe(true); elapsed = 1000; publisher.success('Private expired completion'); expect(publisher.isCurrent()).toBe(false); expect(toast.success).not.toHaveBeenCalled(); });
 it('revokes unmounted and A to B to A publishers instead of reactivating them', () => { const view = renderHook(() => useScopedNotifications(), { wrapper }); const publisher = view.result.current(); actor.id = 'actor-two'; bind(); view.rerender(); actor.id = baseUser.id; bind(); view.rerender(); publisher.success('Private returned-actor completion'); expect(toast.success).not.toHaveBeenCalled(); const current = view.result.current(); view.unmount(); current.error('Private unmounted completion'); expect(toast.error).not.toHaveBeenCalled(); });
 
 it('preserves ordinary legacy notifications without an authoritative Rust network provider', () => { window.__HMS_RUNTIME_CONFIG__ = { apiMode: 'legacy' }; resetNetworkAccessGuardForTests(); const legacyWrapper = ({ children }) => createElement(AuthContext.Provider, { value: { user: actor } }, children); const view = renderHook(() => useScopedNotifications(), { wrapper: legacyWrapper }); const publisher = view.result.current(); actor = structuredClone(actor); view.rerender(); publisher.success('Synthetic legacy completion'); expect(toast.success).toHaveBeenCalledWith('Synthetic legacy completion'); expect(publisher.isCurrent()).toBe(true); });

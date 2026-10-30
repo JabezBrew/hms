@@ -47,6 +47,8 @@ async fn actor(db: &TestDb) -> responses::ReferralResponseActor {
         user_id: user,
         request_id: None,
         authorization: hms_db::clinical::prescription_courses::PrescriptionAuthorization {
+            ordinary_reauth_required: false,
+            original_password_verified_at: None,
             session_id: session,
             session_version: sv,
             permission_version: pv,

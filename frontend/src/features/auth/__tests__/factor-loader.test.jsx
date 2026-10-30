@@ -51,7 +51,7 @@ it('keeps the actual provider unauthenticated after the public factor chunk fail
   function Host() { auth = useAuth(); return auth.user ? <p>Synthetic protected clinical page</p> : <LoginForm />; }
   vi.stubGlobal('fetch', vi.fn(async () => json(pending())));
   render(<QueryClientProvider client={queryClient}><MemoryRouter><AuthProvider><Host /></AuthProvider></MemoryRouter></QueryClientProvider>);
-  fireEvent.change(screen.getByLabelText('Email Address'), { target: { value: 'synthetic@example.test' } });
+  fireEvent.change(await screen.findByLabelText('Email Address'), { target: { value: 'synthetic@example.test' } });
   fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'Synthetic password' } });
   fireEvent.click(screen.getByRole('button', { name: 'Sign In' }));
   await screen.findByText(/Sign-in verification could not be loaded/);

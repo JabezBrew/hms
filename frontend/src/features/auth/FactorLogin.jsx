@@ -1,3 +1,4 @@
+import { serverClock } from '@/shared/lib/serverClock';
 import { useLayoutEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/lib/auth';
@@ -17,14 +18,15 @@ export function FactorLogin() {
   useLayoutEffect(() => {
     generation.current += 1; setCode(''); setBootstrap(''); setError(null); setBusy(false);
     if (!pendingFactor) return undefined;
-    setExpired(Date.parse(pendingFactor?.expires_at) <= Date.now());
-    const timer = window.setTimeout(() => { operation.current?.abort(); setExpired(true); setBusy(false); setCode(''); setBootstrap(''); }, Math.max(0, Date.parse(pendingFactor?.expires_at) - Date.now()));
+    const remaining = serverClock(pendingFactor)?.remaining(pendingFactor.expires_at) || 0;
+    setExpired(remaining <= 0);
+    const timer = window.setTimeout(() => { operation.current?.abort(); setExpired(true); setBusy(false); setCode(''); setBootstrap(''); }, remaining);
     return () => { generation.current += 1; operation.current?.abort(); operation.current = null; window.clearTimeout(timer); };
   }, [pendingFactor]);
   if (!pendingFactor) return null;
   const setup = pendingFactor.status === 'setup_required';
   const run = async (method) => {
-    if (operation.current || expired) return;
+    if (operation.current || expired || !(serverClock(pendingFactor)?.remaining(pendingFactor.expires_at) > 0)) return;
     const controller = new AbortController(); const currentGeneration = generation.current; operation.current = controller; setBusy(true); setError(null);
     const active = () => !controller.signal.aborted && currentGeneration === generation.current;
     try {

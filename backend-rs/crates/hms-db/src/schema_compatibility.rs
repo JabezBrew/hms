@@ -1,4 +1,5 @@
 //! Read-only deployment compatibility metadata. Never returns database identity.
+mod appointment_types;
 use crate::PgPool;
 use sqlx::{migrate::Migrate, Acquire};
 
@@ -18,7 +19,8 @@ pub const REFERRAL_CONSULTATIONS_BREAKING_EPOCH: i64 = 202610170026;
 pub const ORGANIZATION_UNITS_BREAKING_EPOCH: i64 = 202610170027;
 /// Earlier runtimes bypass governed location maintenance and reference publication.
 pub const STORAGE_LOCATIONS_BREAKING_EPOCH: i64 = 202610170028;
-pub const REQUIRED_RUNTIME_SCHEMA_EPOCH: i64 = STORAGE_LOCATIONS_BREAKING_EPOCH;
+pub const APPOINTMENT_TYPES_BREAKING_EPOCH: i64 = 202610180029;
+pub const REQUIRED_RUNTIME_SCHEMA_EPOCH: i64 = APPOINTMENT_TYPES_BREAKING_EPOCH;
 
 /// This once-per-process startup gate is separate from cheap health probes.
 pub async fn require_runtime_schema(pool: &PgPool) -> anyhow::Result<()> {
@@ -153,6 +155,7 @@ pub async fn committed_breaking_epoch(pool: &PgPool) -> anyhow::Result<i64> {
     let epoch = referral_consultations::committed_epoch(&mut tx, history, epoch).await?;
     let epoch = organization_units::committed_epoch(&mut tx, history, epoch).await?;
     let epoch = storage_locations::committed_epoch(&mut tx, history, epoch).await?;
+    let epoch = appointment_types::committed_epoch(&mut tx, history, epoch).await?;
     Migrate::unlock(&mut *tx).await?;
     tx.commit().await?;
     Ok(epoch)

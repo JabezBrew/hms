@@ -110,6 +110,7 @@ pub enum NetworkDecisionReason {
 /// Contains no address, network ranges, proxy configuration, or raw headers.
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
 pub struct NetworkAccessDecision {
+    pub auth_clock: Option<crate::auth_assurance::AuthClockObservation>,
     pub classification: NetworkClassification,
     pub provenance: NetworkProvenance,
     pub policy_version: Option<i64>,

@@ -1,6 +1,7 @@
 pub mod admin;
 pub mod admin_access;
 pub mod appointment_series;
+pub mod appointment_types;
 pub mod auth;
 pub mod billing;
 pub mod care;

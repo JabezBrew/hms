@@ -18,6 +18,7 @@ impl Modify for StrictConsultationSchemas {
         for name in [
             "ReferralConsultationSource",
             "ReferralConsultationVisitChoice",
+            "AppointmentTypeReviewedInput",
         ] {
             let Some(RefOr::T(Schema::OneOf(schema))) = components.schemas.get_mut(name) else {
                 continue;

@@ -9,7 +9,7 @@ pub async fn confirm_ordinary_password(
     mut actor: WebAuthnActor,
     verified: &UserAccount,
     admitted_at: DateTime<Utc>,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<hms_domain::auth_assurance::OrdinaryConfirmationWitness> {
     if verified.id != actor.user_id
         || verified.facility_id != actor.facility_id
         || verified.session_version != actor.session_version
@@ -55,18 +55,15 @@ pub async fn confirm_ordinary_password(
     }
     let end = actor.valid_until.min(admitted_at + Duration::minutes(15));
     deadline(&mut tx, end).await?;
-    let changed = sqlx::query(
-        "UPDATE refresh_sessions SET password_verified_at=GREATEST(password_verified_at,$4),assurance_version=assurance_version+1 WHERE facility_id=$1 AND user_id=$2 AND session_id=$3 AND revoked_at IS NULL",
+    let (published_password_verified_at, assurance_version):(DateTime<Utc>,i64) = sqlx::query_as(
+        "UPDATE refresh_sessions SET password_verified_at=GREATEST(password_verified_at,$4),assurance_version=assurance_version+1 WHERE facility_id=$1 AND user_id=$2 AND session_id=$3 AND revoked_at IS NULL RETURNING password_verified_at,assurance_version",
     )
     .bind(actor.facility_id)
     .bind(actor.user_id)
     .bind(actor.session_id)
     .bind(admitted_at)
-    .execute(&mut *tx)
-    .await?;
-    if changed.rows_affected() != 1 {
-        return Err(FactorError::AuthorizationExpired.into());
-    }
+    .fetch_optional(&mut *tx)
+    .await?.ok_or(FactorError::AuthorizationExpired)?;
     sqlx::query("INSERT INTO audit_events(id,facility_id,actor_user_id,request_id,event_type,resource_type,resource_id,metadata) VALUES(gen_random_uuid(),$1,$2,$3,'auth.credential.reconfirmed','auth_session',$4,'{}'::jsonb)")
         .bind(actor.facility_id)
         .bind(actor.user_id)
@@ -74,8 +71,21 @@ pub async fn confirm_ordinary_password(
         .bind(actor.session_id)
         .execute(&mut *tx)
         .await?;
-    // This fresh clock follows all locks and publication/audit triggers.
-    deadline(&mut tx, end).await?;
+    // The final existing DB point follows publication/audit and independently
+    // rejects proof made future by a clock correction before this commit.
+    super::check_proof_publication_tx(
+        &mut tx,
+        Some(admitted_at.max(published_password_verified_at)),
+        end,
+    )
+    .await?;
     tx.commit().await?;
-    Ok(())
+    Ok(hms_domain::auth_assurance::OrdinaryConfirmationWitness {
+        purpose:
+            hms_domain::auth_assurance::OrdinaryConfirmationPurpose::OrdinaryPasswordConfirmation,
+        session_id: actor.session_id,
+        assurance_version,
+        admitted_at,
+        published_password_verified_at,
+    })
 }

@@ -1,7 +1,7 @@
 import { webcrypto } from 'node:crypto';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { configureV2ApiClient, __resetV2ApiClientForTests, getV2ClientScopeKey } from '@/lib/api/v2/client';
-import { bindNetworkAccessGuard } from '@/lib/api/v2/networkAccessGuard';
+import { bindModeledNetworkGuard as bindNetworkAccessGuard } from '@/tests/networkClockModel';
 import { advisoryApi } from '../api';
 import { actorId, facilityId, patientId, caseId, advisoryId, ids, caseRow, context, detail, command, receipt, json } from './fixtures';
 const runtime = window.__HMS_RUNTIME_CONFIG__; const oldFetch = globalThis.fetch;

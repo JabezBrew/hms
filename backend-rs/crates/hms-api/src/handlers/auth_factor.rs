@@ -29,6 +29,7 @@ fn payload<T>(body: Result<Json<T>, JsonRejection>) -> Result<T, ApiError> {
 }
 pub(crate) fn tokens(outcome: LoginOutcome) -> AuthTokenResponse {
     AuthTokenResponse {
+        ordinary_confirmation: outcome.ordinary_confirmation,
         access_token: outcome.access_token,
         token_type: "Bearer".to_owned(),
         expires_in_seconds: outcome.access_token_expires_in_seconds,
@@ -55,6 +56,7 @@ pub(crate) fn login_response(
         LoginResult::Pending(p) => {
             let result = if p.status == "setup_required" {
                 AuthLoginResponse::SetupRequired {
+                    auth_clock: p.auth_clock,
                     login_grant: p.login_grant,
                     expires_at: p.expires_at,
                     methods: p.methods,
@@ -62,6 +64,7 @@ pub(crate) fn login_response(
                 }
             } else {
                 AuthLoginResponse::FactorRequired {
+                    auth_clock: p.auth_clock,
                     login_grant: p.login_grant,
                     expires_at: p.expires_at,
                     methods: p.methods,
@@ -127,11 +130,15 @@ pub async fn status(
     State(s): State<AppState>,
     ctx: NetworkContext,
 ) -> Result<Json<ObjectResponse<FactorAssuranceStatus>>, ApiError> {
-    Ok(Json(object(
-        hms_db::auth::assurance::status(s.db_pool(), service::actor(&ctx))
-            .await
-            .map_err(service::error)?,
-    )))
+    let mut status = hms_db::auth::assurance::status(s.db_pool(), service::actor(&ctx))
+        .await
+        .map_err(service::error)?;
+    status.auth_clock = crate::auth_clock::observation(
+        status.auth_clock.database_observed_at,
+        ctx.context.issuer_token_window,
+    )
+    .ok_or_else(ApiError::unauthorized)?;
+    Ok(Json(object(status)))
 }
 #[utoipa::path(post,path="/api/v2/auth/reauthenticate",operation_id="postAuthReauthenticate",tag="auth",security(("bearerAuth"=[])),request_body=OrdinaryPasswordConfirmationRequest,responses((status=200,body=ObjectResponse<AuthLoginResponse>),(status=400,body=ApiErrorResponse),(status=401,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse),(status=429,body=ApiErrorResponse)))]
 pub async fn confirm_password(

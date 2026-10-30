@@ -341,7 +341,7 @@ async fn request_context_probe(RequestContext(ctx): RequestContext) -> axum::Jso
         "session_version": ctx.session_version,
         "permission_version": ctx.permission_version,
         "offsite": format!("{:?}", ctx.offsite),
-        "reauth_fresh": ctx.reauth.is_fresh_at(Utc::now()),
+        "reauth_fresh": ctx.reauth_is_fresh_at(Utc::now()),
     }))
 }
 

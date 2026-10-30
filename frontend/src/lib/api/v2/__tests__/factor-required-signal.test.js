@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { webcrypto } from 'node:crypto';
 import { __resetV2ApiClientForTests, configureV2ApiClient, getV2ClientScopeKey, v2Request } from '../session';
-import { bindNetworkAccessGuard } from '../networkAccessGuard';
+import { bindModeledNetworkGuard as bindNetworkAccessGuard } from '@/tests/networkClockModel';
 import { authorizationIdentity, authorizationScope } from '@/shared/lib/authorizationScope';
 import { dismissFactorRequirement, getFactorRequirement, subscribeFactorRequirement } from '@/shared/lib/factorRequiredSignal';
 

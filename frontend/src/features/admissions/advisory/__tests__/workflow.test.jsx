@@ -4,9 +4,9 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { AuthContext } from '@/lib/auth/AuthContext';
-import { ReadOnlyModeProvider } from '@/contexts/ReadOnlyModeContext';
+import { ModeledReadOnlyModeProvider as ReadOnlyModeProvider } from '@/tests/networkClockModel';
 import { configureV2ApiClient, __resetV2ApiClientForTests, getV2ClientScopeKey } from '@/lib/api/v2/client';
-import { bindNetworkAccessGuard } from '@/lib/api/v2/networkAccessGuard';
+import { bindModeledNetworkGuard as bindNetworkAccessGuard } from '@/tests/networkClockModel';
 import { authorizationIdentity } from '@/shared/lib/authorizationScope';
 import { activateWriteUncertainty, getWriteUncertaintySnapshot } from '@/lib/api/v2/writeUncertainty';
 import ChronicleWorkspaceHost from '@/features/patients/components/ChronicleWorkspaceHost';

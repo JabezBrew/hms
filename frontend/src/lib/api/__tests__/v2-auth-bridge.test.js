@@ -2,6 +2,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { authApi } from '../auth';
 import { __resetV2ApiClientForTests } from '../v2/client';
+import { fixtureClock, json, jwtFor, token } from '@/features/auth/__tests__/fixtures';
+
+// Complete current wire fixtures remain synthetic. The actual auth adapter
+// validates each response; this helper does not manufacture response provenance.
+const loginToken = (permissions = ['patient.demographics.view']) => {
+  const raw = token(null, { email: 'owner@hms.local', display_name: 'HMS Owner', permissions, features: ['patient_chronicle'], patient_visibility: ['demographics'] });
+  const issued = Date.now(); const second = Math.floor(issued / 1000);
+  raw.access_token = jwtFor(raw, { iat: second, exp: second + 600, auth_time: second - 5 });
+  raw.user.auth_security.auth_clock = fixtureClock(issued, raw.access_token);
+  return raw;
+};
 
 describe('Rust V2 auth bridge', () => {
   const originalFetch = globalThis.fetch;
@@ -25,122 +36,66 @@ describe('Rust V2 auth bridge', () => {
     globalThis.fetch = originalFetch;
   });
 
+  it.each([
+    [['system.deployment_capabilities.view'], 'staff'],
+    [['system.deployment_capabilities.view', 'appointment.view', 'patient.demographics.view'], 'doctor'],
+    [['admin.staff.manage', 'system.deployment_capabilities.view'], 'admin'],
+    [['system.ops.view'], 'admin'],
+    [['nursing.task.manage', 'system.deployment_capabilities.view'], 'nurse'],
+    [['pharmacy.medication.manage', 'system.deployment_capabilities.view'], 'pharmacist'],
+    [['inventory.item.manage', 'system.deployment_capabilities.view'], 'staff'],
+  ])('keeps ordinary deployment reads out of privileged role inference: %j → %s', async (permissions, expectedRole) => {
+    fetch.mockResolvedValueOnce(json(loginToken(permissions)));
+    const response = await authApi.login('synthetic@example.test', 'Synthetic current password', 'HMS');
+    expect(response.user.user_type).toBe(expectedRole);
+    expect(response.user.admin_access.capabilities).toEqual(permissions);
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
   it('logs in through /api/v2 and adapts the Rust envelope to the existing auth context shape', async () => {
-    globalThis.fetch.mockResolvedValueOnce(
-      new Response(
-        JSON.stringify({
-          data: {
-            status: 'authenticated',
-            access_token: 'access-token-123',
-            token_type: 'Bearer',
-            expires_in_seconds: 600,
-            refresh_expires_at: '2026-06-01T12:30:00Z',
-            session_idle_expires_at: '2026-06-01T12:30:00Z',
-            session_absolute_expires_at: '2026-06-01T20:00:00Z',
-            user: {
-              id: 'user-1',
-              email: 'owner@hms.local',
-              display_name: 'HMS Owner',
-              facility_id: 'facility-1',
-              facility_code: 'HMS',
-              active_profile: 'hospital',
-              permissions: ['system.deployment_capabilities.view', 'patient.demographics.view'],
-              features: ['patient_chronicle'],
-              patient_visibility: ['demographics'],
-              session_version: 1,
-              permission_version: 1,
-              password_change_required: false,
-            },
-          },
-          meta: {},
-        }),
-        {
-          status: 200,
-          headers: { 'content-type': 'application/json' },
-        },
-      ),
-    );
-
+    const raw = loginToken(['system.deployment_capabilities.view', 'patient.demographics.view']);
+    globalThis.fetch.mockResolvedValueOnce(json(raw));
     const signal = new AbortController().signal;
     const response = await authApi.login('owner@hms.local', 'secret-password', 'HMS', { signal });
 
     expect(globalThis.fetch).toHaveBeenCalledWith(
       'http://localhost:8080/api/v2/auth/login',
       expect.objectContaining({
-        method: 'POST',
-        credentials: 'include',
-        body: JSON.stringify({
-          email: 'owner@hms.local',
-          password: 'secret-password',
-          facility_code: 'HMS',
-        }),
+        method: 'POST', credentials: 'include',
+        body: JSON.stringify({ email: 'owner@hms.local', password: 'secret-password', facility_code: 'HMS' }),
         signal,
       }),
     );
     expect(response).toMatchObject({
-      access: 'access-token-123',
-      session_idle_expires_at: '2026-06-01T12:30:00Z',
-      session_absolute_expires_at: '2026-06-01T20:00:00Z',
+      access: raw.access_token,
+      session_idle_expires_at: raw.session_idle_expires_at,
+      session_absolute_expires_at: raw.session_absolute_expires_at,
       user: {
-        id: 'user-1',
-        email: 'owner@hms.local',
-        user_type: 'admin',
-        first_name: 'HMS',
-        last_name: 'Owner',
-        facility_code: 'HMS',
-        admin_access: {
-          capabilities: ['system.deployment_capabilities.view', 'patient.demographics.view'],
-        },
+        id: raw.user.id, email: 'owner@hms.local', user_type: 'doctor',
+        first_name: 'HMS', last_name: 'Owner', facility_code: 'HMS',
+        admin_access: { capabilities: ['system.deployment_capabilities.view', 'patient.demographics.view'] },
       },
       access_context: {
         permissions: ['system.deployment_capabilities.view', 'patient.demographics.view'],
-        features: ['patient_chronicle'],
-        patient_visibility: ['demographics'],
-        active_profile: 'hospital',
+        features: ['patient_chronicle'], patient_visibility: ['demographics'], active_profile: 'hospital',
       },
       password_change_required: false,
     });
   });
 
   it('uses the configured default facility when the existing login form does not pass one', async () => {
-    globalThis.fetch.mockResolvedValueOnce(
-      new Response(
-        JSON.stringify({
-          data: {
-            status: 'authenticated',
-            access_token: 'access-token-123',
-            token_type: 'Bearer',
-            expires_in_seconds: 600,
-            user: {
-              id: 'user-1',
-              email: 'owner@hms.local',
-              display_name: 'HMS Owner',
-              facility_id: 'facility-1',
-              facility_code: 'HMS',
-              active_profile: 'hospital',
-              permissions: ['patient.demographics.view'],
-              features: ['patient_chronicle'],
-              patient_visibility: ['demographics'],
-              session_version: 1,
-              permission_version: 1,
-              password_change_required: false,
-            },
-          },
-          meta: {},
-        }),
-        {
-          status: 200,
-          headers: { 'content-type': 'application/json' },
-        },
-      ),
-    );
-
+    globalThis.fetch.mockResolvedValueOnce(json(loginToken()));
     await authApi.login('owner@hms.local', 'secret-password');
-
     const [, request] = globalThis.fetch.mock.calls[0];
-    expect(JSON.parse(request.body)).toMatchObject({
-      facility_code: 'HMS',
-    });
+    expect(JSON.parse(request.body)).toMatchObject({ facility_code: 'HMS' });
+  });
+
+  it.each(['missing clock', 'opaque bearer'])('rejects an incomplete current login response: %s', async defect => {
+    const raw = loginToken();
+    if (defect === 'missing clock') delete raw.user.auth_security.auth_clock;
+    else raw.access_token = 'synthetic-opaque-invalid-bearer';
+    globalThis.fetch.mockResolvedValueOnce(json(raw));
+    await expect(authApi.login('owner@hms.local', 'secret-password')).rejects.toMatchObject({ code: 'auth_proof_invalid' });
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
   });
 
   it('rejects Rust V2 login locally when no facility code is available', async () => {

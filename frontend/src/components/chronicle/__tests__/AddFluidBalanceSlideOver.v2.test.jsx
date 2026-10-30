@@ -7,10 +7,10 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import { configureV2ApiClient, __resetV2ApiClientForTests, getV2ClientScopeKey } from '@/lib/api/v2/client';
 import AddFluidBalanceSlideOver from '../AddFluidBalanceSlideOver';
 import { AuthContext } from '@/lib/auth/AuthContext';
-import { ReadOnlyModeProvider } from '@/contexts/ReadOnlyModeContext';
+import { ModeledReadOnlyModeProvider as ReadOnlyModeProvider } from '@/tests/networkClockModel';
 import { ChronicleClinicalPermissionsContext } from '@/features/patients/chronicle/clinicalPermissions';
 import { authorizationIdentity } from '@/shared/lib/authorizationScope';
-import { bindNetworkAccessGuard } from '@/lib/api/v2/networkAccessGuard';
+import { bindModeledNetworkGuard as bindNetworkAccessGuard } from '@/tests/networkClockModel';
 import { activateWriteUncertainty } from '@/lib/api/v2/writeUncertainty';
 import ChronicleWorkspaceHost from '@/features/patients/components/ChronicleWorkspaceHost';
 const ids = Array.from({ length: 8 }, (_, i) => `00000000-0000-4000-8000-${String(i + 1).padStart(12, '0')}`);

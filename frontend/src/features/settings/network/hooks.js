@@ -1,3 +1,4 @@
+import { clockNow } from '@/shared/lib/serverClock';
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import { clearWorkflowContinuity, getWorkflowContinuity, stagedNetworkDecision, subscribeWorkflowContinuity } from '@/shared/lib/workflowContinuity';
@@ -15,9 +16,9 @@ export function useNetworkAccessDecision(enabled = true) {
   const proof = useNetworkScope();
   const continuity = useSyncExternalStore(subscribeWorkflowContinuity, getWorkflowContinuity, () => null);
   const [, tick] = useState(0);
-  useEffect(() => { if (!continuity) return; const timer = window.setTimeout(() => tick((value) => value + 1), Math.max(0, continuity.stagedUntil - Date.now())); return () => window.clearTimeout(timer); }, [continuity]);
+  useEffect(() => { if (!continuity) return; const timer = window.setTimeout(() => tick((value) => value + 1), Math.max(0, continuity.stagedUntil - clockNow())); return () => window.clearTimeout(timer); }, [continuity]);
   const query = useQuery({ queryKey: networkKeys.current(proof), queryFn: ({ signal }) => networkApi.current({ signal }), enabled,
-    retry: false, staleTime: 0, gcTime: 0, refetchOnMount: 'always', refetchOnWindowFocus: 'always', refetchInterval: () => document.hidden ? false : 15000 });
+    structuralSharing: false, retry: false, staleTime: 0, gcTime: 0, refetchOnMount: 'always', refetchOnWindowFocus: 'always', refetchInterval: () => document.hidden ? false : 15000 });
   const expired = useNetworkDecisionExpired(query.data);
   const staged = stagedNetworkDecision(proof);
   const stagedConfirmed = Boolean(staged && !expired && !query.isError && ['policy_version', 'classification', 'provenance', 'mode', 'access_allowed', 'read_only', 'reauth_required'].every((key) => query.data?.[key] === staged[key]));
@@ -29,5 +30,5 @@ export function useNetworkAccessDecision(enabled = true) {
 export function useNetworkPolicy(enabled) {
   const proof = useNetworkScope();
   return useQuery({ queryKey: networkKeys.policy(proof), queryFn: ({ signal }) => networkApi.policy({ signal }), enabled,
-    retry: false, staleTime: 0, gcTime: 0, refetchOnMount: 'always', refetchOnWindowFocus: true });
+    structuralSharing: false, retry: false, staleTime: 0, gcTime: 0, refetchOnMount: 'always', refetchOnWindowFocus: true });
 }

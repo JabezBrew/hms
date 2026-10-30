@@ -171,4 +171,9 @@ export async function storageLocationCommandRecoveryCandidate() {
   const store = manualStore(), origin = store.current();
   return (await import('./writeScopeRouter')).storageLocationRecoveryCandidate(store, origin);
 }
+// Only a current singleton original service command UUID survives reload.
+export async function bookableServiceCommandRecoveryCandidate() {
+  const store = manualStore(), origin = store.current();
+  return (await import('./writeScopeRouter')).bookableServiceRecoveryCandidate(store, origin);
+}
 export function resetWriteUncertaintyForTests({ preserveStorage = false } = {}) { store = undefined; fault = false; currentScope = null; currentContext = null; activation += 1; active.clear(); serial = Promise.resolve(); if (!preserveStorage) sessionStorage.removeItem(WRITE_UNCERTAINTY_KEY); publish(); }

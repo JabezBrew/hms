@@ -18,6 +18,7 @@ pub enum AppointmentStatus {
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ClinicSessionOwnerType {
+    Facility,
     Practitioner,
     Team,
     Clinic,

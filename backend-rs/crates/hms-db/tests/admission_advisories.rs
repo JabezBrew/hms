@@ -46,6 +46,8 @@ async fn actor(db: &TestDb, user: Uuid, patient: Uuid, all: bool) -> AdvisoryAct
         user_id: user,
         request_id: None,
         authorization: hms_db::clinical::prescription_courses::PrescriptionAuthorization {
+            ordinary_reauth_required: false,
+            original_password_verified_at: None,
             resolved_network_policy_version: Some(
                 hms_db::network::get_policy(db.pool(), db.facility_id())
                     .await

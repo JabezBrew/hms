@@ -19,7 +19,7 @@ import { clearWorkflowContinuity, getWorkflowContinuity } from '@/shared/lib/wor
 import { requestAuthorizationScope } from '@/shared/lib/authorizationScope';
 import { dismissFactorRequirement, publishFactorRequirement } from '@/shared/lib/factorRequiredSignal';
 import { caseRow, context, patientId, caseId } from '@/features/admissions/advisory/__tests__/fixtures';
-import { credential, failure, json, jwtFor, networkDecision, options, pending, token } from './fixtures';
+import { credential, failure, json, jwtFor, networkDecision, options, pending, token, fixtureClock, ordinaryToken } from './fixtures';
 
 const runtime = window.__HMS_RUNTIME_CONFIG__;
 const proof = { can_view_full_clinical: true, can_add_note: true, can_record_vitals: true, can_prescribe: true };
@@ -43,7 +43,7 @@ function Harness({ workspace }) {
 }
 async function mount(workspace = 'note') {
   render(<QueryClientProvider client={queryClient}><MemoryRouter><HelmetProvider><BreadcrumbProvider><AuthProvider><Harness workspace={workspace} /></AuthProvider></BreadcrumbProvider></HelmetProvider></MemoryRouter></QueryClientProvider>);
-  fireEvent.click(screen.getByText('Begin test sign-in'));
+  fireEvent.click(await screen.findByText('Begin test sign-in'));
   if (!ordinary) fireEvent.click(await screen.findByText('Use an existing passkey'));
   await screen.findByText('Synthetic authorized clinical page');
 }
@@ -61,7 +61,7 @@ beforeEach(() => {
   window.__HMS_RUNTIME_CONFIG__ = { apiMode: 'rust-v2', v2ApiBaseUrl: 'http://localhost/api/v2', defaultFacilityCode: 'HMS' };
   vi.stubGlobal('crypto', webcrypto); vi.stubGlobal('PublicKeyCredential', class {}); vi.stubGlobal('navigator', { ...navigator, credentials: { get: vi.fn().mockResolvedValue(credential()) } });
   for (const key of pointerNames) Object.defineProperty(Element.prototype, key, { configurable: true, value: key === 'hasPointerCapture' ? () => false : () => {} });
-  ordinary = false; initial = authenticated(); upgraded = structuredClone(initial); upgraded.user.auth_security.assurance_version += 1; upgraded.user.auth_security.session_assurance.verified_at = new Date(Date.now()).toISOString(); upgraded.access_token = jwtFor(upgraded, { auth_time: Math.floor(Date.now() / 1000) });
+  ordinary = false; initial = authenticated(); upgraded = structuredClone(initial); upgraded.user.auth_security.assurance_version += 1; upgraded.user.auth_security.session_assurance.verified_at = new Date(Date.now()).toISOString(); upgraded.access_token = jwtFor(upgraded, { auth_time: Math.floor(Date.now() / 1000) }); upgraded.user.auth_security.auth_clock = fixtureClock(Date.now(), upgraded.access_token);
   afterProof = networkDecision(); newReads = 0; heldReads = []; posts = []; lost = false; pendingWrite = false; finishRequest = null; finishRefresh = null;
   vi.stubGlobal('fetch', vi.fn(async (input, request = {}) => {
     const url = new URL(input); const path = url.pathname;
@@ -125,7 +125,7 @@ it.each(['note', 'fluids', 'admissionAdvisory'])('preserves the actual %s Host d
 it('retains a real fluid unknown UUID and exact body through proof without automatically replaying it', async () => {
   await mount('fluids'); await fill('fluids'); lost = true; fireEvent.click(screen.getByText('Record fluid observation')); await screen.findByText('Retry exact observation'); const original = structuredClone(posts[0]); expect(getWriteUncertaintySnapshot().entries).toHaveLength(1);
   await confirm(); expect(posts).toHaveLength(1); expect(screen.getByText('Retry exact observation')).toBeInTheDocument(); expect(screen.getByDisplayValue(privateDraft)).toBeDisabled();
-  await act(async () => heldReads.splice(0).forEach((waiting) => waiting.resolve(json(networkDecision())))); lost = false; fireEvent.click(screen.getByText('Retry exact observation')); await screen.findByText('Fluid observation saved.'); expect(posts).toHaveLength(2); expect(posts[1]).toEqual(original); expect(getWriteUncertaintySnapshot().entries).toHaveLength(0);
+  await act(async () => heldReads.splice(0).forEach((waiting) => waiting.resolve(json(networkDecision())))); lost = false; fireEvent.click(screen.getByText('Retry exact observation')); await waitFor(() => expect(posts).toHaveLength(2)); await screen.findByText('Fluid observation saved.'); expect(posts).toHaveLength(2); expect(posts[1]).toEqual(original); expect(getWriteUncertaintySnapshot().entries).toHaveLength(0);
 });
 it('aborts an old pending fluid request on proof upgrade and retains its exact uncertain command', async () => {
   await mount('fluids'); await fill('fluids'); pendingWrite = true; fireEvent.click(screen.getByText('Record fluid observation')); await waitFor(() => expect(posts).toHaveLength(1)); const original = structuredClone(posts[0]); const signal = fetch.mock.calls.find(([url, request]) => url.endsWith('/fluid-observations') && request.method === 'POST')[1].signal;
@@ -159,7 +159,7 @@ function ordinaryProof() {
   ordinary = true;
   initial.user.auth_security = token().user.auth_security;
   upgraded = structuredClone(initial); upgraded.user.auth_security.assurance_version += 1;
-  upgraded.access_token = jwtFor(upgraded, { auth_time: Math.floor(Date.now() / 1000) });
+  upgraded.access_token = jwtFor(upgraded, { auth_time: Math.floor(Date.now() / 1000) }); upgraded.user.auth_security.auth_clock = fixtureClock(Date.now(), upgraded.access_token); ordinaryToken(upgraded);
 }
 it('retains an actual Chronicle note draft through ordinary password proof and separately confirmed network access', async () => {
   ordinaryProof(); await mount('note'); await fill('note'); await confirm();

@@ -31,8 +31,8 @@ def deployment_repository(tmp_path: Path) -> Path:
     return repository
 
 
-def write_dirty_marker() -> Path:
-    marker = REPO_ROOT / f'.deploy-ignore-dirty-test-{os.getpid()}'
+def write_dirty_marker(repository: Path) -> Path:
+    marker = repository / f'.deploy-ignore-dirty-test-{os.getpid()}'
     marker.write_text('dirty\n', encoding='utf-8')
     return marker
 
@@ -186,11 +186,12 @@ def test_deploy_remote_rejects_invalid_timing_env():
     assert 'GCP_REMOTE_DEPLOY_POLL_INTERVAL_SECONDS must be greater than zero' in result.stderr
 
 
-def test_deploy_remote_dry_run_refuses_dirty_checkout_by_default():
-    marker = write_dirty_marker()
+def test_deploy_remote_dry_run_refuses_dirty_checkout_by_default(tmp_path):
+    repository = deployment_repository(tmp_path)
+    marker = write_dirty_marker(repository)
     try:
         result = subprocess.run(
-            [*DEPLOY_CMD, 'staging', '--dry-run'],
+            ['/bin/sh', str(repository / 'deploy'), 'staging', '--dry-run'],
             check=False,
             capture_output=True,
             text=True,
@@ -204,11 +205,12 @@ def test_deploy_remote_dry_run_refuses_dirty_checkout_by_default():
     assert 'Dirty checkout has' in result.stderr
 
 
-def test_deploy_remote_refuses_dirty_checkout_by_default():
-    marker = write_dirty_marker()
+def test_deploy_remote_refuses_dirty_checkout_by_default(tmp_path):
+    repository = deployment_repository(tmp_path)
+    marker = write_dirty_marker(repository)
     try:
         result = subprocess.run(
-            [*DEPLOY_CMD, 'staging'],
+            ['/bin/sh', str(repository / 'deploy'), 'staging'],
             check=False,
             capture_output=True,
             text=True,

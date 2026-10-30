@@ -1,4 +1,7 @@
-import { useState, useEffect, useMemo } from 'react';
+import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
+import { useSelectedService } from '../../services/useSelectedService';
+import { serviceName } from '../../services/presentation';
+import { useState, useEffect, useMemo, useLayoutEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useForm, useWatch } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -53,8 +56,10 @@ export function useAppointmentCreateController() {
   const debouncedPatientQuery = useDebounce(patientSearchQuery, 300);
   const debouncedPractitionerQuery = useDebounce(practitionerSearchQuery, 300);
   const {
-    data: appointmentTypes = EMPTY_APPOINTMENT_TYPES,
+    data: catalogAppointmentTypes = EMPTY_APPOINTMENT_TYPES,
     isError: appointmentTypesError,
+    error: appointmentTypesFailure,
+    refetch: refreshCatalog,
     isLoading: appointmentTypesLoading,
   } = useAppointmentTypes();
   const {
@@ -90,6 +95,23 @@ export function useAppointmentCreateController() {
     ],
   });
 
+  const serviceEligibility = useSelectedService(watchAppointmentTypeId);
+  const catalogUnavailable = appointmentTypesError || Boolean(appointmentTypesFailure);
+  const appointmentTypes = useMemo(() => {
+    if (!isRustV2ApiMode()) return catalogAppointmentTypes;
+    if (serviceEligibility.denied || catalogUnavailable) return [];
+    const rows = catalogAppointmentTypes.filter(type => type.is_active === true);
+    const selected = serviceEligibility.service;
+    return selected?.is_active === true && selected.id === watchAppointmentTypeId && !rows.some(type => type.id === selected.id) ? [...rows, selected] : rows;
+  }, [catalogAppointmentTypes, catalogUnavailable, serviceEligibility.denied, serviceEligibility.service, watchAppointmentTypeId]);
+  useLayoutEffect(() => {
+    if (isRustV2ApiMode() && (serviceEligibility.unavailable || catalogUnavailable)) {
+      setSelectedSlot(null);
+      form.setValue('slotId', '', { shouldDirty: true });
+      form.setValue('overbookReason', '', { shouldDirty: true });
+    }
+  }, [form, serviceEligibility.unavailable, catalogUnavailable, watchAppointmentTypeId]);
+
   const selectedClinic = useMemo(
     () => clinics.find((clinic) => clinic.id === watchClinicId),
     [clinics, watchClinicId]
@@ -110,7 +132,7 @@ export function useAppointmentCreateController() {
   );
   const progress = useMemo(
     () => getAppointmentCreateProgress({
-      appointmentTypeId: watchAppointmentTypeId,
+      appointmentTypeId: !isRustV2ApiMode() || (serviceEligibility.ready && !catalogUnavailable) ? watchAppointmentTypeId : '',
       clinicId: watchClinicId,
       patientId: watchPatientId,
       practitionerId: watchPractitionerId,
@@ -119,6 +141,8 @@ export function useAppointmentCreateController() {
     }),
     [
       requiresPractitioner,
+      serviceEligibility.ready,
+      catalogUnavailable,
       watchAppointmentTypeId,
       watchClinicId,
       watchPatientId,
@@ -135,7 +159,10 @@ export function useAppointmentCreateController() {
     [practitioners, watchPractitionerId]
   );
   const selectedTypeName = useMemo(
-    () => getSelectedAppointmentTypeName(watchAppointmentTypeId, appointmentTypes),
+    () => {
+      const selected = appointmentTypes.find(type => type.id === watchAppointmentTypeId);
+      return isRustV2ApiMode() && selected ? serviceName(selected) : getSelectedAppointmentTypeName(watchAppointmentTypeId, appointmentTypes);
+    },
     [appointmentTypes, watchAppointmentTypeId]
   );
 
@@ -266,6 +293,7 @@ export function useAppointmentCreateController() {
   };
 
   const handleSlotSelect = (slot) => {
+    if (isRustV2ApiMode() && (!serviceEligibility.ready || catalogUnavailable)) return;
     setSelectedSlot(slot);
     form.setValue('slotId', slot.id, { shouldValidate: true, shouldDirty: true });
     if (!slotRequiresOverbookReason(slot)) {
@@ -274,6 +302,7 @@ export function useAppointmentCreateController() {
   };
 
   const onSubmit = async (data) => {
+    if (isRustV2ApiMode() && (!serviceEligibility.ready || catalogUnavailable)) { toast.error('Confirm an active service before booking.'); return; }
     if (!selectedSlot) {
       toast.error('Please select a time slot');
       return;
@@ -339,6 +368,7 @@ export function useAppointmentCreateController() {
   };
 
   const formReady =
+    (!isRustV2ApiMode() || (serviceEligibility.ready && !catalogUnavailable)) &&
     Boolean(watchPatientId) &&
     Boolean(watchClinicId) &&
     Boolean(watchAppointmentTypeId) &&
@@ -349,6 +379,10 @@ export function useAppointmentCreateController() {
   const navigateToAppointments = () => navigate('/appointments');
 
   return {
+    serviceAvailable: serviceEligibility.ready && !catalogUnavailable,
+    canRefreshServices: serviceEligibility.canRead,
+    refreshServiceChoices: () => serviceEligibility.canRead ? Promise.all([refreshCatalog?.(), serviceEligibility.refresh()]) : Promise.resolve(),
+    serviceMessage: catalogUnavailable ? 'Service access could not be confirmed. Refresh service choices before a new booking. Existing appointments have not been cancelled.' : serviceEligibility.message,
     appointmentTypes,
     clearSelectedTime,
     clinics,

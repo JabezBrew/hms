@@ -86,6 +86,8 @@ impl Fixture {
             user_id: db.owner_user_id(),
             request_id: None,
             authorization: hms_db::clinical::prescription_courses::PrescriptionAuthorization {
+                ordinary_reauth_required: false,
+                original_password_verified_at: None,
                 session_id: session,
                 session_version: sv,
                 permission_version: pv,

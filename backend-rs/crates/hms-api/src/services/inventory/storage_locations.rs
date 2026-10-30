@@ -29,7 +29,7 @@ impl StorageLocationService {
             self.state.facility_id(),
             PermissionCode::InventoryManage,
         )?;
-        if !ctx.reauth.is_fresh_at(Utc::now()) {
+        if !ctx.reauth_is_fresh_at(Utc::now()) {
             return Err(ApiError::forbidden(
                 "reauth_required",
                 "Confirm your current credentials before maintaining storage locations.",
@@ -39,10 +39,10 @@ impl StorageLocationService {
             facility_id: self.state.facility_id(),
             user_id: ctx.user_id,
             request_id: ctx.request_id.clone(),
-            authorization: crate::services::clinical::prescription_courses::authorization(
+            authorization: crate::services::clinical::prescription_courses::ordinary_authorization(
                 ctx,
                 deadline.min(ctx.reauth.required_after),
-            ),
+            )?,
         })
     }
     pub async fn command(

@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { configureV2ApiClient, getV2ClientScopeKey, v2Request, __resetV2ApiClientForTests } from '@/lib/api/v2/client';
-import { bindNetworkAccessGuard, waitForNetworkWriteAccess } from '@/lib/api/v2/networkAccessGuard';
+import { waitForNetworkWriteAccess } from '@/lib/api/v2/networkAccessGuard';
+import { bindModeledNetworkGuard as bindNetworkAccessGuard } from '@/tests/networkClockModel';
 import { networkDecision } from './fixtures';
 import { webcrypto } from 'node:crypto';
 

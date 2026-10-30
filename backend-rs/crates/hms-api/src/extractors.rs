@@ -171,6 +171,7 @@ pub(crate) async fn resolve_request(
         return Ok(resolved.clone());
     }
     let total_started_at = Instant::now();
+    let host_admitted_at = Utc::now();
     let request_id = parts
         .extensions
         .get::<RequestId>()
@@ -191,51 +192,79 @@ pub(crate) async fn resolve_request(
     let facts_elapsed = facts_started_at.elapsed();
 
     let assemble_started_at = Instant::now();
-    let authorization_deadline = context_facts.session_expires_at.min(
-        DateTime::<Utc>::from_timestamp(claims.exp as i64, 0).ok_or_else(ApiError::unauthorized)?,
-    );
+    let clock = context_facts.authorization_clock;
+    clock.now().ok_or_else(ApiError::unauthorized)?;
+    let signed_exp =
+        DateTime::<Utc>::from_timestamp(claims.exp as i64, 0).ok_or_else(ApiError::unauthorized)?;
+    let jwt_remaining = signed_exp
+        .signed_duration_since(host_admitted_at)
+        .checked_sub(
+            &chrono::Duration::from_std(total_started_at.elapsed())
+                .map_err(|_| ApiError::unauthorized())?,
+        )
+        .filter(|remaining| *remaining > chrono::Duration::zero())
+        .ok_or_else(ApiError::unauthorized)?;
+    let mapped_jwt_deadline = clock
+        .observed_at()
+        .checked_add_signed(jwt_remaining)
+        .ok_or_else(ApiError::unauthorized)?;
+    let authorization_deadline = context_facts
+        .session_expires_at
+        .min(signed_exp)
+        .min(mapped_jwt_deadline);
     let password_verified_at = context_facts.password_verified_at;
-    let user = context_facts.user;
+    let mut user = context_facts.user;
+    let issuer_window = crate::auth_clock::window(&claims).ok_or_else(ApiError::unauthorized)?;
+    let observation = crate::auth_clock::observation(clock.observed_at(), Some(issuer_window))
+        .ok_or_else(ApiError::unauthorized)?;
+    user.auth_security.auth_clock = Some(observation.clone());
 
     reject_stale_claims(&user, &claims)?;
 
     let enabled_features = enabled_features(&context_facts.feature_flags, &user);
-    let mut reauth = access_token_reauth(&claims);
-    if let Some(at) = reauth.verified_at {
-        reauth = ReauthState::from_authentication_time(at.min(password_verified_at));
-    }
+    let reauth = if context_facts.password_verified_at_admitted {
+        bounded_password_reauth(
+            access_token_reauth(&claims),
+            password_verified_at,
+            clock.observed_at(),
+        )
+    } else {
+        ReauthState::missing(clock.observed_at())
+    };
     if user.password_change_required && !password_change_lifecycle(&parts.method, &route_pattern) {
         return Err(ApiError::forbidden(
             "password_change_required",
             "Change your current password before opening other workflows.",
         ));
     }
-    let network = match crate::network_access::facts(parts, state, &reauth).await {
-        Ok(value) => value,
-        Err(_)
-            if route_pattern != "/api/v2/auth/network-access"
-                && crate::middleware::network::lifecycle_exception(
-                    &parts.method,
-                    &route_pattern,
-                ) =>
-        {
-            // Network-policy storage cannot prevent a caller from securing or
-            // ending their own authenticated session. It grants no data access.
-            let client = crate::network_access::client_from_parts(parts, state);
-            let policy = hms_db::network::unconfigured_policy();
-            let mut decision =
-                crate::network_access::evaluate(client, &policy, &reauth, Utc::now());
-            decision.access_allowed = false;
-            crate::network_access::RequestNetworkFacts {
-                client,
-                policy,
-                decision,
+    let mut network =
+        match crate::network_access::facts_with_clock(parts, state, &reauth, Some(clock)).await {
+            Ok(value) => value,
+            Err(_)
+                if route_pattern != "/api/v2/auth/network-access"
+                    && crate::middleware::network::lifecycle_exception(
+                        &parts.method,
+                        &route_pattern,
+                    ) =>
+            {
+                // Network-policy storage cannot prevent a caller from securing or
+                // ending their own authenticated session. It grants no data access.
+                let client = crate::network_access::client_from_parts(parts, state);
+                let policy = hms_db::network::unconfigured_policy();
+                let mut decision =
+                    crate::network_access::evaluate_with_clock(client, &policy, &reauth, clock)?;
+                decision.access_allowed = false;
+                crate::network_access::RequestNetworkFacts {
+                    client,
+                    policy,
+                    decision,
+                }
             }
-        }
-        Err(error) => return Err(error),
-    };
+            Err(error) => return Err(error),
+        };
+    network.decision.auth_clock = Some(observation);
     let offsite = crate::network_access::offsite_state(&network.decision);
-    if Utc::now() >= authorization_deadline {
+    if clock.now().ok_or_else(ApiError::unauthorized)? >= authorization_deadline {
         return Err(ApiError::unauthorized());
     }
     let context = hms_access::RequestContext::new(
@@ -246,6 +275,9 @@ pub(crate) async fn resolve_request(
         offsite,
         reauth,
     )
+    .with_authorization_clock(clock)
+    .with_password_verified_at(password_verified_at)
+    .with_issuer_token_window(issuer_window)
     .with_active_authorities(context_facts.active_authorities)
     .with_authorization_deadline(authorization_deadline)
     .with_resolved_network_policy_version(network.policy.version);
@@ -347,6 +379,20 @@ fn enabled_features(feature_flags: &HashMap<FeatureKey, bool>, user: &AuthUser) 
         .collect()
 }
 
+fn bounded_password_reauth(
+    proof: ReauthState,
+    original: DateTime<Utc>,
+    observed: DateTime<Utc>,
+) -> ReauthState {
+    if original > observed {
+        return ReauthState::missing(observed);
+    }
+    proof
+        .verified_at
+        .map(|at| ReauthState::from_authentication_time(at.min(original)))
+        .unwrap_or_else(|| ReauthState::missing(observed))
+}
+
 fn access_token_reauth(claims: &AccessClaims) -> ReauthState {
     claims
         .auth_time
@@ -375,4 +421,37 @@ fn password_change_lifecycle(method: &axum::http::Method, path: &str) -> bool {
                 | "/api/v2/auth/sessions/:session_id/revoke"
         )
     )
+}
+
+#[cfg(test)]
+mod password_clock_tests {
+    use super::*;
+    #[test]
+    fn high_resolution_future_cannot_be_hidden_by_whole_second_minimum() {
+        let second = DateTime::<Utc>::from_timestamp(1_700_000_000, 0).unwrap();
+        let database = second + chrono::Duration::milliseconds(100);
+        let original = second + chrono::Duration::milliseconds(200);
+        let proof = bounded_password_reauth(
+            ReauthState::from_authentication_time(second),
+            original,
+            database,
+        );
+        assert!(
+            !proof.is_fresh_at(database),
+            "future original DB password must remain ineligible despite JWT flooring"
+        );
+    }
+    #[test]
+    fn aligned_whole_second_minimum_preserves_old_jwt_conservative_age() {
+        let second = DateTime::<Utc>::from_timestamp(1_700_000_000, 0).unwrap();
+        let database = second + chrono::Duration::milliseconds(900);
+        let original = second + chrono::Duration::milliseconds(200);
+        let proof = bounded_password_reauth(
+            ReauthState::from_authentication_time(second),
+            original,
+            database,
+        );
+        assert!(proof.is_fresh_at(database));
+        assert_eq!(proof.verified_at, Some(second));
+    }
 }

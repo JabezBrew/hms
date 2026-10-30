@@ -74,6 +74,9 @@ impl AdmissionAdvisoriesService {
             user_id: ctx.user_id,
             request_id: Some(ctx.request_id.clone()),
             authorization: hms_db::clinical::prescription_courses::PrescriptionAuthorization {
+                ordinary_reauth_required: ctx.offsite
+                    == hms_access::OffsiteState::OffsiteFreshReauth,
+                original_password_verified_at: ctx.password_verified_at,
                 resolved_network_policy_version: ctx.resolved_network_policy_version,
                 session_id: ctx.session_id,
                 session_version: ctx.session_version,
@@ -242,6 +245,8 @@ pub(super) fn closure_actor(
         user_id: ctx.user_id,
         request_id: Some(ctx.request_id.clone()),
         authorization: hms_db::clinical::prescription_courses::PrescriptionAuthorization {
+            ordinary_reauth_required: ctx.offsite == hms_access::OffsiteState::OffsiteFreshReauth,
+            original_password_verified_at: ctx.password_verified_at,
             resolved_network_policy_version: ctx.resolved_network_policy_version,
             session_id: ctx.session_id,
             session_version: ctx.session_version,

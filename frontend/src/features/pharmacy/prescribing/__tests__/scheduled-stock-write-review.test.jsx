@@ -5,7 +5,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { createPrescription } from '@/hooks/usePrescriptionMutations';
 import { useDispenseMedication } from '@/hooks/useNursingQueries';
 import { __resetV2ApiClientForTests, configureV2ApiClient, getV2ClientScopeKey, v2Request } from '@/lib/api/v2/client';
-import { bindNetworkAccessGuard } from '@/lib/api/v2/networkAccessGuard';
+import { bindModeledNetworkGuard as bindNetworkAccessGuard } from '@/tests/networkClockModel';
 import { activateWriteUncertainty, getWriteUncertaintySnapshot, resetWriteUncertaintyForTests, WRITE_UNCERTAINTY_KEY } from '@/lib/api/v2/writeUncertainty';
 import { patientId, prescriptionId, requestId, user } from './fixtures';
 const principal = { id: user.id, facility_id: user.accessContext.facility_id, active_profile: 'hospital' };

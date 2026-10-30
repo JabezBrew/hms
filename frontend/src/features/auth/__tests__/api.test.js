@@ -2,18 +2,51 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { confirmCurrentPassword, factorApi, grantRequest } from '../api';
 import { loginResult } from '../model';
 import { __resetV2ApiClientForTests, configureV2ApiClient } from '@/lib/api/v2/session';
-import { bindNetworkAccessGuard } from '@/lib/api/v2/networkAccessGuard';
-import { challengeId, failure, json, keyId, pending, token } from './fixtures';
-let runtime;
-beforeEach(() => { runtime = window.__HMS_RUNTIME_CONFIG__; window.__HMS_RUNTIME_CONFIG__ = { apiMode: 'rust-v2', v2ApiBaseUrl: 'http://localhost/api/v2' }; __resetV2ApiClientForTests(); configureV2ApiClient({ getAccessToken: () => 'synthetic-stale-bearer', canRefreshSession: () => true }); vi.stubGlobal('fetch', vi.fn()); });
+import { bindModeledNetworkGuard as bindNetworkAccessGuard } from '@/tests/networkClockModel';
+import { challengeId, failure, json, keyId, pending, token, ordinaryToken } from './fixtures';
+let runtime, accessToken;
+beforeEach(() => { runtime = window.__HMS_RUNTIME_CONFIG__; window.__HMS_RUNTIME_CONFIG__ = { apiMode: 'rust-v2', v2ApiBaseUrl: 'http://localhost/api/v2' }; __resetV2ApiClientForTests(); accessToken = token().access_token; configureV2ApiClient({ getAccessToken: () => accessToken, canRefreshSession: () => true }); vi.stubGlobal('fetch', vi.fn()); });
 afterEach(() => { __resetV2ApiClientForTests(); window.__HMS_RUNTIME_CONFIG__ = runtime; vi.unstubAllGlobals(); });
 describe('restricted login and genuine factor adapters', () => {
-  it('uses the generated ordinary operation with exact password bytes and no extra selectors', async () => { fetch.mockResolvedValue(json(token())); const signal = new AbortController().signal; await confirmCurrentPassword(' Synthetic exact password ', { signal }); expect(fetch).toHaveBeenCalledTimes(1); const [url, request] = fetch.mock.calls[0]; expect(url).toBe('http://localhost/api/v2/auth/reauthenticate'); expect(request).toMatchObject({ method: 'POST', signal }); expect(JSON.parse(request.body)).toEqual({ current_password: ' Synthetic exact password ' }); });
+  it('uses the generated ordinary operation with exact password bytes and no extra selectors', async () => { fetch.mockResolvedValue(json(ordinaryToken(token()))); const signal = new AbortController().signal; await confirmCurrentPassword(' Synthetic exact password ', { signal }); expect(fetch).toHaveBeenCalledTimes(1); const [url, request] = fetch.mock.calls[0]; expect(url).toBe('http://localhost/api/v2/auth/reauthenticate'); expect(request).toMatchObject({ method: 'POST', signal }); expect(JSON.parse(request.body)).toEqual({ current_password: ' Synthetic exact password ' }); });
+  it('keeps the exact held bearer current when wall time crosses a whole second during confirmation', async () => {
+    let now = Math.floor(Date.now() / 1000) * 1000 + 999;
+    const clock = vi.spyOn(Date, 'now').mockImplementation(() => now);
+    try {
+      accessToken = token().access_token;
+      fetch.mockImplementation(async () => { now += 2; return json(ordinaryToken(token())); });
+      await expect(confirmCurrentPassword('Synthetic current password')).resolves.toMatchObject({ result: { status: 'authenticated' } });
+      expect(fetch).toHaveBeenCalledTimes(1);
+    } finally { clock.mockRestore(); }
+  });
+  it('rejects an actual bearer replacement during that same whole-second crossing', async () => {
+    let now = Math.floor(Date.now() / 1000) * 1000 + 999;
+    const clock = vi.spyOn(Date, 'now').mockImplementation(() => now);
+    try {
+      accessToken = token().access_token;
+      fetch.mockImplementation(async () => { now += 2; const result = ordinaryToken(token()); accessToken = result.access_token; return json(result); });
+      await expect(confirmCurrentPassword('Synthetic current password')).rejects.toMatchObject({ name: 'AbortError' });
+      expect(fetch).toHaveBeenCalledTimes(1);
+    } finally { clock.mockRestore(); }
+  });
+  it('keeps the actual login fixture coherent when construction crosses a whole-second tick', async () => {
+    const base = Math.floor(Date.now() / 1000) * 1000 + 999; let reads = 0;
+    const clock = vi.spyOn(Date, 'now').mockImplementation(() => base + (reads++ ? 2 : 0));
+    try {
+      const raw = token();
+      fetch.mockResolvedValueOnce(json(raw));
+      await expect(factorApi.login({ email: 'synthetic@example.test', password: 'Synthetic password', facility_code: 'HMS' })).resolves.toMatchObject({ status: 'authenticated' });
+      const claims = JSON.parse(atob(raw.access_token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
+      expect(Date.parse(raw.user.auth_security.auth_clock.issuer_observed_at)).toBeGreaterThanOrEqual(claims.iat * 1000);
+      expect(claims.exp - claims.iat).toBe(600);
+      expect(fetch).toHaveBeenCalledTimes(1);
+    } finally { clock.mockRestore(); }
+  });
   it.each([401, 403])('never refreshes or falls back after ordinary credential status %s', async status => { fetch.mockResolvedValue(failure('synthetic_credential_denied', status)); await expect(confirmCurrentPassword('Synthetic current password')).rejects.toMatchObject({ status }); expect(fetch).toHaveBeenCalledTimes(1); expect(fetch.mock.calls[0][0]).toBe('http://localhost/api/v2/auth/reauthenticate'); });
   it.each(['', undefined])('requires an explicit current password before dispatch: %s', async password => { await expect(confirmCurrentPassword(password)).rejects.toThrow('current password'); expect(fetch).not.toHaveBeenCalled(); });
   it('suppresses a cancelled ordinary operation before generated dispatch', async () => { const controller = new AbortController(); controller.abort(); await expect(confirmCurrentPassword('Synthetic current password', { signal: controller.signal })).rejects.toMatchObject({ name: 'AbortError' }); expect(fetch).not.toHaveBeenCalled(); });
   it('rejects a malformed ordinary authenticated response', async () => { fetch.mockResolvedValue(json({ ...token(), status: 'factor_required' })); await expect(confirmCurrentPassword('Synthetic current password')).rejects.toThrow('could not be confirmed'); expect(fetch).toHaveBeenCalledTimes(1); });
-  it('keeps only the exact ordinary own-session POST available while connection authority is unconfirmed', async () => { bindNetworkAccessGuard({ transportScope: 'synthetic-other', authorityScope: 'synthetic-guard' }); fetch.mockResolvedValue(json(token())); await confirmCurrentPassword('Synthetic current password'); const { v2Request } = await import('@/lib/api/v2/session'); for (const [method, path] of [['POST', '/api/v2/auth/reauthenticate/extra'], ['PUT', '/api/v2/auth/reauthenticate'], ['POST', '/api/v2/inventory/storage-locations']]) await expect(v2Request({ method, path, body: {} })).rejects.toMatchObject({ status: 403 }); expect(fetch).toHaveBeenCalledTimes(1); });
+  it('keeps only the exact ordinary own-session POST available while connection authority is unconfirmed', async () => { bindNetworkAccessGuard({ transportScope: 'synthetic-other', authorityScope: 'synthetic-guard' }); fetch.mockResolvedValue(json(ordinaryToken(token()))); await confirmCurrentPassword('Synthetic current password'); const { v2Request } = await import('@/lib/api/v2/session'); for (const [method, path] of [['POST', '/api/v2/auth/reauthenticate/extra'], ['PUT', '/api/v2/auth/reauthenticate'], ['POST', '/api/v2/inventory/storage-locations']]) await expect(v2Request({ method, path, body: {} })).rejects.toMatchObject({ status: 403 }); expect(fetch).toHaveBeenCalledTimes(1); });
   it('sends a pending grant through the exact configured endpoint without bearer or refresh', async () => { const challenge = pending(); fetch.mockResolvedValue(json(challenge)); const signal = new AbortController().signal; expect(await factorApi.login({ email: 'synthetic@example.test', password: 'Synthetic password', facility_code: 'HMS' }, { signal })).toEqual(challenge); const [url, request] = fetch.mock.calls[0]; expect(url).toBe('http://localhost/api/v2/auth/login'); expect(request).toMatchObject({ credentials: 'include', signal }); expect(request.headers.Authorization).toBeUndefined(); expect(fetch).toHaveBeenCalledTimes(1); });
   it('does not treat pending credentials or an untagged token as authentication', () => { expect(() => loginResult({ ...pending(), user: token().user })).toThrow(); const raw = token(); delete raw.status; expect(() => loginResult(raw)).toThrow(); expect(() => loginResult({ ...pending(), expires_at: '2000-01-01T00:00:00Z' })).toThrow(); });
   it('rejects arbitrary paths and never refreshes a failed login grant', async () => { await expect(grantRequest('/patients/search', {})).rejects.toThrow('Unsupported'); expect(fetch).not.toHaveBeenCalled(); fetch.mockResolvedValue(failure('login_grant_expired', 401)); await expect(factorApi.options('Synthetic grant')).rejects.toMatchObject({ status: 401 }); expect(fetch).toHaveBeenCalledTimes(1); });

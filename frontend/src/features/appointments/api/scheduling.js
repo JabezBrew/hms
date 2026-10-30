@@ -19,14 +19,6 @@ function dataList(response) {
   return Array.isArray(response?.data) ? response.data : [];
 }
 
-function normalizeServicePayload(data = {}) {
-  return {
-    code: String(data.code || '').trim(),
-    name: String(data.name || '').trim(),
-    default_duration_minutes: Number(data.default_duration_minutes || data.duration_minutes || 30),
-  };
-}
-
 function normalizeSessionPayload(data = {}) {
   const clinicId = data.clinic_id || data.clinic;
   const serviceId = data.service_id || data.appointment_type_id || data.appointment_type;
@@ -122,23 +114,10 @@ export const schedulingApi = {
     }
   },
 
-  createService: async (data, options = {}) => {
-    try {
-      if (isRustV2ApiMode()) {
-        const response = await v2Api.postSchedulingServices(
-          normalizeServicePayload(data),
-          { signal: options.signal || data?.signal },
-        );
-        return response?.data;
-      }
-      return await apiClient.post('/appointments/types/', data);
-    } catch (error) {
-      rethrowAbortError(error);
-      if (isRustV2ApiMode()) {
-        throw new Error(handleV2ApiError(error, 'Failed to create bookable service'));
-      }
-      throw new Error(handleApiError(error, 'Failed to create appointment type'));
-    }
+  createService: async (data) => {
+    if (isRustV2ApiMode()) throw new Error('Use Bookable services to review a current UUID-bound service change.');
+    try { return await apiClient.post('/appointments/types/', data); }
+    catch (error) { rethrowAbortError(error); throw new Error(handleApiError(error, 'Failed to create appointment type')); }
   },
 
   listSessions: async (params = {}, options = {}) => {

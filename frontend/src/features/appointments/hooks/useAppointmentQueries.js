@@ -1,3 +1,4 @@
+import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { appointmentsApi } from '@/features/appointments/api';
 import { immutableMetadataQueryOptions } from '@/lib/react-query';
@@ -326,7 +327,7 @@ export function useAppointmentTypes() {
   return useQuery({
     queryKey: appointmentKeys.types(),
     queryFn: ({ signal }) => appointmentsApi.getAppointmentTypes({ signal }),
-    ...immutableMetadataQueryOptions(),
+    ...(isRustV2ApiMode() ? { staleTime: 0, refetchOnMount: 'always', refetchOnWindowFocus: true, refetchOnReconnect: true } : immutableMetadataQueryOptions()),
   });
 }
 
@@ -340,7 +341,7 @@ export function useAppointmentType(id) {
     queryKey: appointmentKeys.type(id),
     queryFn: ({ signal }) => appointmentsApi.getAppointmentType(id, { signal }),
     enabled: !!id,
-    ...immutableMetadataQueryOptions(),
+    ...(isRustV2ApiMode() ? { staleTime: 0, refetchOnMount: 'always', refetchOnWindowFocus: true, refetchOnReconnect: true } : immutableMetadataQueryOptions()),
   });
 }
 

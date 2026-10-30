@@ -6,6 +6,7 @@ use hms_domain::auth::{
     ClinicalPatientAccessEvidence, ClinicalPatientAccessReason, ClinicalPatientAccessSource,
     PatientDataVisibility,
 };
+use hms_domain::authorization_clock::AuthorizationClock;
 use hms_domain::deployment::{DeploymentProfile, FeatureKey, PermissionCode};
 use hms_domain::patients::PatientRecord;
 use serde::{Deserialize, Serialize};
@@ -36,6 +37,12 @@ pub struct RequestContext {
     /// separate from any caller-supplied optimistic concurrency value.
     #[serde(skip)]
     pub resolved_network_policy_version: Option<i64>,
+    #[serde(skip)]
+    pub authorization_clock: Option<AuthorizationClock>,
+    #[serde(skip)]
+    pub password_verified_at: Option<DateTime<Utc>>,
+    #[serde(skip)]
+    pub issuer_token_window: Option<(DateTime<Utc>, DateTime<Utc>)>,
     pub user: AuthUser,
 }
 
@@ -66,10 +73,35 @@ impl RequestContext {
             reauth,
             authorization_deadline: None,
             resolved_network_policy_version: None,
+            authorization_clock: None,
+            password_verified_at: None,
+            issuer_token_window: None,
             user,
         }
     }
 
+    pub fn with_authorization_clock(mut self, clock: AuthorizationClock) -> Self {
+        self.authorization_clock = Some(clock);
+        self
+    }
+    pub fn with_password_verified_at(mut self, at: DateTime<Utc>) -> Self {
+        self.password_verified_at = Some(at);
+        self
+    }
+    pub fn with_issuer_token_window(mut self, window: (DateTime<Utc>, DateTime<Utc>)) -> Self {
+        self.issuer_token_window = Some(window);
+        self
+    }
+    pub fn authorization_now(&self) -> Option<DateTime<Utc>> {
+        self.authorization_clock
+            .map_or_else(|| Some(Utc::now()), |clock| clock.now())
+    }
+    pub fn reauth_is_fresh_at(&self, fallback: DateTime<Utc>) -> bool {
+        match self.authorization_clock {
+            Some(clock) => self.reauth.is_fresh_with_clock(clock),
+            None => self.reauth.is_fresh_at(fallback),
+        }
+    }
     pub fn with_authorization_deadline(mut self, deadline: DateTime<Utc>) -> Self {
         self.authorization_deadline = Some(deadline);
         self
@@ -242,6 +274,11 @@ impl ReauthState {
         }
     }
 
+    pub fn is_fresh_with_clock(&self, clock: AuthorizationClock) -> bool {
+        self.verified_at
+            .is_some_and(|at| clock.admits_verified_at(at))
+            && clock.now().is_some_and(|now| self.is_fresh_at(now))
+    }
     pub fn is_fresh_at(&self, now: DateTime<Utc>) -> bool {
         self.verified_at.is_some_and(|verified_at| {
             verified_at <= now
@@ -802,7 +839,7 @@ pub fn require_high_risk_reauth(
     ctx: &RequestContext,
     now: DateTime<Utc>,
 ) -> Result<(), AccessError> {
-    if ctx.reauth.is_fresh_at(now) {
+    if ctx.reauth_is_fresh_at(now) {
         Ok(())
     } else {
         Err(AccessError::ReauthRequired)
@@ -813,12 +850,19 @@ pub fn require_privileged_action_allowed(ctx: &RequestContext) -> Result<(), Acc
     if !ctx.user.auth_security.passkey_enrolled {
         return Err(AccessError::PasskeyRequired);
     }
-    if !ctx
-        .user
-        .auth_security
-        .session_assurance
-        .is_fresh_passkey_at(Utc::now())
-    {
+    let proof = &ctx.user.auth_security.session_assurance;
+    let fresh = match ctx.authorization_clock {
+        Some(clock) => {
+            proof
+                .verified_at
+                .is_some_and(|at| clock.admits_verified_at(at))
+                && clock
+                    .now()
+                    .is_some_and(|now| proof.is_fresh_passkey_at(now))
+        }
+        None => proof.is_fresh_passkey_at(Utc::now()),
+    };
+    if !fresh {
         return Err(AccessError::FactorVerificationRequired);
     }
     Ok(())
@@ -883,6 +927,137 @@ mod tests {
         let mut extended = ReauthState::from_authentication_time(now);
         extended.required_after = now + Duration::hours(1);
         assert!(!extended.is_fresh_at(now));
+    }
+
+    // Explicit DB/host observations model skew without changing either OS clock.
+    // The retained before-repair model failed; this uses the server-only observation.
+    #[test]
+    fn database_current_proof_preflight_is_independent_of_host_wall_time() {
+        let mut ctx = make_ctx();
+        let database_at = Utc::now() + Duration::hours(1);
+        ctx = ctx.with_authorization_clock(AuthorizationClock::new(
+            database_at,
+            std::time::Instant::now(),
+        ));
+        ctx.user.auth_security.session_assurance.verified_at = Some(database_at);
+        ctx.user.auth_security.session_assurance.expires_at =
+            Some(database_at + Duration::minutes(15));
+        assert_eq!(
+            require_privileged_action_allowed(&ctx),
+            Ok(()),
+            "DB-current proof must use its trusted DB observation"
+        );
+    }
+
+    #[test]
+    fn database_current_ordinary_proof_preflight_is_independent_of_host_wall_time() {
+        let mut ctx = make_ctx();
+        let host_at = Utc::now();
+        let database_at = host_at + Duration::hours(1);
+        ctx = ctx.with_authorization_clock(AuthorizationClock::new(
+            database_at,
+            std::time::Instant::now(),
+        ));
+        ctx.reauth = ReauthState::from_authentication_time(database_at);
+        assert_eq!(
+            require_high_risk_reauth(&ctx, host_at),
+            Ok(()),
+            "DB-current credential proof must use its trusted DB observation"
+        );
+    }
+
+    #[test]
+    fn trusted_clock_strictly_rejects_future_expired_extended_and_recovery_proof() {
+        let database_at = Utc::now();
+        for host_offset in [-3600, 3600] {
+            let mut ctx = make_ctx().with_authorization_clock(AuthorizationClock::new(
+                database_at,
+                std::time::Instant::now(),
+            ));
+            ctx.reauth = ReauthState::from_authentication_time(database_at);
+            ctx.user.auth_security.session_assurance.verified_at = Some(database_at);
+            ctx.user.auth_security.session_assurance.expires_at =
+                Some(database_at + Duration::minutes(15));
+            assert_eq!(
+                require_high_risk_reauth(&ctx, database_at + Duration::seconds(host_offset)),
+                Ok(())
+            );
+            assert_eq!(require_privileged_action_allowed(&ctx), Ok(()));
+            for (start, end) in [
+                (
+                    database_at + Duration::seconds(1),
+                    database_at + Duration::minutes(15),
+                ),
+                (
+                    database_at - Duration::minutes(16),
+                    database_at - Duration::minutes(1),
+                ),
+                (database_at, database_at + Duration::minutes(16)),
+            ] {
+                ctx.user.auth_security.session_assurance.verified_at = Some(start);
+                ctx.user.auth_security.session_assurance.expires_at = Some(end);
+                assert_eq!(
+                    require_privileged_action_allowed(&ctx),
+                    Err(AccessError::FactorVerificationRequired)
+                );
+            }
+            ctx.user.auth_security.session_assurance.verified_at = Some(database_at);
+            ctx.user.auth_security.session_assurance.expires_at =
+                Some(database_at + Duration::minutes(15));
+            ctx.user.auth_security.session_assurance.method =
+                Some(hms_domain::auth_assurance::FactorMethod::Recovery);
+            assert_eq!(
+                require_privileged_action_allowed(&ctx),
+                Err(AccessError::FactorVerificationRequired)
+            );
+        }
+    }
+    #[test]
+    fn monotonic_age_expires_both_proofs_and_future_evidence_never_matures() {
+        let database_at = Utc::now();
+        let clock = AuthorizationClock::new(
+            database_at,
+            std::time::Instant::now() - std::time::Duration::from_secs(901),
+        );
+        let mut ctx = make_ctx().with_authorization_clock(clock);
+        ctx.reauth = ReauthState::from_authentication_time(database_at);
+        ctx.user.auth_security.session_assurance.verified_at = Some(database_at);
+        ctx.user.auth_security.session_assurance.expires_at =
+            Some(database_at + Duration::minutes(15));
+        assert_eq!(
+            require_high_risk_reauth(&ctx, database_at - Duration::hours(1)),
+            Err(AccessError::ReauthRequired)
+        );
+        assert_eq!(
+            require_privileged_action_allowed(&ctx),
+            Err(AccessError::FactorVerificationRequired)
+        );
+        // Even though projected time has advanced beyond this future proof,
+        // it was invalid at the retained DB observation and cannot mature.
+        ctx.reauth = ReauthState::from_authentication_time(database_at + Duration::seconds(2));
+        ctx.user.auth_security.session_assurance.verified_at =
+            Some(database_at + Duration::seconds(2));
+        ctx.user.auth_security.session_assurance.expires_at =
+            Some(database_at + Duration::minutes(16));
+        assert_eq!(
+            require_high_risk_reauth(&ctx, database_at + Duration::hours(1)),
+            Err(AccessError::ReauthRequired)
+        );
+        assert_eq!(
+            require_privileged_action_allowed(&ctx),
+            Err(AccessError::FactorVerificationRequired)
+        );
+    }
+    #[test]
+    fn internal_clock_never_roundtrips_through_request_context_json() {
+        let ctx = make_ctx().with_authorization_clock(AuthorizationClock::new(
+            Utc::now(),
+            std::time::Instant::now(),
+        ));
+        let value = serde_json::to_value(&ctx).unwrap();
+        assert!(value.get("authorization_clock").is_none());
+        let parsed: RequestContext = serde_json::from_value(value).unwrap();
+        assert!(parsed.authorization_clock.is_none());
     }
 
     fn make_ctx() -> RequestContext {

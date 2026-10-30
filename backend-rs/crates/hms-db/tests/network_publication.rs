@@ -207,6 +207,8 @@ async fn protected_prescribing_commands_reject_none_and_missing_version_before_b
     for authorization in [
         None,
         Some(PrescriptionAuthorization {
+            ordinary_reauth_required: false,
+            original_password_verified_at: None,
             session_id: session,
             session_version: sv,
             permission_version: pv,

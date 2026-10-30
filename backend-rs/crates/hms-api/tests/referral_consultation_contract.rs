@@ -867,6 +867,8 @@ async fn repository_command_completes_all_deferred_original_evidence_guards() {
         user_id: claims.sub,
         request_id: None,
         authorization: hms_db::clinical::prescription_courses::PrescriptionAuthorization {
+            ordinary_reauth_required: false,
+            original_password_verified_at: None,
             session_id: claims.session_id,
             session_version: claims.session_version,
             permission_version: claims.permission_version,

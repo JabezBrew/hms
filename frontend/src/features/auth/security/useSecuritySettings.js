@@ -11,7 +11,7 @@ export function useSecuritySettings(scope, cursor) {
   const [state, set] = useReducer(patch, initial); const operation = useRef(null);
   useLayoutEffect(() => () => operation.current?.abort(), []);
   const keys = useQuery({ queryKey: ['auth-security-keys', scope, cursor || 'first'], queryFn: ({ signal }) => factorApi.keys({ cursor, signal }), retry: false, staleTime: 0, refetchOnMount: 'always' });
-  const assurance = useQuery({ queryKey: ['auth-security-assurance', scope], queryFn: ({ signal }) => factorApi.assurance({ signal }), retry: false, staleTime: 0, refetchOnMount: 'always', refetchOnWindowFocus: true, refetchInterval: 15000 });
+  const assurance = useQuery({ queryKey: ['auth-security-assurance', scope], queryFn: ({ signal }) => factorApi.assurance({ signal }), structuralSharing: false, retry: false, staleTime: 0, refetchOnMount: 'always', refetchOnWindowFocus: true, refetchInterval: 15000 });
   const run = async (name, action) => {
     if (operation.current || state.unknown) return;
     const controller = new AbortController(); operation.current = controller; set({ busy: name, feedback: null });

@@ -5,6 +5,7 @@ import { isRustV2ApiMode } from './v2/runtime';
 import { handleV2ApiError } from './v2/errors';
 import { performV2TokenRefresh, v2Request } from './v2/session';
 import { v2Api } from './v2/client';
+import { projectAuthSecurity, transferServerClock } from '@/shared/lib/serverClock';
 
 function splitDisplayName(displayName, email) {
   const parts = String(displayName || '').trim().split(/\s+/).filter(Boolean);
@@ -18,7 +19,7 @@ function splitDisplayName(displayName, email) {
 }
 
 function inferUserTypeFromV2Permissions(permissions = []) {
-  if (permissions.some((permission) => permission.startsWith('admin.') || permission.startsWith('system.'))) {
+  if (permissions.some((permission) => permission.startsWith('admin.') || (permission.startsWith('system.') && permission !== 'system.deployment_capabilities.view'))) {
     return 'admin';
   }
   if (permissions.some((permission) => permission.startsWith('nursing.') || permission.includes('.nursing.'))) {
@@ -48,8 +49,9 @@ export function adaptV2AuthTokenResponse(response) {
 
   const permissions = Array.isArray(user.permissions) ? user.permissions : [];
   const [firstName, lastName] = splitDisplayName(user.display_name, user.email);
+  const authSecurity = projectAuthSecurity(user.auth_security || null);
 
-  return {
+  const adapted = {
     access: token.access_token,
     expires_in_seconds: token.expires_in_seconds,
     refresh_expires_at: token.refresh_expires_at,
@@ -64,7 +66,7 @@ export function adaptV2AuthTokenResponse(response) {
       facility_id: user.facility_id,
       session_version: user.session_version,
       permission_version: user.permission_version,
-      auth_security: user.auth_security || null,
+      auth_security: authSecurity,
     },
     user: {
       id: user.id,
@@ -78,16 +80,17 @@ export function adaptV2AuthTokenResponse(response) {
       admin_access: {
         capabilities: permissions,
       },
-      auth_security: user.auth_security || null,
+      auth_security: authSecurity,
     },
   };
+  return transferServerClock(token, adapted);
 }
 
 function adaptV2AuthUser(user) {
   if (!user) return user;
   const permissions = Array.isArray(user.permissions) ? user.permissions : [];
   const [firstName, lastName] = splitDisplayName(user.display_name, user.email);
-  return {
+  const adapted = {
     id: user.id,
     email: user.email,
     first_name: firstName,
@@ -102,11 +105,12 @@ function adaptV2AuthUser(user) {
     features: Array.isArray(user.features) ? user.features : [],
     patient_visibility: Array.isArray(user.patient_visibility) ? user.patient_visibility : [],
     password_change_required: Boolean(user.password_change_required),
-    auth_security: user.auth_security || null,
+    auth_security: projectAuthSecurity(user.auth_security || null),
     admin_access: {
       capabilities: permissions,
     },
   };
+  return transferServerClock(user, adapted);
 }
 
 function normalizeV2ProfileUpdate(data = {}) {
@@ -130,7 +134,9 @@ async function v2AuthRequest(path, { method = 'GET', body, signal } = {}) {
     body,
     signal,
   });
-  return response?.data || response;
+  const value = response?.data || response;
+  if (path === '/api/v2/auth/me' && value?.auth_security) (await import('@/features/auth/clock')).observeUserResponse(value);
+  return value;
 }
 
 function rethrowAbortError(error) {

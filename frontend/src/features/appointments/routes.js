@@ -1,5 +1,6 @@
 import { lazy } from 'react'
 import { ROUTE_LAYOUTS } from '@/app/routes/routeTypes'
+import { bookableServiceRouteAccess } from './services/access'
 import { ROLE_GROUPS } from '@/shared/constants/roles'
 
 const AppointmentsPage = lazy(() => import('./pages/AppointmentsPage'))
@@ -10,7 +11,17 @@ const PractitionerAvailabilityPage = lazy(() => import('./pages/PractitionerAvai
 const ScheduleSlotsPage = lazy(() => import('./pages/ScheduleSlotsPage'))
 const AppointmentSeriesPage = lazy(() => import('./series/AppointmentSeriesPage'))
 
+const BookableServiceRoute = lazy(() => import('./services/BookableServiceRoute'))
+
 export const appointmentRoutes = [
+  {
+    path: '/appointments/services',
+    component: BookableServiceRoute,
+    ...bookableServiceRouteAccess(),
+    layout: ROUTE_LAYOUTS.APP,
+    title: 'Bookable services | Hospital Management System',
+    breadcrumbs: [{ label: 'Schedule', path: '/appointments' }, { label: 'Services', path: '/appointments/services' }],
+  },
   {
     path: '/appointments',
     component: AppointmentsPage,

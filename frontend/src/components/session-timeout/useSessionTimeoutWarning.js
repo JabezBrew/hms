@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useReducer, useRef } from 'react';
+import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
+import { useRustSessionTimeoutWarning } from './useRustSessionTimeoutWarning';
 import { useAuth } from '@/lib/auth';
 import { getAuthValue, setAuthValue } from '@/lib/auth-storage';
 
@@ -105,8 +107,10 @@ function secondsFromMilliseconds(milliseconds) {
   return Math.floor(milliseconds / 1000);
 }
 
-export function useSessionTimeoutWarning() {
-  const { isAuthenticated, logout, isSessionValid, refreshAccessToken } = useAuth();
+function useLegacySessionTimeoutWarning(enabled) {
+  const auth = useAuth();
+  const { logout, isSessionValid, refreshAccessToken } = auth;
+  const isAuthenticated = enabled && auth.isAuthenticated;
   const [{ showWarning, timeLeft, timeoutType, isExtending }, dispatchWarning] = useReducer(
     warningReducer,
     initialWarningState
@@ -397,4 +401,11 @@ export function useSessionTimeoutWarning() {
     handleTimeout,
     handleOpenChange,
   };
+}
+
+export function useSessionTimeoutWarning() {
+  const rust = isRustV2ApiMode();
+  const legacy = useLegacySessionTimeoutWarning(!rust);
+  const current = useRustSessionTimeoutWarning(rust);
+  return rust ? current : legacy;
 }

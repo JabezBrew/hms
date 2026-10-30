@@ -1,3 +1,4 @@
+import { clockNow, serverClock } from '@/shared/lib/serverClock';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useAuth } from '@/lib/auth';
 import { useAuthScope } from '../useAuthScope';
@@ -18,10 +19,10 @@ export default function SecuritySettings() {
 function SecurityWorkspace({ scope, user }) {
   const { reauthenticate } = useAuth(); const [cursor, setCursor] = useState(null); const [previous, setPrevious] = useState([]);
   const state = useSecuritySettings(scope, cursor); const [password, setPassword] = useState(''); const [confirming, setConfirming] = useState(false); const [confirmationError, setConfirmationError] = useState(null); const [replace, setReplace] = useState(false); const [retiring, setRetiring] = useState(null);
-  const [now, setNow] = useState(Date.now()); const proof = state.assurance.data?.assurance;
+  const [now, setNow] = useState(clockNow); const proof = state.assurance.data?.assurance;
   const confirmation = useRef(null);
   useLayoutEffect(() => () => confirmation.current?.abort(), []);
-  useEffect(() => { const remaining = Date.parse(proof?.expires_at) - Date.now(); const timer = window.setTimeout(() => setNow(Date.now()), remaining > 0 ? remaining : 15000); return () => window.clearTimeout(timer); }, [proof, now]);
+  useEffect(() => { const remaining = serverClock(proof)?.remaining(proof?.expires_at) || 0; const timer = window.setTimeout(() => setNow(clockNow()), remaining > 0 ? remaining : 15000); return () => window.clearTimeout(timer); }, [proof, now]);
   const current = state.assurance.isFetchedAfterMount && !state.assurance.isError;
   const fresh = current && hasFreshPasskey(proof, now); const rowsCurrent = state.keys.isFetchedAfterMount && !state.keys.isError;
   const locked = Boolean(state.busy) || confirming || state.unknown || !fresh || !rowsCurrent;

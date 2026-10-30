@@ -504,3 +504,74 @@ fingerprint across the different read/write route families. Later denial,
 cancellation, scope activation, active retry, changed uncertainty identity or
 storage failure invalidates that proof. No clinical body is persisted by the
 opaque recovery ledger.
+
+
+## Appointment service maintenance
+
+Scheduling services retain permanent facility, UUID, code and creation identity.
+The bounded administration directory and detail require AppointmentView with
+current Appointments and demographics visibility. Reviewed creation, metadata,
+retirement/reactivation and original command receipts use AppointmentManage,
+the existing fresh credential policy and retained session/facility/network
+authority through the final database clock. Ordinary credential confirmation
+does not invent Admin authority or an enrolled factor.
+
+Commands use exact original-actor request UUIDs, strict intent digests, expected
+versions and immutable original receipts. No-ops preserve versions and update
+time. Directory/detail reads cannot acknowledge an unknown write; the exact
+original receipt remains recoverable after a later lifecycle change. New name,
+code and duration input is validated without rewriting historical blank labels
+or positive int32 durations above the current new-input limit.
+
+New references retain active same-facility service proof across appointment,
+series, session/template owner and allowed-service publication. An active future
+template generator prevents retirement. Finite existing sessions and bookings
+remain evidence and retain reschedule, arrival and cancellation. Actual retained
+parent membership is serialized with generation; malformed legacy redundant
+facility edges cannot silently become unrestricted new-publication authority.
+Facility session owners must be absent or match the actual session facility.
+Historical closure retains its existing path. Missing-only default provisioning
+preserves configured General UUID, metadata and retired status.
+
+The UI uses the generated contract, scoped bounded queries and a separate exact
+selected-service read. Current denied/error catalog evidence clears new booking
+choices; merely restoring one detail cannot revive them. The grouped booking
+workflow retains its real original request UUID for explicit receipt recovery.
+Older single/waitlist contracts are not represented as UUID-complete workflows.
+The shared SearchBar forwards its actual input ref, standard identity and ARIA
+attributes so the real shadcn form label/control relationship reaches the input.
+Migration 029 requires coordinated runtime/schema/ops deployment; runtime 028 or
+earlier is not a supported rollback after 029 commits.
+The application UI also needs the existing explicit
+`system.deployment_capabilities.view` permission to resolve enabled modules.
+Scheduling commands do not grant that prerequisite or any additional authority.
+That ordinary capability read does not assign an admin role. Optional inbox,
+notification and dashboard reads require their own current permission and
+feature. Unavailable data stays unavailable until a fresh authorized read;
+restoring clock readiness alone cannot revive an earlier result.
+
+Service preparation can be cancelled before submission, including after its
+success lease expires. Actual writes retain the existing close/re-entry lock.
+A current GET denial can conceal its own review through a transport-owned,
+error-identity witness bound to exact committed authority values and raw
+transport ownership in private memory. It grants no read, write, receipt or
+acknowledgment authority; stale, cancelled, copied or forged errors cannot use it.
+
+Authentication proof and session deadlines use raw database observations with
+conservative monotonic elapsed time. Cached context clones refresh their
+observation through the existing current-session probe without renewing stored
+cache TTL. A proof absent or future at hydration cannot mature in the cache.
+Issuer JWT lifetime remains independently bounded by the signed iat/exp and the
+existing min(floor(password proof), issuer iat) mint rule. Observational response
+clock fields grant no authority. Ordinary confirmation returns only its own
+transaction's admission, published password proof, session and assurance revision;
+it cannot claim a later concurrent confirmation as its own result.
+
+The frontend admits clock budgets only through actual current transport response
+provenance, subtracts monotonic elapsed time and restores a persisted session only
+after a real refresh. Clinical requests pause while current session/network
+evidence is unavailable. UI instance retention across a verified refresh compares
+observable proof and authority only. The current DTO cannot establish equality of
+same-second high-resolution predecessor password proofs after session-local
+assurance reset. Strict transport, query, write and acknowledgment scopes rotate;
+the UI retention decision grants no business authority or automatic replay.
