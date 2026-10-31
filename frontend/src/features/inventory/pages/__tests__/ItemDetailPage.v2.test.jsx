@@ -81,7 +81,7 @@ describe('ItemDetailPage Rust V2 guards', () => {
     expect(screen.queryByRole('button', { name: /^edit$/i })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: /create requisition/i })).toBeInTheDocument();
     expect(
-      screen.getByText(/catalog corrections require inventory management permission/i),
+      screen.getByText(/Current metadata, dated corrections and active-state review/i),
     ).toBeInTheDocument();
   });
 

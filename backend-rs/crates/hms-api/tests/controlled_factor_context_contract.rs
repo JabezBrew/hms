@@ -38,13 +38,29 @@ async fn checked(response: axum::response::Response, status: StatusCode) -> Valu
 
 #[tokio::test]
 async fn dedicated_type_only_controlled_receipt_requires_real_factor_and_preserves_coupling() {
-    let matrix = Matrix::new().await;
+    let item = Uuid::new_v4();
+    let imported = app_with_imported_inventory(&[(
+        item,
+        "SYN_CONTROLLED_TYPE_ONLY",
+        "controlled_substance",
+        false,
+    )])
+    .await;
+    let matrix = Matrix::from_app(imported).await;
     let app = &matrix.app;
     let (token, _, _) = login(app.clone(), "owner@hms.local").await;
     let pool = app.db_pool().await;
-    let item = Uuid::new_v4();
-    sqlx::query("INSERT INTO inventory_items(id,facility_id,category_id,code,name,item_type,unit,controlled) SELECT $1,$2,category_id,'SYN_CONTROLLED_TYPE_ONLY','Synthetic type-only fixture','controlled_substance','unit',false FROM inventory_items WHERE facility_id=$2 ORDER BY id LIMIT 1")
-        .bind(item).bind(app.state().facility_id()).execute(&pool).await.unwrap();
+    let retained: (String, bool) =
+        sqlx::query_as("SELECT item_type,controlled FROM inventory_items WHERE id=$1")
+            .bind(item)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(
+        retained,
+        ("controlled_substance".to_owned(), false),
+        "real pre030 classification survives exact030 migration"
+    );
     let mut payload = movement(&matrix, 7, Some(witness(app).await));
     payload["item_id"] = json!(item);
     let claims = access_claims(&token);

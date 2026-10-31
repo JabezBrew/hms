@@ -41,16 +41,16 @@ import DoctorAvailability from './DoctorAvailability';
 // Form validation schema
 const formSchema = z.object({
   patientId: z.string({
-    required_error: "Please select a patient",
+    error: issue => issue.input === undefined ? "Please select a patient" : undefined,
   }),
   practitionerId: z.string({
-    required_error: "Please select a practitioner",
+    error: issue => issue.input === undefined ? "Please select a practitioner" : undefined,
   }),
   appointmentTypeId: z.string({
-    required_error: "Please select an appointment type",
+    error: issue => issue.input === undefined ? "Please select an appointment type" : undefined,
   }),
   date: z.date({
-    required_error: "Please select a date",
+    error: issue => issue.input === undefined ? "Please select a date" : undefined,
   }),
   slotId: z.string().optional(),
   startTime: z.string().optional(),

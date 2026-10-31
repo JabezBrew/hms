@@ -8,7 +8,7 @@ vi.mock('@/features/inventory/hooks', () => ({
   useTransferRequests: () => ({
     data: {
       count: 1,
-      results: [
+      results: window.__HMS_RUNTIME_CONFIG__?.apiMode === 'rust-v2' ? [{ id: '24242424-0000-4000-8000-000000000020', item_id: '24242424-0000-4000-8000-000000000021', item_name: 'Synthetic actual Rust transfer item', requested_unit: 'pack', quantity: 2, from_location_id: '24242424-0000-4000-8000-000000000022', to_location_id: '24242424-0000-4000-8000-000000000023', status: 'requested', created_at: '2026-05-01T09:00:00Z' }] : [
         {
           id: 'transfer-1',
           transfer_number: 'TRF-001',
@@ -80,7 +80,10 @@ describe('TransferRequestsPage Rust V2 guards', () => {
 
     renderPage();
 
-    expect(screen.getByText('TRF-001')).toBeInTheDocument();
+    expect(screen.getAllByText('Synthetic actual Rust transfer item')).toHaveLength(2);
+    expect(screen.getAllByText('"pack"')).toHaveLength(2);
+    expect(screen.queryByText('TRF-001')).not.toBeInTheDocument();
+    expect(screen.queryByText('Unknown requester')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: /new transfer/i })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /approve/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /dispatch/i })).not.toBeInTheDocument();

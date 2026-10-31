@@ -176,4 +176,9 @@ export async function bookableServiceCommandRecoveryCandidate() {
   const store = manualStore(), origin = store.current();
   return (await import('./writeScopeRouter')).bookableServiceRecoveryCandidate(store, origin);
 }
+// Locate only an existing singleton UUID; never infer intent from an unkeyed marker.
+export async function inventoryItemCommandRecoveryCandidate() {
+  const store = manualStore(), origin = store.current();
+  return (await import('./writeScopeRouter')).inventoryItemRecoveryCandidate(store, origin);
+}
 export function resetWriteUncertaintyForTests({ preserveStorage = false } = {}) { store = undefined; fault = false; currentScope = null; currentContext = null; activation += 1; active.clear(); serial = Promise.resolve(); if (!preserveStorage) sessionStorage.removeItem(WRITE_UNCERTAINTY_KEY); publish(); }

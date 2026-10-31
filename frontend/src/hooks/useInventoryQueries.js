@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { inventoryApi } from '@/features/inventory/api';
 import { hasMeaningfulQueryParams, immutableMetadataQueryOptions } from '@/lib/react-query';
+import { hashQueryValue } from '@/shared/lib/privateQueryKey';
 import { createKeyFactory } from '@/shared/lib/queryKeys';
 
 // Query keys
@@ -27,6 +28,7 @@ export const inventoryKeys = {
 
   // Storage Locations
   locations: () => [...inventoryKeys.all, 'locations'],
+  scopedLocationList: (scope, filters) => [...inventoryKeys.locations(), 'scoped-list', scope, hashQueryValue(JSON.stringify(filters))],
   locationList: (filters) => [...inventoryKeys.locations(), 'list', { filters }],
   locationDetail: (id) => [...inventoryKeys.locations(), 'detail', id],
   locationStock: (id) => [...inventoryKeys.locations(), 'stock', id],
@@ -81,6 +83,7 @@ export const inventoryKeys = {
 
   // Transfer Requests
   transferRequests: () => [...inventoryKeys.all, 'transferRequests'],
+  scopedTransferRequestList: (scope, filters) => [...inventoryKeys.transferRequests(), 'scoped-list', scope, hashQueryValue(JSON.stringify(filters))],
   transferRequestList: (filters) => [...inventoryKeys.transferRequests(), 'list', { filters }],
   transferRequestDetail: (id) => [...inventoryKeys.transferRequests(), 'detail', id],
 
@@ -285,11 +288,12 @@ export function useUpdateSupplier() {
  * @param {Object} filters - Query parameters
  * @returns {Object} Query result
  */
-export function useStorageLocations(filters = {}) {
+export function useStorageLocations(filters = {}, { scope, enabled = true } = {}) {
   return useQuery({
-    queryKey: inventoryKeys.locationList(filters),
+    queryKey: scope ? inventoryKeys.scopedLocationList(scope, filters) : inventoryKeys.locationList(filters),
     queryFn: ({ signal }) => inventoryApi.getStorageLocations(filters, { signal }),
-    staleTime: 60 * 1000, // 1 minute
+    staleTime: scope ? 0 : 60 * 1000, // Existing unscoped callers keep their cache policy.
+    ...(scope ? { enabled, gcTime: 0, retry: false, structuralSharing: false } : {}),
   });
 }
 
@@ -1304,11 +1308,12 @@ export function useProcessDueStandingOrders() {
  * @param {Object} filters - Query parameters
  * @returns {Object} Query result
  */
-export function useTransferRequests(filters = {}) {
+export function useTransferRequests(filters = {}, { scope } = {}) {
   return useQuery({
-    queryKey: inventoryKeys.transferRequestList(filters),
+    queryKey: scope ? inventoryKeys.scopedTransferRequestList(scope, filters) : inventoryKeys.transferRequestList(filters),
     queryFn: ({ signal }) => inventoryApi.getTransferRequests({ ...filters, signal }),
-    staleTime: 30 * 1000,
+    staleTime: scope ? 0 : 30 * 1000,
+    ...(scope ? { gcTime: 0, retry: false, structuralSharing: false } : {}),
   });
 }
 
@@ -1334,7 +1339,9 @@ export function useCreateTransferRequest() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (data) => inventoryApi.createTransferRequest(data),
+    // Explicitly disable retries: Rust transfer creation is an unkeyed command.
+    retry: false,
+    mutationFn: ({ signal, ...data }) => inventoryApi.createTransferRequest(data, { signal }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: inventoryKeys.transferRequests() });
       queryClient.invalidateQueries({ queryKey: inventoryKeys.dashboard() });

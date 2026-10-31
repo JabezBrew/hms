@@ -1,3 +1,5 @@
+#[path = "support_item_governance/mod.rs"]
+mod governed;
 use chrono::{Duration, Utc};
 use hms_db::{
     clinical::{self, prescription_courses::*, NewPrescription},
@@ -18,7 +20,19 @@ struct Fixture {
 }
 impl Fixture {
     async fn new(reviewed: bool) -> Self {
-        let db = TestDb::hospital().await.unwrap();
+        Self::with_historical_source(reviewed, false).await
+    }
+    async fn with_historical_source(reviewed: bool, historical: bool) -> Self {
+        let db = if historical {
+            TestDb::with_profile_and_migrator(
+                hms_domain::deployment::DeploymentProfile::Hospital,
+                &governed::before030(),
+            )
+            .await
+            .unwrap()
+        } else {
+            TestDb::hospital().await.unwrap()
+        };
         let care = db
             .scenario("scheduled-stock-review")
             .admission_case_with_available_bed()
@@ -288,7 +302,7 @@ async fn legacy_scheduled_source_requires_reviewed_new_course_without_inferred_b
 #[tokio::test]
 async fn scheduled_supply_and_given_fail_closed_on_inactive_item_or_changed_unit() {
     for changed_unit in [false, true] {
-        let f = Fixture::new(true).await;
+        let f = Fixture::with_historical_source(true, true).await;
         let generated = pharmacy::generate_mar_for_prescription(f.db.pool(), f.generation())
             .await
             .unwrap();
@@ -309,6 +323,7 @@ async fn scheduled_supply_and_given_fail_closed_on_inactive_item_or_changed_unit
                 .await
                 .unwrap();
         }
+        hms_db::migrate::run(f.db.pool()).await.unwrap();
         let expected = if changed_unit {
             clinical::stock_basis::StockBasisError::UnitChanged
         } else {
@@ -430,19 +445,53 @@ async fn ordinary_create_rechecks_selected_visit_after_checkout_wait() {
 async fn wait_blocked(pool: &hms_db::PgPool, pid: i32) {
     tokio::time::timeout(std::time::Duration::from_secs(2),async{loop{let blocked:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE datname=current_database() AND $1=ANY(pg_blocking_pids(pid)))").bind(pid).fetch_one(pool).await.unwrap();if blocked{break;}tokio::time::sleep(std::time::Duration::from_millis(10)).await;}}).await.expect("production command reaches held row");
 }
-fn correction(db: &TestDb, item: Uuid, unit: &str) -> hms_db::inventory::CatalogEditCommand {
-    hms_db::inventory::CatalogEditCommand {
-        authorization: None,
-        id: Uuid::new_v4(),
-        facility_id: db.facility_id(),
-        item_id: item,
-        effective_from: Utc::now().date_naive(),
-        code: "SYNTHETIC-REVIEWED".into(),
-        name: "Synthetic reviewed stock".into(),
-        unit: unit.into(),
-        reason: "Synthetic explicit correction".into(),
-        actor_user_id: db.owner_user_id(),
-    }
+async fn correction(
+    db: &TestDb,
+    item: Uuid,
+    unit: &str,
+) -> (
+    hms_db::inventory::items::InventoryItemActor,
+    hms_domain::inventory_items::InventoryItemReviewedInput,
+) {
+    let actor = governed::actor(db.pool(), db.facility_id()).await;
+    let version = sqlx::query_scalar("SELECT version FROM inventory_items WHERE id=$1")
+        .bind(item)
+        .fetch_one(db.pool())
+        .await
+        .unwrap();
+    (
+        actor,
+        hms_domain::inventory_items::InventoryItemReviewedInput::Correct {
+            client_request_id: Uuid::new_v4(),
+            item_id: item,
+            expected_version: version,
+            effective_from: Utc::now().date_naive(),
+            code: "SYNTHETIC-REVIEWED".into(),
+            name: "Synthetic reviewed stock".into(),
+            unit: unit.into(),
+            reason: "Synthetic explicit correction".into(),
+        },
+    )
+}
+async fn apply(
+    pool: &hms_db::PgPool,
+    input: (
+        hms_db::inventory::items::InventoryItemActor,
+        hms_domain::inventory_items::InventoryItemReviewedInput,
+    ),
+) -> anyhow::Result<hms_domain::inventory_items::InventoryItemCommandReceipt> {
+    hms_db::inventory::items::command(pool, input.0, input.1).await
+}
+fn item_error<T: std::fmt::Debug>(
+    result: anyhow::Result<T>,
+    expected: hms_db::inventory::items::InventoryItemError,
+) {
+    assert_eq!(
+        result
+            .unwrap_err()
+            .downcast_ref::<hms_db::inventory::items::InventoryItemError>(),
+        Some(&expected)
+    );
 }
 async fn blank_stock(db: &TestDb) -> (Uuid, Uuid) {
     let item = Uuid::new_v4();
@@ -482,15 +531,13 @@ async fn catalog_unit_cannot_reinterpret_any_stock_history_even_when_balance_zer
         .execute(db.pool())
         .await
         .unwrap();
-    basis(
-        hms_db::inventory::apply_catalog_edit(db.pool(), correction(&db, item, "pack")).await,
-        clinical::stock_basis::StockBasisError::InventoryUnitInUse,
+    item_error(
+        apply(db.pool(), correction(&db, item, "pack").await).await,
+        hms_db::inventory::items::InventoryItemError::OperationalHistory,
     );
-    assert!(
-        hms_db::inventory::apply_catalog_edit(db.pool(), correction(&db, item, "tablet"))
-            .await
-            .is_ok()
-    );
+    assert!(apply(db.pool(), correction(&db, item, "tablet").await)
+        .await
+        .is_ok());
     let captured: Option<String> =
         sqlx::query_scalar("SELECT received_unit FROM stock_batches WHERE id=$1")
             .bind(saved.id)
@@ -512,11 +559,10 @@ async fn receipt_waiting_for_catalog_correction_rejects_previously_reviewed_unit
         .execute(&mut *held)
         .await
         .unwrap();
-    sqlx::raw_sql("CREATE FUNCTION hold_catalog_for_test() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.event_type='inventory.catalog.edited' THEN PERFORM pg_advisory_xact_lock(810016); END IF; RETURN NEW; END $$; CREATE TRIGGER hold_catalog_for_test BEFORE INSERT ON audit_events FOR EACH ROW EXECUTE FUNCTION hold_catalog_for_test()") .execute(db.pool()).await.unwrap();
+    sqlx::raw_sql("CREATE FUNCTION hold_catalog_for_test() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.event_type='inventory.item.correct' THEN PERFORM pg_advisory_xact_lock(810016); END IF; RETURN NEW; END $$; CREATE TRIGGER hold_catalog_for_test BEFORE INSERT ON audit_events FOR EACH ROW EXECUTE FUNCTION hold_catalog_for_test()") .execute(db.pool()).await.unwrap();
     let pool = db.pool().clone();
-    let edit = correction(&db, item, "pack");
-    let edit =
-        tokio::spawn(async move { hms_db::inventory::apply_catalog_edit(&pool, edit).await });
+    let edit = correction(&db, item, "pack").await;
+    let edit = tokio::spawn(async move { apply(&pool, edit).await });
     wait_blocked(db.pool(), pid).await;
     let input = receipt(&db, item, location);
     let pool = db.pool().clone();
@@ -552,15 +598,15 @@ async fn catalog_waiting_for_actual_receipt_cannot_change_the_receipted_unit() {
     let input = receipt(&db, item, location);
     let issue = tokio::spawn(async move { hms_db::inventory::create_batch(&pool, input).await });
     wait_blocked(db.pool(), pid).await;
-    let pool = db.pool().clone();
-    let input = correction(&db, item, "pack");
-    let edit =
-        tokio::spawn(async move { hms_db::inventory::apply_catalog_edit(&pool, input).await });
+    item_error(
+        apply(db.pool(), correction(&db, item, "pack").await).await,
+        hms_db::inventory::items::InventoryItemError::Busy,
+    );
     held.commit().await.unwrap();
     issue.await.unwrap().unwrap();
-    basis(
-        edit.await.unwrap(),
-        clinical::stock_basis::StockBasisError::InventoryUnitInUse,
+    item_error(
+        apply(db.pool(), correction(&db, item, "pack").await).await,
+        hms_db::inventory::items::InventoryItemError::OperationalHistory,
     );
 }
 #[tokio::test]
@@ -634,7 +680,12 @@ async fn generation_supply_and_given_waits_recheck_admission_closure_without_new
 #[tokio::test]
 async fn controlled_units_are_immutable_even_without_history_and_labels_remain_correctable() {
     for only_type in [false, true] {
-        let db = TestDb::hospital().await.unwrap();
+        let db = TestDb::with_profile_and_migrator(
+            hms_domain::deployment::DeploymentProfile::Hospital,
+            &governed::before030(),
+        )
+        .await
+        .unwrap();
         let (item, _) = blank_stock(&db).await;
         sqlx::query("UPDATE inventory_items SET controlled=$2,item_type=$3 WHERE id=$1")
             .bind(item)
@@ -647,6 +698,7 @@ async fn controlled_units_are_immutable_even_without_history_and_labels_remain_c
             .execute(db.pool())
             .await
             .unwrap();
+        hms_db::migrate::run(db.pool()).await.unwrap();
         let choices = clinical::list_medication_catalog(
             db.pool(),
             db.facility_id(),
@@ -659,16 +711,15 @@ async fn controlled_units_are_immutable_even_without_history_and_labels_remain_c
         assert_eq!(choices.len(), 1);
         assert_eq!(choices[0].id, item);
         assert!(choices[0].controlled);
-        basis(
-            hms_db::inventory::apply_catalog_edit(db.pool(), correction(&db, item, "pack")).await,
-            clinical::stock_basis::StockBasisError::ControlledUnitImmutable,
+        item_error(
+            apply(db.pool(), correction(&db, item, "pack").await).await,
+            hms_db::inventory::items::InventoryItemError::ControlledOrUnsupported,
         );
-        let saved =
-            hms_db::inventory::apply_catalog_edit(db.pool(), correction(&db, item, "tablet"))
-                .await
-                .unwrap();
-        assert_eq!(saved.unit, "tablet");
-        assert_eq!(saved.name, "Synthetic reviewed stock");
+        let saved = apply(db.pool(), correction(&db, item, "tablet").await)
+            .await
+            .unwrap();
+        assert_eq!(saved.item.unit, "tablet");
+        assert_eq!(saved.item.name, "Synthetic reviewed stock");
     }
 }
 #[tokio::test]
@@ -757,7 +808,7 @@ async fn legacy_null_discharge_context_is_derived_from_locked_active_admission_a
 #[tokio::test]
 async fn manual_dispense_rejects_controlled_type_even_when_legacy_flag_is_false_without_moving_stock(
 ) {
-    let f = Fixture::new(true).await;
+    let f = Fixture::with_historical_source(true, true).await;
     sqlx::query(
         "UPDATE inventory_items SET controlled=false,item_type='controlled_substance' WHERE id=$1",
     )
@@ -765,6 +816,7 @@ async fn manual_dispense_rejects_controlled_type_even_when_legacy_flag_is_false_
     .execute(f.db.pool())
     .await
     .unwrap();
+    hms_db::migrate::run(f.db.pool()).await.unwrap();
     let error = hms_db::inventory::create_dispense(
         f.db.pool(),
         hms_db::inventory::NewPharmacyDispense {

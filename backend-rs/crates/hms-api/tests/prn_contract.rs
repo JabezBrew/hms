@@ -274,11 +274,42 @@ async fn prn_prescriber_stock_unit_is_checked_under_lock_and_stale_unit_does_not
     .fetch_one(&pool)
     .await
     .unwrap();
-    sqlx::query("UPDATE inventory_items SET unit='different synthetic unit' WHERE id=$1")
+    let (version, code, name): (i64, String, String) =
+        sqlx::query_as("SELECT version,code,name FROM inventory_items WHERE id=$1")
+            .bind(item)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let refused=post(&app,&token,"/api/v2/inventory/catalog-edits".into(),json!({"client_request_id":Uuid::new_v4(),"item_id":item,"expected_version":version,"effective_from":Utc::now().date_naive(),"code":code,"name":name,"unit":"different synthetic unit","reason":"Synthetic attempted used-item unit correction"})).await;
+    assert_eq!(refused.status(), StatusCode::CONFLICT);
+    assert_eq!(
+        json_body(refused).await["error"]["code"],
+        "inventory_item_has_operational_history",
+        "existing PRN-bound physical unit remains immutable"
+    );
+    let unchanged: String = sqlx::query_scalar("SELECT unit FROM inventory_items WHERE id=$1")
         .bind(item)
-        .execute(&pool)
+        .fetch_one(&pool)
         .await
         .unwrap();
+    assert_eq!(unchanged, old_unit);
+    // A reviewed unused item can change through the supported current command.
+    // The later prescription must reject the genuinely stale reviewed unit.
+    let category:Uuid=sqlx::query_scalar("SELECT id FROM inventory_categories WHERE facility_id=$1 AND is_active ORDER BY id LIMIT 1").bind(app.state().facility_id()).fetch_one(&pool).await.unwrap();
+    let created=post(&app,&token,"/api/v2/inventory/items".into(),json!({"client_request_id":Uuid::new_v4(),"category_id":category,"code":"SYN_PRN_REVIEWED_UNIT","name":"Synthetic unused PRN catalog item","item_type":"medication","unit":old_unit})).await;
+    assert_eq!(created.status(), StatusCode::OK);
+    let created = json_body(created).await;
+    assert_eq!(created["data"]["item"]["unit"], old_unit);
+    let item: Uuid = created["data"]["item"]["id"]
+        .as_str()
+        .unwrap()
+        .parse()
+        .unwrap();
+    let changed=post(&app,&token,"/api/v2/inventory/catalog-edits".into(),json!({"client_request_id":Uuid::new_v4(),"item_id":item,"expected_version":1,"effective_from":Utc::now().date_naive(),"code":"SYN_PRN_REVIEWED_UNIT","name":"Synthetic unused PRN catalog item","unit":"different synthetic unit","reason":"Synthetic explicit unused-item unit correction"})).await;
+    assert_eq!(changed.status(), StatusCode::OK);
+    let changed = json_body(changed).await;
+    assert_eq!(changed["data"]["item"]["version"], 2);
+    assert_eq!(changed["data"]["item"]["unit"], "different synthetic unit");
     let response=post(&app,&token,format!("/api/v2/patients/{patient}/clinical/prescriptions"),json!({"medication_name":"Synthetic stale PRN","dose":"2 tablets","route":"oral","frequency":"prn","inventory_item_id":item,"prn_policy":{"expected_stock_unit":old_unit,"minimum_interval_hours":4,"maximum_doses_per_24_hours":2,"stock_units_per_dose":2,"indication":"Synthetic indication"}})).await;
     assert_eq!(response.status(), StatusCode::CONFLICT);
     assert_eq!(

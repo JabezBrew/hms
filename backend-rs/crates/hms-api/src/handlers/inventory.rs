@@ -1,3 +1,5 @@
+use hms_domain::inventory_items::{InventoryCategoriesQuery, InventoryItemCommandReceipt};
+pub mod items;
 pub mod storage_locations;
 use axum::extract::{Path, Query, State};
 use axum::Json;
@@ -27,16 +29,23 @@ use crate::extractors::RequestContext;
 use crate::response::{ListResponse, ObjectResponse};
 use crate::state::AppState;
 
-#[utoipa::path(get, path = "/api/v2/inventory/categories", operation_id = "getInventoryCategories", tag = "inventory", security(("bearerAuth" = [])), responses((status = 200, body = ListResponse<InventoryCategoryListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
+#[utoipa::path(get,path="/api/v2/inventory/categories",operation_id="getInventoryCategories",tag="inventory",security(("bearerAuth"=[])),params(InventoryCategoriesQuery),responses((status=200,body=ListResponse<InventoryCategoryListItem>),(status=400,body=ApiErrorResponse),(status=401,body=ApiErrorResponse),(status=403,body=ApiErrorResponse)))]
 pub async fn list_categories(
     State(state): State<AppState>,
-    RequestContext(user): RequestContext,
+    RequestContext(ctx): RequestContext,
+    query: Result<Query<InventoryCategoriesQuery>, axum::extract::rejection::QueryRejection>,
 ) -> Result<Json<ListResponse<InventoryCategoryListItem>>, ApiError> {
+    let Query(q) = query.map_err(|_| {
+        ApiError::bad_request(
+            "invalid_inventory_category_query",
+            "Use the supported bounded category query.",
+        )
+    })?;
     Ok(Json(
         state
             .inventory_services()
-            .catalog()
-            .list_categories(&user)
+            .items()
+            .categories(&ctx, q)
             .await?,
     ))
 }
@@ -86,17 +95,40 @@ pub async fn get_item(
     ))
 }
 
-#[utoipa::path(post, path = "/api/v2/inventory/catalog-edits", operation_id = "postInventoryCatalogEdit", tag = "inventory", security(("bearerAuth" = [])), request_body = CreateInventoryCatalogEditRequest, responses((status = 200, body = ObjectResponse<InventoryCatalogVersionItem>), (status = 400, body = ApiErrorResponse), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse), (status = 409, body = ApiErrorResponse)))]
+#[utoipa::path(post,path="/api/v2/inventory/catalog-edits",operation_id="postInventoryCatalogEdit",tag="inventory",security(("bearerAuth"=[])),request_body=CreateInventoryCatalogEditRequest,responses((status=200,body=ObjectResponse<InventoryItemCommandReceipt>),(status=400,body=ApiErrorResponse),(status=401,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=404,body=ApiErrorResponse),(status=409,body=ApiErrorResponse)))]
 pub async fn apply_catalog_edit(
     State(state): State<AppState>,
     network: crate::extractors::NetworkContext,
-    Json(payload): Json<CreateInventoryCatalogEditRequest>,
-) -> Result<Json<ObjectResponse<InventoryCatalogVersionItem>>, ApiError> {
+    payload: Result<
+        Json<CreateInventoryCatalogEditRequest>,
+        axum::extract::rejection::JsonRejection,
+    >,
+) -> Result<Json<ObjectResponse<hms_domain::inventory_items::InventoryItemCommandReceipt>>, ApiError>
+{
+    let Json(i) = payload.map_err(|_| {
+        ApiError::bad_request(
+            "invalid_inventory_item_request",
+            "Provide the supported correction fields, current version and request reference.",
+        )
+    })?;
     Ok(Json(
         state
             .inventory_services()
-            .catalog()
-            .apply_catalog_edit(&network.context, payload, network.authorization_deadline)
+            .items()
+            .command(
+                &network.context,
+                network.authorization_deadline,
+                hms_domain::inventory_items::InventoryItemReviewedInput::Correct {
+                    client_request_id: i.client_request_id,
+                    item_id: i.item_id,
+                    expected_version: i.expected_version,
+                    effective_from: i.effective_from,
+                    code: i.code,
+                    name: i.name,
+                    unit: i.unit,
+                    reason: i.reason,
+                },
+            )
             .await?,
     ))
 }
@@ -290,17 +322,23 @@ pub async fn get_transfer(
     ))
 }
 
-#[utoipa::path(post, path = "/api/v2/inventory/transfers", operation_id = "postStockTransfers", tag = "inventory", security(("bearerAuth" = [])), request_body = CreateStockTransferRequest, responses((status = 200, body = ObjectResponse<StockTransferListItem>), (status = 400, body = ApiErrorResponse), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
+#[utoipa::path(post,path="/api/v2/inventory/transfers",operation_id="postStockTransfers",tag="inventory",security(("bearerAuth"=[])),request_body=CreateStockTransferRequest,responses((status=200,body=ObjectResponse<StockTransferListItem>),(status=400,body=ApiErrorResponse),(status=401,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse)))]
 pub async fn create_transfer(
     State(state): State<AppState>,
-    RequestContext(user): RequestContext,
-    Json(payload): Json<CreateStockTransferRequest>,
+    network: crate::extractors::NetworkContext,
+    payload: Result<Json<CreateStockTransferRequest>, axum::extract::rejection::JsonRejection>,
 ) -> Result<Json<ObjectResponse<StockTransferListItem>>, ApiError> {
+    let Json(payload) = payload.map_err(|_| {
+        ApiError::bad_request(
+            "invalid_stock_transfer",
+            "Provide the required reviewed item unit and transfer fields.",
+        )
+    })?;
     Ok(Json(
         state
             .inventory_services()
             .stock_control()
-            .create_transfer(&user, payload)
+            .create_transfer(&network.context, payload, network.authorization_deadline)
             .await?,
     ))
 }

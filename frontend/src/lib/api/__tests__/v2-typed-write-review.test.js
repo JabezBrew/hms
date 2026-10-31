@@ -7,7 +7,9 @@ import { requestPrnDose } from '@/features/nursing/api/prn';
 import { standingApi } from '@/features/inventory/standing/api';
 import { createPrescription } from '@/hooks/usePrescriptionMutations';
 import { billingApi } from '@/lib/api/billing';
-import { applyCatalogCorrection, catalogToday } from '@/features/inventory/api/catalogCorrections';
+import { inventoryCatalogApi } from '@/features/inventory/catalog/api';
+import { prepareCommand, utcToday } from '@/features/inventory/catalog/model';
+import { item as catalogItem } from '@/features/inventory/catalog/__tests__/fixtures';
 
 const principal = { id: '70000000-0000-4000-8000-000000000001', facility_id: '70000000-0000-4000-8000-000000000002', active_profile: 'hospital' };
 const prescription = '70000000-0000-4000-8000-000000000003';
@@ -98,10 +100,14 @@ describe('typed success validation and durable opaque write review', () => {
 
   it('retains malformed catalog confirmation without storing the correction fields', async () => {
     globalThis.fetch.mockResolvedValueOnce(json({ data: {} }));
-    await expect(applyCatalogCorrection(admission, { code: 'SYNTHETIC-PRIVATE-CODE', name: 'SYNTHETIC-PRIVATE-NAME', unit: 'tablet', effective_from: catalogToday(), reason: 'SYNTHETIC-PRIVATE-REASON' })).rejects.toMatchObject({ code: 'catalog_correction_unconfirmed' });
+    const command = await prepareCommand({ action: 'correct', client_request_id: key, item_id: catalogItem.id, expected_version: catalogItem.version, code: 'SYNTHETIC-PRIVATE-CODE', name: 'SYNTHETIC-PRIVATE-NAME', unit: catalogItem.unit, effective_from: utcToday(), reason: 'SYNTHETIC-PRIVATE-REASON' }, principal.id, catalogItem);
+    const unknown = await inventoryCatalogApi.write(command).catch(error => error);
+    expect(unknown).toMatchObject({ name: 'InventoryItemUnconfirmedError' });
+    expect(JSON.parse(globalThis.fetch.mock.calls[0][1].body)).toMatchObject({ client_request_id: key, expected_version: catalogItem.version, item_id: catalogItem.id });
+    expect(() => acknowledgeWriteResponse(unknown)).toThrow();
     expect(getWriteUncertaintySnapshot().entries).toHaveLength(1);
     const stored = sessionStorage.getItem(WRITE_UNCERTAINTY_KEY);
-    for (const secret of ['SYNTHETIC-PRIVATE-CODE', 'SYNTHETIC-PRIVATE-NAME', 'SYNTHETIC-PRIVATE-REASON', admission]) expect(stored).not.toContain(secret);
+    for (const secret of ['SYNTHETIC-PRIVATE-CODE', 'SYNTHETIC-PRIVATE-NAME', 'SYNTHETIC-PRIVATE-REASON', catalogItem.id]) expect(stored).not.toContain(secret);
     resetWriteUncertaintyForTests({ preserveStorage: true }); activate();
     await expect(standingApi.create({ name: 'Blocked duplicate' })).rejects.toMatchObject({ status: 409 });
     expect(globalThis.fetch).toHaveBeenCalledTimes(1);

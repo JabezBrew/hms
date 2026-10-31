@@ -44,6 +44,7 @@ struct MovementRow {
 
 #[derive(Clone, Debug, FromRow)]
 struct TransferRow {
+    requested_unit: Option<String>,
     id: Uuid,
     item_id: Uuid,
     item_name: String,
@@ -437,31 +438,114 @@ pub async fn get_transfer(
     fetch_transfer_by_id(pool, facility_id, id).await
 }
 
+#[derive(Debug, Clone, Copy)]
+pub enum StockTransferError {
+    LocationUnavailable,
+    LocationBusy,
+    Invalid,
+    SourceUnavailable,
+    UnitChanged,
+    Busy,
+}
+impl std::fmt::Display for StockTransferError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Current transfer source review is required.")
+    }
+}
+impl std::error::Error for StockTransferError {}
+fn transfer_lock_error(e: sqlx::Error) -> anyhow::Error {
+    if e.as_database_error()
+        .is_some_and(|d| d.code().as_deref() == Some("55P03"))
+    {
+        StockTransferError::Busy.into()
+    } else {
+        e.into()
+    }
+}
+/// Trusted repository compatibility; HTTP always uses the mandatory proof wrapper.
 pub async fn create_transfer(
     pool: &PgPool,
     transfer: NewStockTransfer,
 ) -> anyhow::Result<StockTransferListItem> {
-    sqlx::query(
-        r#"
-        INSERT INTO stock_transfers (
-            id, facility_id, item_id, from_location_id, to_location_id, quantity, status, created_by_user_id
+    create_transfer_inner(pool, transfer, None).await
+}
+pub async fn create_transfer_authorized(
+    pool: &PgPool,
+    transfer: NewStockTransfer,
+    authorization: crate::clinical::prescription_courses::PrescriptionAuthorization,
+) -> anyhow::Result<StockTransferListItem> {
+    create_transfer_inner(pool, transfer, Some(authorization)).await
+}
+async fn create_transfer_inner(
+    pool: &PgPool,
+    transfer: NewStockTransfer,
+    authorization: Option<crate::clinical::prescription_courses::PrescriptionAuthorization>,
+) -> anyhow::Result<StockTransferListItem> {
+    if transfer.quantity <= 0
+        || transfer.quantity > 9_007_199_254_740_991
+        || [
+            transfer.id,
+            transfer.facility_id,
+            transfer.item_id,
+            transfer.from_location_id,
+            transfer.to_location_id,
+        ]
+        .iter()
+        .any(Uuid::is_nil)
+    {
+        return Err(StockTransferError::Invalid.into());
+    }
+    let mut tx = pool.begin().await?;
+    let proof = if let Some(authorization) = authorization {
+        let mut a = super::items::InventoryItemActor {
+            facility_id: transfer.facility_id,
+            user_id: transfer.actor_user_id,
+            request_id: "inventory-transfer".into(),
+            authorization,
+        };
+        super::items::authority(&mut tx, &mut a).await?
+    } else {
+        crate::clinical::stock_basis::authorize(
+            &mut tx,
+            transfer.facility_id,
+            transfer.actor_user_id,
+            None,
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-        "#,
-    )
-    .bind(transfer.id)
-    .bind(transfer.facility_id)
-    .bind(transfer.item_id)
-    .bind(transfer.from_location_id)
-    .bind(transfer.to_location_id)
-    .bind(transfer.quantity)
-    .bind(codec::encode(TransferStatus::Requested)?)
-    .bind(transfer.actor_user_id)
-    .execute(pool)
-    .await?;
-    fetch_transfer_by_id(pool, transfer.facility_id, transfer.id)
         .await?
-        .ok_or_else(|| anyhow::anyhow!("created transfer was not found"))
+    };
+    // Retain the actual item before reading/comparing any reviewed unit basis.
+    // Transfer requests are metadata and keep their existing broad item classification.
+    let source:Option<(String,String)>=sqlx::query_as("SELECT unit,name FROM inventory_items WHERE facility_id=$1 AND id=$2 AND is_active FOR SHARE NOWAIT").bind(transfer.facility_id).bind(transfer.item_id).fetch_optional(&mut *tx).await.map_err(transfer_lock_error)?;
+    let (unit, name) = source.ok_or(StockTransferError::SourceUnavailable)?;
+    if unit != transfer.expected_unit {
+        return Err(StockTransferError::UnitChanged.into());
+    }
+    let mut locations = vec![transfer.from_location_id, transfer.to_location_id];
+    locations.sort();
+    locations.dedup();
+    let found:Vec<Uuid>=sqlx::query_scalar("SELECT id FROM storage_locations WHERE facility_id=$1 AND id=ANY($2) AND is_active ORDER BY id FOR SHARE NOWAIT").bind(transfer.facility_id).bind(&locations).fetch_all(&mut *tx).await.map_err(|e|if e.as_database_error().is_some_and(|d|d.code().as_deref()==Some("55P03")){anyhow::Error::from(StockTransferError::LocationBusy)}else{e.into()})?;
+    if found != locations {
+        return Err(StockTransferError::LocationUnavailable.into());
+    }
+    let row=sqlx::query_as::<_,TransferRow>(r#"INSERT INTO stock_transfers(id,facility_id,item_id,from_location_id,to_location_id,quantity,status,created_by_user_id,requested_unit)VALUES($1,$2,$3,$4,$5,$6,'requested',$7,$8) RETURNING id,item_id,$9::text AS item_name,from_location_id,to_location_id,quantity,status,created_at,requested_unit"#).bind(transfer.id).bind(transfer.facility_id).bind(transfer.item_id).bind(transfer.from_location_id).bind(transfer.to_location_id).bind(transfer.quantity).bind(transfer.actor_user_id).bind(unit).bind(name).fetch_one(&mut *tx).await?;
+    // Construct the response before commit: projection/codec failure rolls back too.
+    let result = transfer_from_row(row)?;
+    crate::admin::insert_audit_event_tx(
+        &mut tx,
+        crate::admin::NewAuditEvent {
+            facility_id: transfer.facility_id,
+            actor_user_id: Some(transfer.actor_user_id),
+            request_id: None,
+            event_type: "inventory.stock_transfer.requested".into(),
+            resource_type: "stock_transfer".into(),
+            resource_id: Some(transfer.id),
+            metadata: serde_json::json!({"quantity":transfer.quantity,"unit_reviewed":true}),
+        },
+    )
+    .await?;
+    crate::clinical::stock_basis::check_authorization(&mut tx, &proof).await?;
+    tx.commit().await?;
+    Ok(result)
 }
 
 pub async fn list_requisitions(
@@ -1142,7 +1226,7 @@ fn movement_query() -> QueryBuilder<'static, Postgres> {
 fn transfer_query() -> QueryBuilder<'static, Postgres> {
     QueryBuilder::new(
         r#"
-        SELECT stock_transfers.id,
+        SELECT stock_transfers.requested_unit,stock_transfers.id,
                stock_transfers.item_id,
                inventory_items.name AS item_name,
                stock_transfers.from_location_id,
@@ -1276,6 +1360,7 @@ fn storage_location_stock_from_row(row: StorageLocationStockRow) -> StorageLocat
 
 fn transfer_from_row(row: TransferRow) -> anyhow::Result<StockTransferListItem> {
     Ok(StockTransferListItem {
+        requested_unit: row.requested_unit,
         id: row.id,
         item_id: row.item_id,
         item_name: row.item_name,

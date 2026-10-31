@@ -1,7 +1,10 @@
 import { apiClient, handleApiError } from '../api-client';
 import { handleV2ApiError } from './v2/errors';
 import { isRustV2ApiMode } from './v2/runtime';
-import { v2Api } from './v2/client';
+import { getV2ClientScopeKey, v2Api } from './v2/client';
+import { currentConfirmedNetworkDecision, currentNetworkAuthorityScope, networkClockCurrent } from './v2/networkAccessGuard';
+import { transferPayload, transferResult, wholeQuantity } from '@/features/inventory/transfers/model';
+import { markWriteResponseUncertain } from './v2/writeUncertainty';
 import {
   cacheCursorForNextPage as cacheScopedCursorForNextPage,
   resolveCursorPage as resolveScopedCursorPage,
@@ -427,12 +430,9 @@ function buildV2GoodsReceivedNotePayload(data = {}) {
 }
 
 function buildV2StockTransferPayload(data = {}) {
-  return {
-    item_id: pickEntityId(data.item_id ?? data.item),
-    from_location_id: pickEntityId(data.from_location_id ?? data.from_location ?? data.source_location),
-    to_location_id: pickEntityId(data.to_location_id ?? data.to_location ?? data.destination_location),
-    quantity: positiveInteger(data.quantity, 'quantity'),
-  };
+  // This operation accepts one reviewed source. Never extract a first legacy
+  // array row or fetch a unit here: the caller must have shown the exact unit.
+  return transferPayload({ ...data, quantity: wholeQuantity(data.quantity) });
 }
 
 function buildV2ControlledMovementPayload(data = {}, movementType, direction) {
@@ -995,7 +995,7 @@ export const inventoryApi = {
         throw error;
       }
       if (isRustV2ApiMode()) {
-        throw new Error(handleV2ApiError(error, 'Failed to fetch inventory item'));
+        throw error;
       }
       throw new Error(handleApiError(error, 'Failed to fetch inventory item'));
     }
@@ -2359,23 +2359,31 @@ export const inventoryApi = {
    * @returns {Promise<Object>} Created transfer request
    */
   createTransferRequest: async (data, options = {}) => {
-    try {
-      if (isRustV2ApiMode()) {
-        const response = await v2Api.postStockTransfers(
-          buildV2StockTransferPayload(data),
-          { signal: options.signal || data?.signal },
-        );
+    if (isRustV2ApiMode()) {
+      const payload = buildV2StockTransferPayload(data);
+      const authority = currentNetworkAuthorityScope(), transport = getV2ClientScopeKey();
+      const network = currentConfirmedNetworkDecision(transport, authority);
+      const response = await v2Api.postStockTransfers(payload, { signal: options.signal });
+      if (options.signal?.aborted || currentNetworkAuthorityScope() !== authority || getV2ClientScopeKey() !== transport || (network && !networkClockCurrent(network))) {
+        // Transport success after an abandoned owner/clock is not review proof.
+        // Restore the same existing attempt marker, including late aborts.
+        markWriteResponseUncertain(response);
+        throw new DOMException('The transfer result requires current review.', 'AbortError');
+      }
+      try {
+        transferResult(response?.data, payload);
         return v2Object(response);
+      } catch {
+        // A successful transport with an invalid projection is still uncertain.
+        // Keep the existing unkeyed transport barrier; never fabricate a receipt.
+        markWriteResponseUncertain(response);
+        throw new Error('The transfer result could not be confirmed. Review saved transfer requests before submitting another.');
       }
-
-      return await apiClient.post('/inventory/transfer-requests/', data);
+    }
+    try {
+      return await apiClient.post('/inventory/transfer-requests/', data, options);
     } catch (error) {
-      if (isAbortError(error)) {
-        throw error;
-      }
-      if (isRustV2ApiMode()) {
-        throw new Error(handleV2ApiError(error, 'Failed to create transfer request'));
-      }
+      if (isAbortError(error)) throw error;
       throw new Error(handleApiError(error, 'Failed to create transfer request'));
     }
   },

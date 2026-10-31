@@ -15,7 +15,34 @@ pub fn routes() -> Router<AppState> {
             "/api/v2/inventory/dashboard-summary",
             get(inventory::dashboard_summary),
         )
-        .route("/api/v2/inventory/items", get(inventory::list_items))
+        .route(
+            "/api/v2/inventory/items",
+            get(inventory::list_items).post(inventory::items::create),
+        )
+        .route(
+            "/api/v2/inventory/items/administration",
+            get(inventory::items::list),
+        )
+        .route(
+            "/api/v2/inventory/items/:id/administration",
+            get(inventory::items::detail),
+        )
+        .route(
+            "/api/v2/inventory/items/:id/catalog-history",
+            get(inventory::items::history),
+        )
+        .route(
+            "/api/v2/inventory/items/:id/retire",
+            post(inventory::items::retire),
+        )
+        .route(
+            "/api/v2/inventory/items/:id/reactivate",
+            post(inventory::items::reactivate),
+        )
+        .route(
+            "/api/v2/inventory/item-commands/:client_request_id",
+            get(inventory::items::receipt),
+        )
         .route("/api/v2/inventory/items/:id", get(inventory::get_item))
         .route(
             "/api/v2/inventory/catalog-edits",

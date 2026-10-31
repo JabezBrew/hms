@@ -1,4 +1,4 @@
-//! Preserve serde's closed tagged variants in the generated consultation schema.
+//! Preserve serde's closed tagged variants in the generated object schemas.
 use utoipa::openapi::{
     schema::{AdditionalProperties, Schema},
     OpenApi, RefOr,
@@ -19,6 +19,8 @@ impl Modify for StrictConsultationSchemas {
             "ReferralConsultationSource",
             "ReferralConsultationVisitChoice",
             "AppointmentTypeReviewedInput",
+            "InventoryItemReviewedInput",
+            "InventoryItemHistoryRow",
         ] {
             let Some(RefOr::T(Schema::OneOf(schema))) = components.schemas.get_mut(name) else {
                 continue;

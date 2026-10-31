@@ -1,0 +1,15 @@
+# Inventory catalog administration
+
+The Rust catalog is a lazy feature at `/inventory/catalog` and `/inventory/catalog/:itemId`. One `/inventory/catalog/*` route keeps its command controller mounted during directory/detail navigation. General stock pages link here; their old UUID-less Rust correction entry is closed. Django item editing remains separate.
+
+`useCatalogAccess` uses current Inventory view/manage, demographics visibility and Inventory feature facts. Read availability requires the existing confirmed network clock. Management or credential confirmation never grants extra permissions. The generated transport and backend independently enforce current credentials for the four catalog commands and original receipts.
+
+`model.js` preserves raw legacy metadata and validates closed state/history/receipt shapes. New or changed metadata follows the new text policy; unchanged blank, long or spaced values stay exact. SQL dates in retained history/receipts support signed and expanded years. Current metadata and recording history remain distinct; legacy dates never schedule activation. History identity is `(source,id)` and server recording order is preserved.
+
+`api.js` sends only root-generated operations and retains the actual response envelope through typed/canonical receipt validation. `useCatalogRead` requires the actual successful read stamp and captured notification lease before publication. Its opaque request-scope key refreshes data after a transport change without effect-driven duplicate requests. A real current GET403 is recognized using checkpoint23's private denial witness before the denial invalidates its own clock. Mounted request/source epochs prevent old responses from concealing new content.
+
+`CatalogChangeDialog` copies input before awaiting a fresh exact item read and hashing. Source data/error identity, fields, scope and access changes clear unsent review and consent. Read preparation is cancellable; its own cleanup is independent of an obsolete authority lease. Business writes retain a synchronous latch and dismissal lock. The controller retains one exact RAM command and opaque uncertainty handle through unknown outcome, ordinary close/reopen, paging and eligible workflow continuity. It never automatically retries.
+
+The deferred `inventoryItemWriteScopes` family recognizes only actual original actor-bound command receipts with matching UUID and reconstructed exact wire fingerprint. Ordinary item, administration, history and category reads cannot review the family. Only four exact POST templates support unchanged explicit replay. A reload may locate one existing inactive same-scope UUID; it cannot reconstruct a body or resolve an older unkeyed/ambiguous marker. Separate final live-proof acknowledgment remains mandatory.
+
+Frontend unit/Host controls use synthetic data and HTTP. They do not establish actual server authorization, persistence, browser geometry, latency or release acceptance. Root owns compiled backend/native checks and guarded browser validation.

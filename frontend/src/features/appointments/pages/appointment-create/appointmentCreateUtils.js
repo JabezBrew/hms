@@ -2,14 +2,14 @@ import * as z from 'zod';
 
 export const appointmentCreateFormSchema = z.object({
   patientId: z.string({
-    required_error: 'Please select a patient',
+    error: issue => issue.input === undefined ? 'Please select a patient' : undefined,
   }),
   clinicId: z.string({
-    required_error: 'Please select a clinic',
+    error: issue => issue.input === undefined ? 'Please select a clinic' : undefined,
   }),
   practitionerId: z.string().optional(),
   appointmentTypeId: z.string({
-    required_error: 'Please select an appointment type',
+    error: issue => issue.input === undefined ? 'Please select an appointment type' : undefined,
   }),
   slotId: z.string().optional(),
   description: z.string().optional(),

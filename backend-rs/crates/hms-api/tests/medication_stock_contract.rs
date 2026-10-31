@@ -391,7 +391,7 @@ async fn inventory_item_wait_expiry(catalog: bool) {
     let (path, body) = if catalog {
         (
             "/api/v2/inventory/catalog-edits",
-            json!({"item_id":f.item,"effective_from":Utc::now().date_naive(),"code":"SYNTHETIC-CORRECTION","name":"Synthetic reviewed catalog","unit":f.unit,"reason":"Synthetic reviewed correction"}),
+            json!({"client_request_id":Uuid::new_v4(),"expected_version":1,"item_id":f.item,"effective_from":Utc::now().date_naive(),"code":"SYNTHETIC-CORRECTION","name":"Synthetic reviewed catalog","unit":f.unit,"reason":"Synthetic reviewed correction"}),
         )
     } else {
         (
@@ -401,6 +401,22 @@ async fn inventory_item_wait_expiry(catalog: bool) {
     };
     let app = f.app.clone();
     let write = tokio::spawn(async move { call(&app, &token, Method::POST, path, body).await });
+    if catalog {
+        let response = write.await.unwrap();
+        let status = response.status();
+        let body = json_body(response).await;
+        assert_eq!(status, StatusCode::CONFLICT);
+        assert_eq!(body["error"]["code"], "inventory_item_busy");
+        held.rollback().await.unwrap();
+        let created: i64 =
+            sqlx::query_scalar("SELECT count(*) FROM inventory_item_commands WHERE item_id=$1")
+                .bind(f.item)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(created, 0);
+        return;
+    }
     blocked(&pool, pid).await;
     let ms:i64=sqlx::query_scalar("SELECT GREATEST(0,CEIL(EXTRACT(EPOCH FROM($1::timestamptz-clock_timestamp()))*1000))::bigint").bind(expires).fetch_one(&pool).await.unwrap();
     tokio::time::sleep(std::time::Duration::from_millis(ms as u64 + 80)).await;
@@ -418,7 +434,7 @@ async fn receipt_item_wait_cannot_outlive_managed_authority() {
     inventory_item_wait_expiry(false).await;
 }
 #[tokio::test]
-async fn catalog_item_wait_cannot_outlive_managed_authority() {
+async fn catalog_item_exclusion_refuses_without_waiting_or_publication() {
     inventory_item_wait_expiry(true).await;
 }
 

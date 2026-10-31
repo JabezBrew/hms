@@ -3,7 +3,7 @@ import { confirmCurrentPassword, factorApi, grantRequest } from '../api';
 import { loginResult } from '../model';
 import { __resetV2ApiClientForTests, configureV2ApiClient } from '@/lib/api/v2/session';
 import { bindModeledNetworkGuard as bindNetworkAccessGuard } from '@/tests/networkClockModel';
-import { challengeId, failure, json, keyId, pending, token, ordinaryToken } from './fixtures';
+import { challengeId, failure, json, keyId, pending, token, ordinaryToken, jwtFor, fixtureClock } from './fixtures';
 let runtime, accessToken;
 beforeEach(() => { runtime = window.__HMS_RUNTIME_CONFIG__; window.__HMS_RUNTIME_CONFIG__ = { apiMode: 'rust-v2', v2ApiBaseUrl: 'http://localhost/api/v2' }; __resetV2ApiClientForTests(); accessToken = token().access_token; configureV2ApiClient({ getAccessToken: () => accessToken, canRefreshSession: () => true }); vi.stubGlobal('fetch', vi.fn()); });
 afterEach(() => { __resetV2ApiClientForTests(); window.__HMS_RUNTIME_CONFIG__ = runtime; vi.unstubAllGlobals(); });
@@ -64,6 +64,25 @@ describe('restricted login and genuine factor adapters', () => {
       fetch.mockResolvedValueOnce(json(overlong));
       await expect(factorApi.verify({ login_grant: 'Synthetic grant', challenge_id: challengeId, credential: {} })).rejects.toThrow('proof');
       expect(fetch).toHaveBeenCalledTimes(2);
+    } finally { clock.mockRestore(); }
+  });
+  it.each([0, 1])('preserves strict new-factor admission for a %sms proof gap across the actual transport', async proofGap => {
+    const proofAt = Date.now(); const result = token('passkey');
+    result.user.auth_security.assurance_version += 1;
+    result.user.auth_security.session_assurance.verified_at = new Date(proofAt - proofGap).toISOString();
+    result.user.auth_security.session_assurance.expires_at = new Date(proofAt - proofGap + 900000).toISOString();
+    result.access_token = jwtFor(result, { auth_time: Math.floor(proofAt / 1000) }, proofAt);
+    result.user.auth_security.auth_clock = fixtureClock(proofAt, result.access_token);
+    let monotonic = 1000;
+    const clock = vi.spyOn(performance, 'now').mockImplementation(() => monotonic);
+    try {
+      fetch.mockImplementation(async () => { monotonic += 0.5; return json(result); });
+      const response = factorApi.stepUpVerify({ challenge_id: challengeId, credential: {} });
+      if (proofGap) await expect(response).rejects.toMatchObject({ code: 'auth_proof_invalid' });
+      else await expect(response).resolves.toMatchObject({ status: 'authenticated', user: { auth_security: { assurance_version: 2 } } });
+      expect(fetch).toHaveBeenCalledTimes(1);
+      expect(fetch.mock.calls[0][0]).toBe('http://localhost/api/v2/auth/assurance/verify');
+      expect(monotonic - 1000).toBe(0.5);
     } finally { clock.mockRestore(); }
   });
   it('reads bounded metadata and validates exact identifiers before writes', async () => { fetch.mockResolvedValueOnce(new Response(JSON.stringify({ data: [{ id: keyId, label: null, created_at: new Date().toISOString(), last_used_at: null, disabled_at: null }], page: { has_next: false, next_cursor: null } }), { headers: { 'content-type': 'application/json' } })); await expect(factorApi.keys()).resolves.toMatchObject({ rows: [{ id: keyId }], has_next: false }); expect(fetch.mock.calls[0][0]).toContain('limit=10'); await expect(factorApi.rename('../escape', 'Synthetic')).rejects.toThrow('saved passkey'); expect(fetch).toHaveBeenCalledTimes(1); });

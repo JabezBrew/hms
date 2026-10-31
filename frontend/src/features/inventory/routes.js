@@ -1,8 +1,11 @@
 import { lazy } from 'react'
 import { ROUTE_LAYOUTS, SIDEBARS } from '@/app/routes/routeTypes'
 import { ROLE_GROUPS } from '@/shared/constants/roles'
+import { transferRouteAccess } from './transfers/access'
+import { catalogRouteAccess } from './catalog/access'
 import { storageLocationRouteAccess } from './locations/access'
 
+const InventoryCatalogPage = lazy(() => import('./catalog/InventoryCatalogPage'))
 const InventoryDashboardPage = lazy(() => import('./pages/InventoryDashboardPage'))
 const ItemsPage = lazy(() => import('./pages/ItemsPage'))
 const ItemDetailPage = lazy(() => import('./pages/ItemDetailPage'))
@@ -15,7 +18,7 @@ const GRNsPage = lazy(() => import('./pages/GRNsPage'))
 const GRNDetailPage = lazy(() => import('./pages/GRNDetailPage'))
 const InternalRequisitionsPage = lazy(() => import('./pages/InternalRequisitionsPage'))
 const StandingOrdersPage = lazy(() => import('./pages/StandingOrdersPage'))
-const TransferRequestsPage = lazy(() => import('./pages/TransferRequestsPage'))
+const TransferRequestsPage = lazy(() => import('./transfers/TransferRoute'))
 const ControlledSubstancesPage = lazy(() => import('./pages/ControlledSubstancesPage'))
 const ControlledRegisterDetailPage = lazy(() => import('./pages/ControlledRegisterDetailPage'))
 const AnalyticsPage = lazy(() => import('./pages/AnalyticsPage'))
@@ -23,6 +26,15 @@ const AnalyticsPage = lazy(() => import('./pages/AnalyticsPage'))
 const INVENTORY_BREADCRUMB = { label: 'Inventory', path: '/inventory' }
 
 export const inventoryRoutes = [
+  {
+    path: '/inventory/catalog/*',
+    component: InventoryCatalogPage,
+    ...catalogRouteAccess(),
+    layout: ROUTE_LAYOUTS.APP,
+    sidebar: SIDEBARS.INVENTORY,
+    title: 'Inventory Catalog | Hospital Management System',
+    breadcrumbs: [INVENTORY_BREADCRUMB, { label: 'Catalog', path: '/inventory/catalog' }],
+  },
   {
     path: '/inventory',
     component: InventoryDashboardPage,
@@ -150,7 +162,7 @@ export const inventoryRoutes = [
   {
     path: '/inventory/transfers',
     component: TransferRequestsPage,
-    roles: ROLE_GROUPS.INVENTORY,
+    ...transferRouteAccess(),
     layout: ROUTE_LAYOUTS.APP,
     sidebar: SIDEBARS.INVENTORY,
     title: 'Transfer Requests | Hospital Management System',

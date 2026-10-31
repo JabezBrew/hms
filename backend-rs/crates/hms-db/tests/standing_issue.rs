@@ -1,3 +1,5 @@
+#[path = "support_item_governance/mod.rs"]
+mod governed;
 use chrono::{Duration, Utc};
 use hms_db::{inventory::*, test_support::TestDb};
 use hms_domain::{inventory::RequisitionStatus, inventory_standing::*};
@@ -12,7 +14,19 @@ struct Fixture {
 }
 impl Fixture {
     async fn new() -> Self {
-        let db = TestDb::hospital().await.unwrap();
+        Self::with_historical_source(false).await
+    }
+    async fn with_historical_source(historical: bool) -> Self {
+        let db = if historical {
+            TestDb::with_profile_and_migrator(
+                hms_domain::deployment::DeploymentProfile::Hospital,
+                &governed::before030(),
+            )
+            .await
+            .unwrap()
+        } else {
+            TestDb::hospital().await.unwrap()
+        };
         let(item,unit):(Uuid,String)=sqlx::query_as("SELECT id,unit FROM inventory_items WHERE facility_id=$1 AND is_active AND NOT controlled ORDER BY id LIMIT 1").bind(db.facility_id()).fetch_one(db.pool()).await.unwrap();
         let ids:Vec<Uuid>=sqlx::query_scalar("SELECT id FROM storage_locations WHERE facility_id=$1 AND is_active ORDER BY id LIMIT 2").bind(db.facility_id()).fetch_all(db.pool()).await.unwrap();
         Self {
@@ -221,7 +235,7 @@ async fn excessive_batch_fragmentation_rejects_before_any_stock_movement() {
 
 #[tokio::test]
 async fn real_issue_preserves_total_stock_lot_expiry_and_immutable_concurrent_replay() {
-    let f = Fixture::new().await;
+    let f = Fixture::with_historical_source(true).await;
     f.stock("EARLY", 2, 2).await;
     f.stock("LATER", 5, 10).await;
     f.stock("EXPIRED", 50, -1).await;
@@ -290,6 +304,7 @@ async fn real_issue_preserves_total_stock_lot_expiry_and_immutable_concurrent_re
         .execute(f.db.pool())
         .await
         .unwrap();
+    hms_db::migrate::run(f.db.pool()).await.unwrap();
     let replay = issue_standing_request(f.db.pool(), f.actor(), request.id, f.action())
         .await
         .unwrap()
@@ -389,7 +404,7 @@ async fn a_multiline_shortage_or_audit_failure_rolls_back_every_stock_and_line_c
 
 #[tokio::test]
 async fn issue_is_facility_version_source_unit_and_expiry_guarded() {
-    let f = Fixture::new().await;
+    let f = Fixture::with_historical_source(true).await;
     f.stock("EXPIRED-ONLY", 20, -1).await;
     let request = f.request(vec![f.line()]).await;
     f.approved(&request).await;
@@ -423,6 +438,7 @@ async fn issue_is_facility_version_source_unit_and_expiry_guarded() {
         .execute(f.db.pool())
         .await
         .unwrap();
+    hms_db::migrate::run(f.db.pool()).await.unwrap();
     conflict(
         issue_standing_request(f.db.pool(), f.actor(), request.id, f.action()).await,
         StandingRequestError::UnitChanged,

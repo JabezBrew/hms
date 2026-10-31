@@ -9,7 +9,19 @@ struct Fixture {
 }
 impl Fixture {
     async fn new() -> Self {
-        let app = app().await;
+        let app = app_with_imported_inventory(&[
+            (Uuid::new_v4(), "SYN_IMPORTED_FLAG", "medication", true),
+            (
+                Uuid::new_v4(),
+                "SYN_IMPORTED_TYPE",
+                "controlled_substance",
+                false,
+            ),
+        ])
+        .await;
+        Self::from_app(app).await
+    }
+    async fn from_app(app: TestApp) -> Self {
         let pool = app.db_pool().await;
         let user = Uuid::new_v4();
         sqlx::query("INSERT INTO users(id,facility_id,email,display_name,password_hash) SELECT $1,facility_id,'inventory-only@hms.local','Synthetic inventory actor',password_hash FROM users WHERE id=$2")
@@ -54,6 +66,20 @@ impl Fixture {
         }
     }
     async fn item(&self, controlled: bool, kind: &str) -> Uuid {
+        if controlled != (kind == "controlled_substance") {
+            let code = if controlled {
+                "SYN_IMPORTED_FLAG"
+            } else {
+                "SYN_IMPORTED_TYPE"
+            };
+            let (id,actual_type,actual_flag):(Uuid,String,bool)=sqlx::query_as("SELECT id,item_type,controlled FROM inventory_items WHERE facility_id=$1 AND code=$2").bind(self.app.state().facility_id()).bind(code).fetch_one(&self.app.db_pool().await).await.unwrap();
+            assert_eq!(
+                (actual_type.as_str(), actual_flag),
+                (kind, controlled),
+                "genuine pre030 classification retained without rewriting"
+            );
+            return id;
+        }
         let id = Uuid::new_v4();
         sqlx::query("INSERT INTO inventory_items(id,facility_id,category_id,code,name,item_type,unit,controlled) SELECT $1,$2,id,$3,'Synthetic stock fixture',$4,'unit',$5 FROM inventory_categories WHERE facility_id=$2 ORDER BY id LIMIT 1")
             .bind(id).bind(self.app.state().facility_id()).bind(format!("SYN_{}",id.simple())).bind(kind).bind(controlled).execute(&self.app.db_pool().await).await.unwrap();
@@ -105,21 +131,31 @@ async fn legacy_supply_rejects_more_than_one_hundred_lines_before_any_write() {
 }
 
 #[tokio::test]
-async fn receipt_rechecks_both_controlled_classifications_after_the_item_lock_wait() {
+async fn receipt_refuses_both_imported_controlled_classifications_after_actual_item_wait() {
     let f = Fixture::new().await;
     let pool = f.app.db_pool().await;
     for (controlled, kind) in [(true, "medication"), (false, "controlled_substance")] {
-        let item = f.item(false, "medication").await;
+        let item = f.item(controlled, kind).await;
+        let refused =
+            sqlx::query("UPDATE inventory_items SET controlled=$2,item_type='supply' WHERE id=$1")
+                .bind(item)
+                .bind(!controlled)
+                .execute(&pool)
+                .await
+                .unwrap_err();
+        assert_eq!(
+            refused.as_database_error().unwrap().message(),
+            "inventory_item_identity_immutable",
+            "current classification rewrite is intrinsically refused"
+        );
         let before = f.evidence().await;
         let mut classification = pool.begin().await.unwrap();
         let pid: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
             .fetch_one(&mut *classification)
             .await
             .unwrap();
-        sqlx::query("UPDATE inventory_items SET controlled=$2,item_type=$3 WHERE id=$1")
+        sqlx::query("SELECT id FROM inventory_items WHERE id=$1 FOR UPDATE")
             .bind(item)
-            .bind(controlled)
-            .bind(kind)
             .execute(&mut *classification)
             .await
             .unwrap();
@@ -147,7 +183,7 @@ async fn receipt_rechecks_both_controlled_classifications_after_the_item_lock_wa
             }
         })
         .await
-        .expect("actual receipt waits for current item classification");
+        .expect("actual receipt waits on retained imported controlled item");
         classification.commit().await.unwrap();
         let denied = response(write.await.unwrap(), StatusCode::CONFLICT).await;
         assert_eq!(
@@ -263,52 +299,96 @@ async fn standing_configuration_rejects_type_only_controlled_items() {
 }
 
 #[tokio::test]
-async fn standing_issue_rechecks_type_only_controlled_classification() {
-    let f = Fixture::new().await;
-    let item = f.item(false, "medication").await;
-    f.seed_stock(item, f.locations[1]).await;
-    let created = response(
-        f.post(
-            "/api/v2/inventory/standing-order-templates",
-            f.template(item),
-        )
-        .await,
-        StatusCode::OK,
+async fn standing_issue_refuses_imported_type_only_controlled_request_without_moving_stock() {
+    use hms_db::inventory::*;
+    use hms_domain::inventory_standing::*;
+    let item = Uuid::new_v4();
+    let (app, request) = app_with_inventory_import(
+        &[(item, "SYN_IMPORTED_STANDING", "medication", false)],
+        move |pool, facility| async move {
+            let actor = || TemplateActor {
+                facility_id: facility,
+                user_id: Uuid::from_u128(hms_db::provision::OWNER_USER_ID),
+                request_id: Some("synthetic-pre030-standing-import".into()),
+            };
+            let source = Uuid::from_u128(hms_db::provision::DEFAULT_MAIN_STORE_ID);
+            let target = Uuid::from_u128(hms_db::provision::DEFAULT_PHARMACY_STORE_ID);
+            create_batch(
+                &pool,
+                NewStockBatch {
+                    authorization: None,
+                    expected_unit: "unit".into(),
+                    id: Uuid::new_v4(),
+                    facility_id: facility,
+                    item_id: item,
+                    location_id: source,
+                    batch_number: "SYN_IMPORTED_STANDING".into(),
+                    expires_on: None,
+                    quantity_received: 10,
+                    actor_user_id: actor().user_id,
+                },
+            )
+            .await
+            .unwrap();
+            let template = create_standing_template(
+                &pool,
+                actor(),
+                CreateStandingTemplateRequest {
+                    name: "Synthetic imported standing request".into(),
+                    requesting_location_id: target,
+                    fulfilling_location_id: source,
+                    frequency: TemplateFrequency::Daily,
+                    next_run_on: Utc::now().date_naive(),
+                    monthly_day: None,
+                    notes: None,
+                    items: vec![StandingTemplateItemInput {
+                        item_id: item,
+                        quantity: 2,
+                        expected_unit: "unit".into(),
+                    }],
+                },
+            )
+            .await
+            .unwrap();
+            let request = generate_standing_template_run(
+                &pool,
+                actor(),
+                template.summary.id,
+                GenerateStandingTemplateRequest {
+                    expected_version: 1,
+                    scheduled_for: template.summary.next_run_on,
+                },
+            )
+            .await
+            .unwrap()
+            .unwrap();
+            approve_standing_request(
+                &pool,
+                actor(),
+                request.id,
+                StandingRequestAction {
+                    expected_source_version: 1,
+                },
+            )
+            .await
+            .unwrap()
+            .unwrap();
+            // Only this genuine pre030 import records the historical operator change.
+            sqlx::query("UPDATE inventory_items SET item_type='controlled_substance' WHERE id=$1")
+                .bind(item)
+                .execute(&pool)
+                .await
+                .unwrap();
+            request.id
+        },
     )
     .await;
-    let id = created["data"]["id"].as_str().unwrap();
-    let request = response(
-        f.post(
-            &format!("/api/v2/inventory/standing-order-templates/{id}/runs"),
-            json!({"expected_version":1,"scheduled_for":Utc::now().date_naive()}),
-        )
-        .await,
-        StatusCode::OK,
-    )
-    .await;
-    let request_id = request["data"]["id"].as_str().unwrap();
-    let action = json!({"expected_source_version":1});
-    response(
-        f.post(
-            &format!("/api/v2/inventory/requisitions/{request_id}/review/approve"),
-            action.clone(),
-        )
-        .await,
-        StatusCode::OK,
-    )
-    .await;
-    // Represents a populated legacy/operator classification, not a supported
-    // public recategorization command. Issue must recheck actual locked rows.
-    sqlx::query("UPDATE inventory_items SET item_type='controlled_substance' WHERE id=$1")
-        .bind(item)
-        .execute(&f.app.db_pool().await)
-        .await
-        .unwrap();
+    let f = Fixture::from_app(app).await;
     let before = f.evidence().await;
     response(
         f.post(
-            &format!("/api/v2/inventory/requisitions/{request_id}/issue"),
-            action,
+            &format!("/api/v2/inventory/requisitions/{request}/issue"),
+            json!({"expected_source_version":1}),
         )
         .await,
         StatusCode::CONFLICT,
@@ -317,7 +397,7 @@ async fn standing_issue_rechecks_type_only_controlled_classification() {
     assert_eq!(
         f.evidence().await,
         before,
-        "live type-only change cannot silently move stock"
+        "current issue of imported type-only demand cannot move stock or change evidence"
     );
 }
 
@@ -345,4 +425,39 @@ async fn generic_manual_pharmacy_uses_the_same_definite_controlled_denial() {
             response(result, StatusCode::OK).await;
         }
     }
+}
+
+#[tokio::test]
+async fn current_intrinsic_guard_refuses_contradictory_new_classifications_without_rows() {
+    let f = Fixture::new().await;
+    let pool = f.app.db_pool().await;
+    let count: i64 = sqlx::query_scalar("SELECT count(*) FROM inventory_items")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let before = f.evidence().await;
+    for (controlled, kind) in [(true, "medication"), (false, "controlled_substance")] {
+        let id = Uuid::new_v4();
+        let error=sqlx::query("INSERT INTO inventory_items(id,facility_id,category_id,code,name,item_type,unit,controlled)SELECT $1,$2,id,$3,'Synthetic refused new classification',$4,'unit',$5 FROM inventory_categories WHERE facility_id=$2 ORDER BY id LIMIT 1").bind(id).bind(f.app.state().facility_id()).bind(format!("SYN_REFUSED_{}",id.simple())).bind(kind).bind(controlled).execute(&pool).await.unwrap_err();
+        assert_eq!(
+            error.as_database_error().unwrap().message(),
+            "inventory_item_invalid_source"
+        );
+    }
+    let after: i64 = sqlx::query_scalar("SELECT count(*) FROM inventory_items")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(after, count);
+    assert_eq!(f.evidence().await, before);
+    let _ordinary = f.item(false, "medication").await;
+    let after: i64 = sqlx::query_scalar("SELECT count(*) FROM inventory_items")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        after,
+        count + 1,
+        "independent current ordinary item positive remains supported"
+    );
 }

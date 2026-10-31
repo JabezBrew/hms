@@ -1426,14 +1426,14 @@ pub(crate) async fn update_prescription_in_transaction(
         .inventory_item_id
         .filter(|item_id| Some(*item_id) != current.inventory_item_id)
     {
-        let local_item = sqlx::query_scalar::<_, bool>(
-            "SELECT EXISTS (SELECT 1 FROM inventory_items WHERE facility_id = $1 AND id = $2 AND is_active AND item_type IN ('medication', 'controlled_substance'))",
+        let local_item = sqlx::query_scalar::<_, Uuid>(
+            "SELECT id FROM inventory_items WHERE facility_id=$1 AND id=$2 AND is_active AND item_type IN ('medication','controlled_substance') FOR SHARE NOWAIT",
         )
         .bind(facility_id)
         .bind(item_id)
-        .fetch_one(&mut **transaction)
-        .await?;
-        if !local_item {
+        .fetch_optional(&mut **transaction)
+        .await.map_err(|e| if e.as_database_error().is_some_and(|d|d.code().as_deref()==Some("55P03")) {anyhow::Error::from(stock_basis::StockBasisError::ItemNotActionable)} else {e.into()})?;
+        if local_item.is_none() {
             anyhow::bail!("prescription_inventory_item_invalid");
         }
     }

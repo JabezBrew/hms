@@ -1,3 +1,5 @@
+#[path = "support_item_governance/mod.rs"]
+mod governed;
 use chrono::{DateTime, Duration, Utc};
 use hms_db::{
     clinical::{
@@ -33,7 +35,20 @@ impl Fixture {
         Self::with_schedule("q6h", Some(10)).await
     }
     async fn with_schedule(frequency: &str, duration_days: Option<i32>) -> Self {
-        let db = TestDb::hospital().await.unwrap();
+        Self::with_historical_source(frequency, duration_days, false).await
+    }
+    async fn with_historical_source(
+        frequency: &str,
+        duration_days: Option<i32>,
+        historical: bool,
+    ) -> Self {
+        let db = if historical {
+            TestDb::with_profile_and_migrator(DeploymentProfile::Hospital, &governed::before030())
+                .await
+                .unwrap()
+        } else {
+            TestDb::hospital().await.unwrap()
+        };
         hms_db::network::update_policy(
             db.pool(),
             hms_db::network::NetworkPolicyActor {
@@ -529,8 +544,8 @@ async fn local_stop_preserves_source_supplied_history_and_original_window_member
 
 #[tokio::test]
 async fn either_controlled_classification_blocks_new_demand_but_keeps_local_retirement_available() {
-    let f = Fixture::new().await;
     for (flag, kind) in [(true, "medication"), (false, "controlled_substance")] {
+        let f = Fixture::with_historical_source("q6h", Some(10), true).await;
         sqlx::query("UPDATE inventory_items SET controlled=$2,item_type=$3 WHERE id=$1")
             .bind(f.item)
             .bind(flag)
@@ -538,6 +553,7 @@ async fn either_controlled_classification_blocks_new_demand_but_keeps_local_reti
             .execute(f.db.pool())
             .await
             .unwrap();
+        hms_db::migrate::run(f.db.pool()).await.unwrap();
         let detail = f.detail().await;
         assert!(detail.can_stop_course);
         assert!(!detail.can_request_schedule_window);
@@ -553,11 +569,11 @@ async fn either_controlled_classification_blocks_new_demand_but_keeps_local_reti
             Some(&hms_db::clinical::stock_basis::StockBasisError::ControlledItem)
         );
         assert_eq!(f.evidence().await, before);
+        let before = f.evidence().await;
+        f.stop_course(f.stop(&f.detail().await)).await.unwrap();
+        assert_eq!(f.evidence().await["stock"], before["stock"]);
+        assert_eq!(f.evidence().await["movements"], before["movements"]);
     }
-    let before = f.evidence().await;
-    f.stop_course(f.stop(&f.detail().await)).await.unwrap();
-    assert_eq!(f.evidence().await["stock"], before["stock"]);
-    assert_eq!(f.evidence().await["movements"], before["movements"]);
 }
 
 #[tokio::test]
@@ -1488,7 +1504,11 @@ async fn current_read_authority_recovers_exact_saved_intent_after_manage_withdra
 }
 
 async fn foreign_child_rejects_complete_review_and_writes(table: &str) {
-    let f = Fixture::new().await;
+    let f = if table == "fulfillment" {
+        Fixture::with_historical_source("q6h", Some(10), true).await
+    } else {
+        Fixture::new().await
+    };
     let detail = f.detail().await;
     let foreign = Uuid::new_v4();
     sqlx::query("INSERT INTO facilities SELECT (jsonb_populate_record(NULL::facilities,to_jsonb(f)||jsonb_build_object('id',$2::uuid,'code',$3::text))).* FROM facilities f WHERE f.id=$1")
@@ -1503,6 +1523,9 @@ async fn foreign_child_rejects_complete_review_and_writes(table: &str) {
             .bind(f.initial).bind(foreign).execute(f.db.pool()).await.unwrap();
         }
         _ => unreachable!(),
+    }
+    if table == "fulfillment" {
+        hms_db::migrate::run(f.db.pool()).await.unwrap();
     }
     let before = f.evidence().await;
     let read = repo::get_treatment_course(

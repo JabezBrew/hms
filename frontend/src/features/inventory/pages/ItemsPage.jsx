@@ -338,9 +338,7 @@ function ItemsHeader({
 function RustV2InventoryNotice() {
   return (
     <Alert role="note"><AlertDescription>
-      Open an item to correct its catalog details with inventory management permission.
-      Item creation and full editing are unavailable. Stock levels, movement history,
-      and requisition workflows remain available.
+      Use catalog administration to add ordinary items, review dated metadata corrections and manage eligible active selection. Stock levels, movement history and requisition workflows remain separate.
     </AlertDescription></Alert>
   );
 }

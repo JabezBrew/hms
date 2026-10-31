@@ -90,7 +90,7 @@ describe('ItemsPage Rust V2 guards', () => {
     expect(screen.queryByRole('button', { name: /add item/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /edit/i })).not.toBeInTheDocument();
     expect(
-      await screen.findByText(/open an item to correct its catalog details/i),
+      await screen.findByText(/Use catalog administration to add ordinary items/i),
     ).toBeInTheDocument();
   });
 

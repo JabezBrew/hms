@@ -12,6 +12,11 @@ async fn producer_first_location_retirement_is_bounded_and_later_refuses_committ
     let id = location_id(&r);
     let pool = app.db_pool().await;
     let item = item(&app).await;
+    let reviewed_unit: String = sqlx::query_scalar("SELECT unit FROM inventory_items WHERE id=$1")
+        .bind(item)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
     sqlx::raw_sql("CREATE FUNCTION wait_storage21_transfer()RETURNS trigger LANGUAGE plpgsql AS $$BEGIN PERFORM pg_advisory_xact_lock(17002801);RETURN NEW;END$$;CREATE TRIGGER wait_storage21_transfer AFTER INSERT ON stock_transfers FOR EACH ROW EXECUTE FUNCTION wait_storage21_transfer();").execute(&pool).await.unwrap();
     let mut gate = pool.acquire().await.unwrap();
     sqlx::query("SELECT pg_advisory_lock(17002801)")
@@ -21,7 +26,7 @@ async fn producer_first_location_retirement_is_bounded_and_later_refuses_committ
     let a = app.clone();
     let t = token.clone();
     let pending = tokio::spawn(async move {
-        request(&a,&t,Method::POST,"/api/v2/inventory/transfers",Some(json!({"item_id":item,"from_location_id":id,"to_location_id":Uuid::from_u128(hms_db::provision::DEFAULT_PHARMACY_STORE_ID),"quantity":1}))).await
+        request(&a,&t,Method::POST,"/api/v2/inventory/transfers",Some(json!({"expected_unit":reviewed_unit,"item_id":item,"from_location_id":id,"to_location_id":Uuid::from_u128(hms_db::provision::DEFAULT_PHARMACY_STORE_ID),"quantity":1}))).await
     });
     wait_for_lock(&pool, "INSERT INTO stock_transfers").await;
     let blocked = tokio::time::timeout(
@@ -50,6 +55,11 @@ async fn lifecycle_first_publication_is_bounded_and_cannot_insert_against_retire
     let id = location_id(&r);
     let pool = app.db_pool().await;
     let item = item(&app).await;
+    let reviewed_unit: String = sqlx::query_scalar("SELECT unit FROM inventory_items WHERE id=$1")
+        .bind(item)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
     sqlx::raw_sql("CREATE FUNCTION wait_storage21_retire()RETURNS trigger LANGUAGE plpgsql AS $$BEGIN IF NEW.event_type='inventory.storage_location.retire' THEN PERFORM pg_advisory_xact_lock(17002802);END IF;RETURN NEW;END$$;CREATE TRIGGER wait_storage21_retire BEFORE INSERT ON audit_events FOR EACH ROW EXECUTE FUNCTION wait_storage21_retire();").execute(&pool).await.unwrap();
     let mut gate = pool.acquire().await.unwrap();
     sqlx::query("SELECT pg_advisory_lock(17002802)")
@@ -60,7 +70,7 @@ async fn lifecycle_first_publication_is_bounded_and_cannot_insert_against_retire
     let t = token.clone();
     let pending = tokio::spawn(async move { command(&a, &t, id, "retire", 1).await });
     wait_for_lock(&pool, "INSERT INTO audit_events").await;
-    let body = json!({"item_id":item,"from_location_id":id,"to_location_id":Uuid::from_u128(hms_db::provision::DEFAULT_PHARMACY_STORE_ID),"quantity":1});
+    let body = json!({"expected_unit":reviewed_unit,"item_id":item,"from_location_id":id,"to_location_id":Uuid::from_u128(hms_db::provision::DEFAULT_PHARMACY_STORE_ID),"quantity":1});
     let blocked = tokio::time::timeout(
         std::time::Duration::from_secs(2),
         request(

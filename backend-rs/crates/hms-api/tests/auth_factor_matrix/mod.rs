@@ -41,7 +41,9 @@ pub(super) struct Matrix {
 }
 impl Matrix {
     pub async fn new() -> Self {
-        let app = app().await;
+        Self::from_app(app().await).await
+    }
+    pub async fn from_app(app: TestApp) -> Self {
         let pool = app.db_pool().await;
         let facility = app.state().facility_id();
         let owner = Uuid::from_u128(hms_db::provision::OWNER_USER_ID);

@@ -6,29 +6,29 @@ export const personalCalendarFormSchema = z.object({
     message: 'Name must be at least 3 characters.',
   }),
   practitioner: z.string({
-    required_error: 'Please select a practitioner.',
+    error: issue => issue.input === undefined ? 'Please select a practitioner.' : undefined,
   }),
   days_of_week: z.array(z.number()).min(1, {
     message: 'At least one day of the week must be selected.',
-  }),
+  }).max(7, { message: 'Select up to seven days of the week.' }),
   start_time: z.string({
-    required_error: 'Please enter a start time.',
+    error: issue => issue.input === undefined ? 'Please enter a start time.' : undefined,
   }),
   end_time: z.string({
-    required_error: 'Please enter an end time.',
+    error: issue => issue.input === undefined ? 'Please enter an end time.' : undefined,
   }),
   slot_duration: z.number({
-    required_error: 'Please enter a slot duration.',
+    error: issue => issue.input === undefined ? 'Please enter a slot duration.' : undefined,
   }).min(5, {
     message: 'Slot duration must be at least 5 minutes.',
   }),
   active_from: z.date({
-    required_error: 'Please select a start date.',
+    error: issue => issue.input === undefined ? 'Please select a start date.' : undefined,
   }),
   active_to: z.date().optional(),
   is_active: z.boolean().default(true),
   template_name: z.string().max(120).optional().or(z.literal('')),
-  practitioners: z.array(z.string().uuid()).optional(),
+  practitioners: z.array(z.guid()).optional(),
   breaks: z.array(z.object({
     start: z.string().min(1, 'Start time is required'),
     end: z.string().min(1, 'End time is required'),

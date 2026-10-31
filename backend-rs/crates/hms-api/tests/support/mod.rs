@@ -31,7 +31,9 @@ use tower::Service;
 pub use uuid::Uuid;
 
 const TEST_JWT_SECRET: &str = "test-only-hms-v2-jwt-secret";
+mod inventory_history;
 pub(crate) mod webauthn_signing;
+pub(crate) use inventory_history::{app_with_imported_inventory, app_with_inventory_import};
 use webauthn_signing::SoftwareAuthenticator;
 
 /// Keys live only while their actual isolated test database is retained. A

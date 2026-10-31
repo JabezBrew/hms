@@ -1,13 +1,11 @@
 use hms_db::inventory::{
-    CatalogEditCommand, InventoryItemFilters, InventoryItemOrdering, StorageLocationFilters,
-    SupplierFilters,
+    InventoryItemFilters, InventoryItemOrdering, StorageLocationFilters, SupplierFilters,
 };
 use hms_domain::deployment::PermissionCode;
 use hms_domain::inventory::{
-    CreateInventoryCatalogEditRequest, InventoryCatalogVersionItem, InventoryCategoryListItem,
-    InventoryDashboardSummary, InventoryDashboardSummaryQuery, InventoryItemListItem,
-    InventoryItemsQuery, StorageLocationListItem, StorageLocationListQuery, SupplierListItem,
-    SupplierListQuery,
+    InventoryCategoryListItem, InventoryDashboardSummary, InventoryDashboardSummaryQuery,
+    InventoryItemListItem, InventoryItemsQuery, StorageLocationListItem, StorageLocationListQuery,
+    SupplierListItem, SupplierListQuery,
 };
 use uuid::Uuid;
 
@@ -211,55 +209,6 @@ impl InventoryCatalogService {
                 ApiError::not_found("storage_location_not_found", "Location could not be found.")
             })?;
         Ok(object(location))
-    }
-
-    pub async fn apply_catalog_edit(
-        &self,
-        ctx: &hms_access::RequestContext,
-        payload: CreateInventoryCatalogEditRequest,
-        authorization_deadline: chrono::DateTime<chrono::Utc>,
-    ) -> Result<ObjectResponse<InventoryCatalogVersionItem>, ApiError> {
-        require_inventory_access(ctx, self.facility_id(), PermissionCode::InventoryManage)?;
-        if !ctx.reauth_is_fresh_at(chrono::Utc::now()) {
-            return Err(ApiError::forbidden(
-                "reauth_required",
-                "Confirm your current credentials before correcting the catalog.",
-            ));
-        }
-        let authorization_deadline = authorization_deadline.min(ctx.reauth.required_after);
-        let edit = hms_db::inventory::apply_catalog_edit(
-            self.pool(),
-            CatalogEditCommand {
-                authorization: Some(
-                    crate::services::clinical::prescription_courses::ordinary_authorization(
-                        ctx,
-                        authorization_deadline,
-                    )?,
-                ),
-                id: Uuid::new_v4(),
-                facility_id: self.facility_id(),
-                item_id: payload.item_id,
-                effective_from: payload.effective_from,
-                code: normalize_text(payload.code, "code")?,
-                name: normalize_text(payload.name, "name")?,
-                unit: normalize_text(payload.unit, "unit")?,
-                reason: normalize_text(payload.reason, "reason")?,
-                actor_user_id: ctx.user_id,
-            },
-        )
-        .await
-        .map_err(|error| {
-            if error.is::<hms_db::clinical::stock_basis::StockBasisError>()
-                || error.is::<hms_db::clinical::prescription_courses::PrescriptionCourseError>()
-            {
-                return crate::services::clinical::prescription_courses::write_error(error);
-            }
-            ApiError::conflict(
-                "inventory_catalog_edit_failed",
-                "Inventory catalog edit could not be saved.",
-            )
-        })?;
-        Ok(object(edit))
     }
 }
 

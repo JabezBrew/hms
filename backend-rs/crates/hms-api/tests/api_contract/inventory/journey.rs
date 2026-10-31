@@ -487,6 +487,7 @@ async fn inventory_controlled_substances_and_pharmacy_dispensing_follow_access_r
                 .header("content-type", "application/json")
                 .body(Body::from(
                     json!({
+                        "expected_unit": "tablet",
                         "item_id": paracetamol_id,
                         "from_location_id": main_location_id,
                         "to_location_id": pharmacy_location_id,

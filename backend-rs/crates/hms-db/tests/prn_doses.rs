@@ -1,3 +1,5 @@
+#[path = "support_item_governance/mod.rs"]
+mod governed;
 use chrono::{Duration, Utc};
 use hms_db::{
     clinical::NewPrescription,
@@ -354,7 +356,16 @@ async fn legacy_missing_policy_source_changes_and_unit_changes_fail_closed() {
         err.downcast_ref::<hms_db::ward::PrnError>(),
         Some(&hms_db::ward::PrnError::Unconfigured)
     );
-    let f = Fixture::new(Some(policy())).await;
+    let f = Fixture::with_db(
+        TestDb::with_profile_and_migrator(
+            hms_domain::deployment::DeploymentProfile::Hospital,
+            &governed::before030(),
+        )
+        .await
+        .unwrap(),
+        Some(policy()),
+    )
+    .await;
     f.status(PrescriptionStatus::OnHold).await;
     assert!(
         hms_db::ward::request_prn_dose(f.db.pool(), f.request(Uuid::new_v4()))
@@ -370,6 +381,7 @@ async fn legacy_missing_policy_source_changes_and_unit_changes_fail_closed() {
         .execute(f.db.pool())
         .await
         .unwrap();
+    hms_db::migrate::run(f.db.pool()).await.unwrap();
     assert!(f.supply(dose.pharmacy_fulfillment_id, 1).await.is_err());
     assert_eq!(f.stock().await, 100);
     sqlx::query("UPDATE medication_administrations SET is_dispensed=true WHERE id=$1")
@@ -736,7 +748,16 @@ async fn waiting_prn_request_observes_admission_closure_and_source_stop() {
 
 #[tokio::test]
 async fn prn_prescribing_denies_a_unit_change_after_catalog_selection_without_saving() {
-    let f = Fixture::new(Some(policy())).await;
+    let f = Fixture::with_db(
+        TestDb::with_profile_and_migrator(
+            hms_domain::deployment::DeploymentProfile::Hospital,
+            &governed::before030(),
+        )
+        .await
+        .unwrap(),
+        Some(policy()),
+    )
+    .await;
     let source = hms_db::clinical::get_prescription(f.db.pool(), f.db.facility_id(), f.source)
         .await
         .unwrap()
@@ -747,6 +768,7 @@ async fn prn_prescribing_denies_a_unit_change_after_catalog_selection_without_sa
         .execute(f.db.pool())
         .await
         .unwrap();
+    hms_db::migrate::run(f.db.pool()).await.unwrap();
     let id = Uuid::new_v4();
     let error = hms_db::clinical::create_prescription_with_prn_policy(
         f.db.pool(),

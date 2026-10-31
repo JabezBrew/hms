@@ -529,3 +529,18 @@ The supported deployment protocol refuses runtime 028 or earlier after 029 commi
 The new runtime refuses schema 028 before provisioning, listening or worker
 readiness. Older artifacts are not assumed to recognize future migrations.
 Local schema/protocol tests do not establish a live migration or rollback drill.
+
+Migration `202610300030` requires runtime epoch `202610300030`. It adds governed
+current item commands and immutable correction history, closes new legacy dated
+writes, retains all ten item-reference families and records exact reviewed units
+for new transfer requests. Existing transfer units remain unknown (NULL) when
+not recorded; migration does not infer them or convert stock.
+
+Use a matching API/worker/migrator, generated frontend and supported deployment
+protocol. The new runtime refuses schema029 before provisioning/listening/worker
+readiness. Supported deployment refuses runtime029 or earlier after030 commits.
+An older artifact cannot know future migrations, and an old readiness response
+does not establish supported write compatibility. Roll forward with a compatible
+artifact or use the separately governed backup/restore procedure; no automatic
+down migration discards original command/history evidence. Local schema/process
+tests and old-client diagnostics do not establish a live deployment/restore drill.

@@ -1,3 +1,5 @@
+import { transferNavigationFeatures, transferNavigationHref, transferRouteAccess, TRANSFER_READ_CAPABILITIES } from '@/features/inventory/transfers/access'
+import { catalogRouteAccess } from '@/features/inventory/catalog/access'
 import { bookableServiceRouteAccess } from '@/features/appointments/services/access'
 import { isRustV2ApiMode } from '@/lib/api/v2/runtime'
 import { organizationRouteAccess } from '@/features/admin/organization/access'
@@ -400,17 +402,19 @@ const globalSections = [
       label: 'Inventory',
       icon: Package,
       ...storageLocationParentAccess(),
-      features: ['inventory'],
+      ...(isRustV2ApiMode() ? { capabilities: TRANSFER_READ_CAPABILITIES } : {}),
+      features: transferNavigationFeatures,
       children: [
-        item({ key: 'inventory-dashboard', label: 'Dashboard', href: '/inventory', icon: LayoutDashboard, roles: ROLE_GROUPS.INVENTORY, exact: true }),
-        item({ key: 'inventory-items', label: 'Items', href: '/inventory/items', icon: Package, roles: ROLE_GROUPS.INVENTORY, exact: false }),
+        item({ key: 'inventory-dashboard', label: 'Dashboard', href: '/inventory', icon: LayoutDashboard, roles: ROLE_GROUPS.INVENTORY, features: ['inventory'], exact: true }),
+        item({ key: 'inventory-items', label: 'Items', href: '/inventory/items', icon: Package, roles: ROLE_GROUPS.INVENTORY, features: ['inventory'], exact: false }),
+        ...(isRustV2ApiMode() ? [item({ key: 'inventory-catalog', label: 'Catalog', href: '/inventory/catalog', icon: Package, ...catalogRouteAccess(), exact: false })] : []),
         item({ key: 'inventory-locations', label: 'Locations', href: '/inventory/locations', icon: Warehouse, ...storageLocationRouteAccess(), exact: true }),
-        item({ key: 'inventory-requisitions', label: 'Requisitions', href: '/inventory/requisitions', icon: ClipboardList, roles: ROLE_GROUPS.INVENTORY, exact: false }),
-        item({ key: 'inventory-purchase-orders', label: 'Purchase Orders', href: '/inventory/purchase-orders', icon: ShoppingCart, roles: ROLE_GROUPS.INVENTORY, exact: false }),
-        item({ key: 'inventory-grns', label: 'GRNs', href: '/inventory/grns', icon: FileBox, roles: ROLE_GROUPS.INVENTORY, exact: false }),
-        item({ key: 'inventory-transfers', label: 'Transfers', href: '/inventory/transfers', icon: Truck, roles: ROLE_GROUPS.INVENTORY, exact: true }),
-        item({ key: 'inventory-controlled', label: 'Controlled', href: '/inventory/controlled', icon: AlertTriangle, roles: ROLE_GROUPS.INVENTORY, exact: false }),
-        item({ key: 'inventory-analytics', label: 'Analytics', href: '/inventory/analytics', icon: BarChart3, roles: ROLE_GROUPS.INVENTORY, exact: true }),
+        item({ key: 'inventory-requisitions', label: 'Requisitions', href: '/inventory/requisitions', icon: ClipboardList, roles: ROLE_GROUPS.INVENTORY, features: ['inventory'], exact: false }),
+        item({ key: 'inventory-purchase-orders', label: 'Purchase Orders', href: '/inventory/purchase-orders', icon: ShoppingCart, roles: ROLE_GROUPS.INVENTORY, features: ['inventory'], exact: false }),
+        item({ key: 'inventory-grns', label: 'GRNs', href: '/inventory/grns', icon: FileBox, roles: ROLE_GROUPS.INVENTORY, features: ['inventory'], exact: false }),
+        item({ key: 'inventory-transfers', label: 'Transfers', href: transferNavigationHref, icon: Truck, ...transferRouteAccess(), features: transferNavigationFeatures, exact: true }),
+        item({ key: 'inventory-controlled', label: 'Controlled', href: '/inventory/controlled', icon: AlertTriangle, roles: ROLE_GROUPS.INVENTORY, features: ['inventory'], exact: false }),
+        item({ key: 'inventory-analytics', label: 'Analytics', href: '/inventory/analytics', icon: BarChart3, roles: ROLE_GROUPS.INVENTORY, features: ['inventory'], exact: true }),
       ],
     }),
     item({
@@ -564,11 +568,13 @@ const inventorySections = [
   section('inventory', 'Inventory', [
     item({ key: 'inventory-dashboard', label: 'Dashboard', href: '/inventory', icon: LayoutDashboard, roles: ROLE_GROUPS.INVENTORY, features: ['inventory'], exact: true }),
     item({ key: 'inventory-items', label: 'Items', href: '/inventory/items', icon: Package, roles: ROLE_GROUPS.INVENTORY, features: ['inventory'], exact: false }),
+    ...(isRustV2ApiMode() ? [item({ key: 'inventory-catalog', label: 'Catalog', href: '/inventory/catalog', icon: Package, ...catalogRouteAccess(), exact: false })] : []),
+
     item({ key: 'inventory-locations', label: 'Locations', href: '/inventory/locations', icon: Warehouse, ...storageLocationRouteAccess(), features: ['inventory'], exact: true }),
     item({ key: 'inventory-requisitions', label: 'Requisitions', href: '/inventory/requisitions', icon: ClipboardList, roles: ROLE_GROUPS.INVENTORY, features: ['inventory'], exact: false }),
     item({ key: 'inventory-purchase-orders', label: 'Purchase Orders', href: '/inventory/purchase-orders', icon: ShoppingCart, roles: ROLE_GROUPS.INVENTORY, features: ['inventory'], exact: false }),
     item({ key: 'inventory-grns', label: 'GRNs', href: '/inventory/grns', icon: FileBox, roles: ROLE_GROUPS.INVENTORY, features: ['inventory'], exact: false }),
-    item({ key: 'inventory-transfers', label: 'Transfers', href: '/inventory/transfers', icon: Truck, roles: ROLE_GROUPS.INVENTORY, features: ['inventory'], exact: true }),
+    item({ key: 'inventory-transfers', label: 'Transfers', href: transferNavigationHref, icon: Truck, ...transferRouteAccess(), features: transferNavigationFeatures, exact: true }),
     item({ key: 'inventory-controlled', label: 'Controlled', href: '/inventory/controlled', icon: AlertTriangle, roles: ROLE_GROUPS.INVENTORY, features: ['inventory'], exact: false }),
     item({ key: 'inventory-analytics', label: 'Analytics', href: '/inventory/analytics', icon: BarChart3, roles: ROLE_GROUPS.INVENTORY, features: ['inventory'], exact: true }),
   ]),

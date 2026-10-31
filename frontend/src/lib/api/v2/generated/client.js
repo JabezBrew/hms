@@ -1351,7 +1351,11 @@ export const operations = {
     "method": "GET",
     "path": "/api/v2/inventory/categories",
     "pathParamNames": [],
-    "queryParamNames": [],
+    "queryParamNames": [
+      "cursor",
+      "limit",
+      "search"
+    ],
     "hasBody": false
   },
   "getInventoryDashboardSummary": {
@@ -1364,12 +1368,58 @@ export const operations = {
     ],
     "hasBody": false
   },
+  "getInventoryItemAdministration": {
+    "operationId": "getInventoryItemAdministration",
+    "method": "GET",
+    "path": "/api/v2/inventory/items/administration",
+    "pathParamNames": [],
+    "queryParamNames": [
+      "cursor",
+      "limit",
+      "search",
+      "is_active"
+    ],
+    "hasBody": false
+  },
+  "getInventoryItemAdministrationById": {
+    "operationId": "getInventoryItemAdministrationById",
+    "method": "GET",
+    "path": "/api/v2/inventory/items/{id}/administration",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [],
+    "hasBody": false
+  },
   "getInventoryItemById": {
     "operationId": "getInventoryItemById",
     "method": "GET",
     "path": "/api/v2/inventory/items/{id}",
     "pathParamNames": [
       "id"
+    ],
+    "queryParamNames": [],
+    "hasBody": false
+  },
+  "getInventoryItemCatalogHistory": {
+    "operationId": "getInventoryItemCatalogHistory",
+    "method": "GET",
+    "path": "/api/v2/inventory/items/{id}/catalog-history",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [
+      "cursor",
+      "limit"
+    ],
+    "hasBody": false
+  },
+  "getInventoryItemCommand": {
+    "operationId": "getInventoryItemCommand",
+    "method": "GET",
+    "path": "/api/v2/inventory/item-commands/{client_request_id}",
+    "pathParamNames": [
+      "client_request_id"
     ],
     "queryParamNames": [],
     "hasBody": false
@@ -4397,6 +4447,34 @@ export const operations = {
     "queryParamNames": [],
     "hasBody": true
   },
+  "postInventoryItemCreate": {
+    "operationId": "postInventoryItemCreate",
+    "method": "POST",
+    "path": "/api/v2/inventory/items",
+    "pathParamNames": [],
+    "queryParamNames": [],
+    "hasBody": true
+  },
+  "postInventoryItemReactivate": {
+    "operationId": "postInventoryItemReactivate",
+    "method": "POST",
+    "path": "/api/v2/inventory/items/{id}/reactivate",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [],
+    "hasBody": true
+  },
+  "postInventoryItemRetire": {
+    "operationId": "postInventoryItemRetire",
+    "method": "POST",
+    "path": "/api/v2/inventory/items/{id}/retire",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [],
+    "hasBody": true
+  },
   "postInventoryRequisitionApprove": {
     "operationId": "postInventoryRequisitionApprove",
     "method": "POST",
@@ -5664,7 +5742,11 @@ export function createGeneratedClient(request) {
     getHealthReady: createOperation(request, operations.getHealthReady),
     getInventoryCategories: createOperation(request, operations.getInventoryCategories),
     getInventoryDashboardSummary: createOperation(request, operations.getInventoryDashboardSummary),
+    getInventoryItemAdministration: createOperation(request, operations.getInventoryItemAdministration),
+    getInventoryItemAdministrationById: createOperation(request, operations.getInventoryItemAdministrationById),
     getInventoryItemById: createOperation(request, operations.getInventoryItemById),
+    getInventoryItemCatalogHistory: createOperation(request, operations.getInventoryItemCatalogHistory),
+    getInventoryItemCommand: createOperation(request, operations.getInventoryItemCommand),
     getInventoryItems: createOperation(request, operations.getInventoryItems),
     getInventoryItemStockBatches: createOperation(request, operations.getInventoryItemStockBatches),
     getInventoryItemStockByLocation: createOperation(request, operations.getInventoryItemStockByLocation),
@@ -5938,6 +6020,9 @@ export function createGeneratedClient(request) {
     postHandoffs: createOperation(request, operations.postHandoffs),
     postInpatientIntake: createOperation(request, operations.postInpatientIntake),
     postInventoryCatalogEdit: createOperation(request, operations.postInventoryCatalogEdit),
+    postInventoryItemCreate: createOperation(request, operations.postInventoryItemCreate),
+    postInventoryItemReactivate: createOperation(request, operations.postInventoryItemReactivate),
+    postInventoryItemRetire: createOperation(request, operations.postInventoryItemRetire),
     postInventoryRequisitionApprove: createOperation(request, operations.postInventoryRequisitionApprove),
     postInventoryRequisitionCancel: createOperation(request, operations.postInventoryRequisitionCancel),
     postInventoryRequisitionIssue: createOperation(request, operations.postInventoryRequisitionIssue),

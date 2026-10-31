@@ -61,7 +61,7 @@ beforeEach(() => {
   window.__HMS_RUNTIME_CONFIG__ = { apiMode: 'rust-v2', v2ApiBaseUrl: 'http://localhost/api/v2', defaultFacilityCode: 'HMS' };
   vi.stubGlobal('crypto', webcrypto); vi.stubGlobal('PublicKeyCredential', class {}); vi.stubGlobal('navigator', { ...navigator, credentials: { get: vi.fn().mockResolvedValue(credential()) } });
   for (const key of pointerNames) Object.defineProperty(Element.prototype, key, { configurable: true, value: key === 'hasPointerCapture' ? () => false : () => {} });
-  ordinary = false; initial = authenticated(); upgraded = structuredClone(initial); upgraded.user.auth_security.assurance_version += 1; upgraded.user.auth_security.session_assurance.verified_at = new Date(Date.now()).toISOString(); upgraded.access_token = jwtFor(upgraded, { auth_time: Math.floor(Date.now() / 1000) }); upgraded.user.auth_security.auth_clock = fixtureClock(Date.now(), upgraded.access_token);
+  ordinary = false; initial = authenticated(); upgraded = structuredClone(initial); const proofAt = Date.now(); upgraded.user.auth_security.assurance_version += 1; upgraded.user.auth_security.session_assurance.verified_at = new Date(proofAt).toISOString(); upgraded.access_token = jwtFor(upgraded, { auth_time: Math.floor(proofAt / 1000) }, proofAt); upgraded.user.auth_security.auth_clock = fixtureClock(proofAt, upgraded.access_token);
   afterProof = networkDecision(); newReads = 0; heldReads = []; posts = []; lost = false; pendingWrite = false; finishRequest = null; finishRefresh = null;
   vi.stubGlobal('fetch', vi.fn(async (input, request = {}) => {
     const url = new URL(input); const path = url.pathname;

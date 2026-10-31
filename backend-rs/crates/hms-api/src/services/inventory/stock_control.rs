@@ -297,31 +297,22 @@ impl StockControlService {
         &self,
         ctx: &hms_access::RequestContext,
         payload: CreateStockTransferRequest,
+        authorization_deadline: chrono::DateTime<chrono::Utc>,
     ) -> Result<ObjectResponse<StockTransferListItem>, ApiError> {
         require_stock_write_access(ctx, self.facility_id())?;
         require_positive(payload.quantity, "quantity")?;
-        let transfer = hms_db::inventory::create_transfer(
-            self.pool(),
-            NewStockTransfer {
-                id: Uuid::new_v4(),
-                facility_id: self.facility_id(),
-                item_id: payload.item_id,
-                from_location_id: payload.from_location_id,
-                to_location_id: payload.to_location_id,
-                quantity: payload.quantity,
-                actor_user_id: ctx.user_id,
-            },
-        )
-        .await
-        .map_err(|error| {
-            super::common::storage_location_reference_error(&error).unwrap_or_else(|| {
-                ApiError::conflict(
-                    "stock_transfer_create_failed",
-                    "Transfer could not be saved.",
-                )
-            })
+        let result=hms_db::inventory::create_transfer_authorized(self.pool(),NewStockTransfer{expected_unit:payload.expected_unit,id:Uuid::new_v4(),facility_id:self.facility_id(),item_id:payload.item_id,from_location_id:payload.from_location_id,to_location_id:payload.to_location_id,quantity:payload.quantity,actor_user_id:ctx.user_id},crate::services::clinical::prescription_courses::authorization(ctx,authorization_deadline)).await.map_err(|e|{
+            if let Some(v)=e.downcast_ref::<hms_db::inventory::StockTransferError>(){return match v{
+                hms_db::inventory::StockTransferError::LocationBusy=>ApiError::conflict("storage_location_busy","The selected location is in use. Refresh the current work before continuing."),
+                hms_db::inventory::StockTransferError::LocationUnavailable=>ApiError::conflict("storage_location_reference_unavailable","Select an active storage location in the current facility."),
+                hms_db::inventory::StockTransferError::Invalid=>ApiError::bad_request("invalid_stock_transfer","Review the supported transfer fields and positive quantity."),
+                hms_db::inventory::StockTransferError::SourceUnavailable=>ApiError::conflict("stock_transfer_source_unavailable","Select a currently active local item and locations."),
+                hms_db::inventory::StockTransferError::UnitChanged=>ApiError::conflict("stock_transfer_unit_changed","The item unit changed. Review the current item before submitting another request."),
+                hms_db::inventory::StockTransferError::Busy=>ApiError::conflict("stock_transfer_source_busy","The source is in use. Refresh and review it before continuing."),};}
+            if e.is::<hms_db::inventory::items::InventoryItemError>()||e.is::<hms_db::clinical::prescription_courses::PrescriptionCourseError>()||e.is::<hms_db::network::NetworkPublicationError>()||e.is::<hms_db::clinical::medication_access::MedicationAccessError>(){return ApiError::forbidden("inventory_transfer_authority_required","Current inventory authority, session and network proof are required.")}
+            super::common::storage_location_reference_error(&e).unwrap_or_else(||ApiError::conflict("stock_transfer_write_unconfirmed","The request could not be confirmed. Review saved requests before submitting another."))
         })?;
-        Ok(object(transfer))
+        Ok(object(result))
     }
 
     pub async fn list_requisitions(

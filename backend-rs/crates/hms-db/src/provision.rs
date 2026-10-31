@@ -7344,25 +7344,6 @@ async fn seed_lab_catalog(pool: &PgPool, baseline: &BaselineProvisioning) -> any
         .await?;
     }
 
-    sqlx::query(
-        r#"
-        UPDATE inventory_items
-        SET primary_supplier_id = CASE
-            WHEN code = 'PARA500' THEN $2
-            WHEN code = 'MOR10' THEN $3
-            ELSE primary_supplier_id
-        END,
-        updated_at = now()
-        WHERE facility_id = $1
-          AND code IN ('PARA500', 'MOR10')
-        "#,
-    )
-    .bind(baseline.facility_id)
-    .bind(Uuid::from_u128(DEFAULT_SUPPLIER_ACME_ID))
-    .bind(Uuid::from_u128(DEFAULT_SUPPLIER_CITY_ID))
-    .execute(pool)
-    .await?;
-
     Ok(())
 }
 
@@ -7520,6 +7501,19 @@ async fn seed_inventory_baseline(
         .bind(email)
         .execute(pool)
         .await?;
+    }
+
+    // Missing-only defaults bind permanent item identity, never a mutable code.
+    // Run after both missing items and suppliers exist, including first bootstrap.
+    for (item, supplier) in [
+        (
+            DEFAULT_INVENTORY_ITEM_PARACETAMOL_ID,
+            DEFAULT_SUPPLIER_ACME_ID,
+        ),
+        (DEFAULT_INVENTORY_ITEM_MORPHINE_ID, DEFAULT_SUPPLIER_CITY_ID),
+    ] {
+        sqlx::query("UPDATE inventory_items i SET primary_supplier_id=s.id,updated_at=clock_timestamp() FROM inventory_suppliers s WHERE i.facility_id=$1 AND i.id=$2 AND i.primary_supplier_id IS NULL AND s.facility_id=i.facility_id AND s.id=$3 AND s.is_active")
+            .bind(baseline.facility_id).bind(Uuid::from_u128(item)).bind(Uuid::from_u128(supplier)).execute(pool).await?;
     }
 
     Ok(())

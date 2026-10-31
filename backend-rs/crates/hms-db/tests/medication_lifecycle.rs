@@ -24,7 +24,29 @@ impl Fixture {
     }
 
     async fn with_start(first_dose_at: DateTime<Utc>) -> Self {
-        let db = TestDb::hospital().await.expect("test database provisions");
+        Self::with_start_and_import_epoch(first_dose_at, false).await
+    }
+    async fn with_start_and_import_epoch(first_dose_at: DateTime<Utc>, historical: bool) -> Self {
+        let db = if historical {
+            let migrator = sqlx::migrate::Migrator {
+                migrations: std::borrow::Cow::Owned(
+                    hms_db::migrate::MIGRATOR
+                        .iter()
+                        .filter(|m| m.version < 202610300030)
+                        .cloned()
+                        .collect(),
+                ),
+                ..sqlx::migrate::Migrator::DEFAULT
+            };
+            TestDb::with_profile_and_migrator(
+                hms_domain::deployment::DeploymentProfile::Hospital,
+                &migrator,
+            )
+            .await
+            .expect("real pre030 import database provisions")
+        } else {
+            TestDb::hospital().await.expect("test database provisions")
+        };
         let care = db
             .scenario("medication-lifecycle")
             .admission_case_with_available_bed()
@@ -822,15 +844,23 @@ async fn medication_resume_with_no_eligible_doses_retires_empty_fulfillment() {
     assert_eq!(f.generate().await.requested_dose_count, 0);
 }
 
-#[tokio::test]
-async fn medication_stock_binding_rejects_foreign_facility_items_on_create_and_update() {
-    let f = Fixture::new().await;
+async fn foreign_medication_item(f: &Fixture) -> Uuid {
     let foreign_facility = Uuid::new_v4();
     let category = Uuid::new_v4();
     let item = Uuid::new_v4();
     sqlx::query("INSERT INTO facilities (id, code, name, deployment_profile) VALUES ($1, 'MED-FOREIGN', 'Synthetic other facility', 'hospital')").bind(foreign_facility).execute(f.db.pool()).await.unwrap();
     sqlx::query("INSERT INTO inventory_categories (id, facility_id, code, name) VALUES ($1, $2, 'SYNTHETIC', 'Synthetic category')").bind(category).bind(foreign_facility).execute(f.db.pool()).await.unwrap();
     sqlx::query("INSERT INTO inventory_items (id, facility_id, category_id, code, name, item_type, unit) VALUES ($1, $2, $3, 'SYNTHETIC', 'Synthetic foreign item', 'medication', 'tablet')").bind(item).bind(foreign_facility).bind(category).execute(f.db.pool()).await.unwrap();
+    item
+}
+async fn medication_binding_evidence(f: &Fixture) -> String {
+    sqlx::query_scalar("SELECT encode(sha256(convert_to(jsonb_build_object('source',(SELECT coalesce(jsonb_agg(to_jsonb(r)ORDER BY id),'[]'::jsonb)FROM prescriptions r),'courses',(SELECT coalesce(jsonb_agg(to_jsonb(c)ORDER BY id),'[]'::jsonb)FROM medication_courses c),'mar',(SELECT coalesce(jsonb_agg(to_jsonb(m)ORDER BY id),'[]'::jsonb)FROM medication_administrations m),'fulfillments',(SELECT coalesce(jsonb_agg(to_jsonb(p)ORDER BY id),'[]'::jsonb)FROM pharmacy_fulfillments p),'stock',(SELECT coalesce(jsonb_agg(to_jsonb(b)ORDER BY id),'[]'::jsonb)FROM stock_batches b),'movements',(SELECT coalesce(jsonb_agg(to_jsonb(s)ORDER BY id),'[]'::jsonb)FROM stock_movements s),'audit',(SELECT coalesce(jsonb_agg(to_jsonb(a)ORDER BY id),'[]'::jsonb)FROM audit_events a))::text,'UTF8')),'hex')").fetch_one(f.db.pool()).await.unwrap()
+}
+
+#[tokio::test]
+async fn medication_stock_binding_rejects_foreign_facility_items_on_create_and_update() {
+    let f = Fixture::new().await;
+    let item = foreign_medication_item(&f).await;
     let mut change = patch(None);
     change.inventory_item_id = Some(item);
     assert_eq!(
@@ -876,18 +906,78 @@ async fn medication_stock_binding_rejects_foreign_facility_items_on_create_and_u
             .unwrap()
             .unwrap();
     assert_eq!(source.inventory_item_id, Some(f.item_id));
-    sqlx::query("UPDATE prescriptions SET inventory_item_id = $2 WHERE id = $1")
+    let before = medication_binding_evidence(&f).await;
+    let denied = sqlx::query("UPDATE prescriptions SET inventory_item_id = $2 WHERE id = $1")
         .bind(f.prescription_id)
         .bind(item)
         .execute(f.db.pool())
         .await
-        .unwrap();
+        .unwrap_err();
     assert_eq!(
-        hms_db::pharmacy::generate_mar_for_prescription(f.db.pool(), f.generation())
+        denied.as_database_error().unwrap().message(),
+        "inventory_item_reference_unavailable",
+        "current changed reference is intrinsically scoped before any write"
+    );
+    assert_eq!(
+        medication_binding_evidence(&f).await,
+        before,
+        "current malformed-reference refusal changes no source, schedule, stock or audit row"
+    );
+    let unchanged =
+        hms_db::clinical::get_prescription(f.db.pool(), f.db.facility_id(), f.prescription_id)
+            .await
+            .unwrap()
+            .unwrap();
+    assert_eq!(unchanged.inventory_item_id, Some(f.item_id));
+    assert!(
+        f.generate().await.requested_dose_count > 0,
+        "independent current local binding remains schedulable after refused foreign writes"
+    );
+    // A separate genuine029 import preserves the downstream defensive read
+    // premise without permitting new malformed references through030 guards.
+    let imported =
+        Fixture::with_start_and_import_epoch(Utc::now() - Duration::hours(13), true).await;
+    let foreign = foreign_medication_item(&imported).await;
+    sqlx::query("UPDATE prescriptions SET inventory_item_id=$2 WHERE id=$1")
+        .bind(imported.prescription_id)
+        .bind(foreign)
+        .execute(imported.db.pool())
+        .await
+        .unwrap();
+    hms_db::migrate::run(imported.db.pool()).await.unwrap();
+    hms_db::schema_compatibility::require_runtime_schema(imported.db.pool())
+        .await
+        .unwrap();
+    let retained = hms_db::clinical::get_prescription(
+        imported.db.pool(),
+        imported.db.facility_id(),
+        imported.prescription_id,
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    assert_eq!(retained.inventory_item_id, Some(foreign));
+    let before = medication_binding_evidence(&imported).await;
+    assert_eq!(
+        hms_db::pharmacy::generate_mar_for_prescription(imported.db.pool(), imported.generation())
             .await
             .unwrap_err()
             .to_string(),
         "prescription_inventory_item_invalid"
+    );
+    assert_eq!(medication_binding_evidence(&imported).await,before,"downstream foreign-import refusal preserves exact retained source, schedule, physical and audit evidence");
+    let retained = hms_db::clinical::get_prescription(
+        imported.db.pool(),
+        imported.db.facility_id(),
+        imported.prescription_id,
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    assert_eq!(
+        retained.inventory_item_id,
+        Some(foreign),
+        "no guessed rebinding repairs imported evidence"
     );
 }
 

@@ -1131,12 +1131,13 @@ describe('Rust V2 inventory bridge', () => {
       }))
       .mockResolvedValueOnce(jsonResponse({
         data: {
-          id: 'transfer-1',
-          item_id: 'item-1',
+          id: '24242424-2424-4242-8242-000000000006',
+          item_id: '24242424-2424-4242-8242-000000000003',
           item_name: 'Paracetamol',
-          from_location_id: 'location-1',
-          to_location_id: 'location-2',
+          from_location_id: '24242424-2424-4242-8242-000000000004',
+          to_location_id: '24242424-2424-4242-8242-000000000005',
           quantity: 5,
+          requested_unit: ' raw box ',
           status: 'requested',
           created_at: '2026-05-12T08:15:00Z',
         },
@@ -1191,11 +1192,12 @@ describe('Rust V2 inventory bridge', () => {
       status: 'accepted',
     });
     await expect(inventoryApi.createTransferRequest({
-      item: 'item-1',
-      from_location: 'location-1',
-      to_location: 'location-2',
-      quantity: '5',
-    }, { signal })).resolves.toMatchObject({ id: 'transfer-1' });
+      item_id: '24242424-2424-4242-8242-000000000003',
+      from_location_id: '24242424-2424-4242-8242-000000000004',
+      to_location_id: '24242424-2424-4242-8242-000000000005',
+      quantity: 5,
+      expected_unit: ' raw box ',
+    }, { signal })).resolves.toMatchObject({ id: '24242424-2424-4242-8242-000000000006' });
     await expect(inventoryApi.dispenseControlledSubstance({
       item: 'item-2',
       location: 'location-1',
@@ -1262,10 +1264,11 @@ describe('Rust V2 inventory bridge', () => {
         'http://localhost:8080/api/v2/inventory/transfers',
         'POST',
         JSON.stringify({
-          item_id: 'item-1',
-          from_location_id: 'location-1',
-          to_location_id: 'location-2',
+          item_id: '24242424-2424-4242-8242-000000000003',
+          from_location_id: '24242424-2424-4242-8242-000000000004',
+          to_location_id: '24242424-2424-4242-8242-000000000005',
           quantity: 5,
+          expected_unit: ' raw box ',
         }),
         signal,
       ],

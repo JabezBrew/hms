@@ -11,6 +11,7 @@ use crate::codec;
 
 mod catalog;
 mod controlled_substances;
+pub mod items;
 mod pharmacy;
 mod procurement;
 mod standing_fulfillment;
@@ -28,8 +29,8 @@ pub use standing_orders::{
 };
 
 pub use catalog::{
-    apply_catalog_edit, get_item, get_location, inventory_dashboard_summary, list_categories,
-    list_items, list_locations, list_suppliers,
+    get_item, get_location, inventory_dashboard_summary, list_categories, list_items,
+    list_locations, list_suppliers,
 };
 pub use controlled_substances::{
     create_controlled_count, create_controlled_count_authorized, create_controlled_movement,
@@ -44,12 +45,12 @@ pub use procurement::{
 };
 pub use stock_control::{
     approve_requisition, cancel_requisition, create_batch, create_requisition,
-    create_standing_order, create_transfer, dispense_supply_request, enqueue_stock_check,
-    fulfill_requisition, generate_draft_requisition_from_standing_order, get_requisition,
-    get_transfer, list_batches, list_item_batches, list_item_movements,
+    create_standing_order, create_transfer, create_transfer_authorized, dispense_supply_request,
+    enqueue_stock_check, fulfill_requisition, generate_draft_requisition_from_standing_order,
+    get_requisition, get_transfer, list_batches, list_item_batches, list_item_movements,
     list_item_stock_by_location, list_movements, list_requisitions, list_standing_orders,
     list_storage_location_stock, list_transfers, reject_requisition, submit_requisition,
-    transition_stock_check,
+    transition_stock_check, StockTransferError,
 };
 
 #[derive(Clone, Debug)]
@@ -189,6 +190,7 @@ pub struct NewStockBatch {
 
 #[derive(Clone, Debug)]
 pub struct NewStockTransfer {
+    pub expected_unit: String,
     pub id: Uuid,
     pub facility_id: Uuid,
     pub item_id: Uuid,
@@ -267,20 +269,6 @@ pub struct NewPharmacyDispense {
     pub item_id: Uuid,
     pub location_id: Uuid,
     pub quantity: i64,
-    pub actor_user_id: Uuid,
-}
-
-#[derive(Clone, Debug)]
-pub struct CatalogEditCommand {
-    pub authorization: Option<crate::clinical::prescription_courses::PrescriptionAuthorization>,
-    pub id: Uuid,
-    pub facility_id: Uuid,
-    pub item_id: Uuid,
-    pub effective_from: chrono::NaiveDate,
-    pub code: String,
-    pub name: String,
-    pub unit: String,
-    pub reason: String,
     pub actor_user_id: Uuid,
 }
 

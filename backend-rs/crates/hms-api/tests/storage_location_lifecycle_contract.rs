@@ -109,9 +109,14 @@ async fn metadata_reference_producers_reject_inactive_and_foreign_locations() {
     sqlx::query("INSERT INTO facilities(id,code,name,deployment_profile)VALUES($1,'SYNTH21_FOREIGN','Synthetic foreign facility','hospital')").bind(foreign_f).execute(&pool).await.unwrap();
     let foreign = Uuid::new_v4();
     sqlx::query("INSERT INTO storage_locations(id,facility_id,code,name)VALUES($1,$2,'SYNTH21_FOREIGN','Synthetic foreign location')").bind(foreign).bind(foreign_f).execute(&pool).await.unwrap();
+    let reviewed_unit: String = sqlx::query_scalar("SELECT unit FROM inventory_items WHERE id=$1")
+        .bind(item)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
     let mut statuses = vec![];
     for location in [local, inactive, foreign] {
-        statuses.push(request(&app,&token,Method::POST,"/api/v2/inventory/transfers",Some(json!({"item_id":item,"from_location_id":local,"to_location_id":location,"quantity":1}))).await.0.as_u16());
+        statuses.push(request(&app,&token,Method::POST,"/api/v2/inventory/transfers",Some(json!({"expected_unit":reviewed_unit,"item_id":item,"from_location_id":local,"to_location_id":location,"quantity":1}))).await.0.as_u16());
         statuses.push(
             request(
                 &app,

@@ -1,8 +1,10 @@
+#[path = "support_item_governance/mod.rs"]
+mod governed;
 use chrono::{Duration, Utc};
 use hms_db::inventory::{
-    CatalogEditCommand, GoodsReceivedNoteFilters, NewControlledCount, NewControlledMovement,
-    NewGoodsReceivedNote, NewPurchaseOrder, NewStandingOrder, NewStockBatch, NewStockRequisition,
-    PurchaseOrderFilters, StockBatchFilters, StorageLocationFilters, SupplyDispenseLine,
+    GoodsReceivedNoteFilters, NewControlledCount, NewControlledMovement, NewGoodsReceivedNote,
+    NewPurchaseOrder, NewStandingOrder, NewStockBatch, NewStockRequisition, PurchaseOrderFilters,
+    StockBatchFilters, StorageLocationFilters, SupplyDispenseLine,
 };
 use hms_db::provision::{provision_baseline, BaselineProvisioning};
 use hms_domain::deployment::DeploymentProfile;
@@ -639,7 +641,6 @@ async fn effective_dated_catalog_edit_records_version_updates_item_and_audits() 
     let db = provisioned_inventory_db().await;
     let pool = db.pool();
     let facility_id = db.facility_id();
-    let owner_id = db.owner_user_id();
     let item_id = sqlx::query_scalar::<_, Uuid>(
         "SELECT id FROM inventory_items WHERE facility_id = $1 AND controlled = false ORDER BY code LIMIT 1",
     )
@@ -648,31 +649,21 @@ async fn effective_dated_catalog_edit_records_version_updates_item_and_audits() 
     .await
     .expect("inventory item exists");
 
-    let version = hms_db::inventory::apply_catalog_edit(
+    let receipt = governed::correct(
         pool,
-        CatalogEditCommand {
-            authorization: None,
-            id: Uuid::new_v4(),
-            facility_id,
-            item_id,
-            effective_from: Utc::now().date_naive(),
-            code: "PARA500".to_owned(),
-            name: "Paracetamol 500mg tablet - formulary preferred".to_owned(),
-            unit: "tablet".to_owned(),
-            reason: "Formulary catalog parity edit".to_owned(),
-            actor_user_id: owner_id,
-        },
+        facility_id,
+        item_id,
+        "tablet",
+        "PARA500",
+        "Paracetamol 500mg tablet - formulary preferred",
     )
     .await
-    .expect("catalog edit applies");
-
-    assert_eq!(version.item_id, item_id);
-    assert_eq!(version.effective_to, None);
+    .expect("governed catalog correction applies");
+    assert_eq!(receipt.item.id, item_id);
     assert_eq!(
-        version.name,
+        receipt.correction_revision.unwrap().after.name,
         "Paracetamol 500mg tablet - formulary preferred"
     );
-
     let item = hms_db::inventory::get_item(pool, facility_id, item_id)
         .await
         .expect("item loads")
@@ -682,9 +673,9 @@ async fn effective_dated_catalog_edit_records_version_updates_item_and_audits() 
     let audit_count = sqlx::query_scalar::<_, i64>(
         "SELECT count(*) FROM audit_events
          WHERE facility_id = $1
-           AND event_type = 'inventory.catalog.edited'
+           AND event_type = 'inventory.item.correct'
            AND resource_id = $2
-           AND metadata->>'severity' = 'high'",
+           AND metadata->>'action' = 'correct'",
     )
     .bind(facility_id)
     .bind(item_id)
@@ -695,58 +686,46 @@ async fn effective_dated_catalog_edit_records_version_updates_item_and_audits() 
 }
 
 #[tokio::test]
-async fn concurrent_catalog_corrections_keep_a_single_open_version() {
+async fn concurrent_catalog_corrections_use_nonwaiting_exclusion_and_one_cas_publication() {
     let db = provisioned_inventory_db().await;
     let pool = db.pool();
-    let item_id: Uuid = sqlx::query_scalar(
-        "SELECT id FROM inventory_items WHERE facility_id = $1 AND NOT controlled AND item_type='medication' ORDER BY code LIMIT 1",
-    )
-    .bind(db.facility_id())
-    .fetch_one(pool)
-    .await
-    .unwrap();
-    let today = Utc::now().date_naive();
-    let command = |days: i64| CatalogEditCommand {
-        authorization: None,
-        id: Uuid::new_v4(),
-        facility_id: db.facility_id(),
-        item_id,
-        effective_from: today - Duration::days(days),
-        code: "SYNTHETIC-CATALOG".to_owned(),
-        name: "Synthetic corrected medication".to_owned(),
-        unit: "tablet".to_owned(),
-        reason: "Synthetic concurrent correction".to_owned(),
-        actor_user_id: db.owner_user_id(),
+    let item:Uuid=sqlx::query_scalar("SELECT id FROM inventory_items WHERE facility_id=$1 AND NOT controlled AND item_type='medication' ORDER BY code LIMIT 1").bind(db.facility_id()).fetch_one(pool).await.unwrap();
+    let actor = governed::actor(pool, db.facility_id()).await;
+    let input = |days: i64| hms_domain::inventory_items::InventoryItemReviewedInput::Correct {
+        client_request_id: Uuid::new_v4(),
+        item_id: item,
+        expected_version: 1,
+        effective_from: Utc::now().date_naive() - Duration::days(days),
+        code: "SYNTHETIC-CATALOG".into(),
+        name: "Synthetic corrected medication".into(),
+        unit: "tablet".into(),
+        reason: "Synthetic concurrent correction".into(),
     };
-    // With the source row held, both requests reach the version transition
-    // together after release. This covers the empty-version-table race.
+    let first = input(1);
+    let second = input(0);
     let mut blocker = pool.begin().await.unwrap();
-    sqlx::query("SELECT id FROM inventory_items WHERE id = $1 FOR UPDATE")
-        .bind(item_id)
+    sqlx::query("SELECT id FROM inventory_items WHERE id=$1 FOR UPDATE")
+        .bind(item)
         .execute(&mut *blocker)
         .await
         .unwrap();
-    let first = command(1);
-    let second = command(0);
-    let writes = async {
-        tokio::join!(
-            hms_db::inventory::apply_catalog_edit(pool, first),
-            hms_db::inventory::apply_catalog_edit(pool, second)
-        )
-    };
-    let release = async {
-        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-        blocker.commit().await.unwrap();
-    };
-    let ((first, second), ()) = tokio::join!(writes, release);
-    // If today's version wins first, the backdated correction safely conflicts.
-    assert!(first.is_ok() || second.is_ok());
-    let open: i64 = sqlx::query_scalar("SELECT count(*) FROM inventory_item_catalog_versions WHERE facility_id = $1 AND item_id = $2 AND effective_to IS NULL")
-        .bind(db.facility_id()).bind(item_id).fetch_one(pool).await.unwrap();
-    assert_eq!(open, 1);
-    let invalid: i64 = sqlx::query_scalar("SELECT count(*) FROM inventory_item_catalog_versions WHERE item_id = $1 AND effective_to < effective_from")
-        .bind(item_id).fetch_one(pool).await.unwrap();
-    assert_eq!(invalid, 0);
+    for command in [first.clone(), second.clone()] {
+        let result = hms_db::inventory::items::command(pool, actor.clone(), command).await;
+        assert_eq!(
+            result
+                .unwrap_err()
+                .downcast_ref::<hms_db::inventory::items::InventoryItemError>(),
+            Some(&hms_db::inventory::items::InventoryItemError::Busy)
+        );
+    }
+    blocker.commit().await.unwrap();
+    let (a, b) = tokio::join!(
+        hms_db::inventory::items::command(pool, actor.clone(), first),
+        hms_db::inventory::items::command(pool, actor, second)
+    );
+    assert_eq!(usize::from(a.is_ok()) + usize::from(b.is_ok()), 1);
+    let counts:(i64,i64)=sqlx::query_as("SELECT(SELECT count(*) FROM inventory_item_catalog_revisions WHERE item_id=$1),(SELECT count(*) FROM inventory_item_catalog_versions WHERE item_id=$1)").bind(item).fetch_one(pool).await.unwrap();
+    assert_eq!(counts, (1, 0));
 }
 
 #[tokio::test]

@@ -575,3 +575,70 @@ observable proof and authority only. The current DTO cannot establish equality o
 same-second high-resolution predecessor password proofs after session-local
 assurance reset. Strict transport, query, write and acknowledgment scopes rotate;
 the UI retention decision grants no business authority or automatic replay.
+
+## Inventory item governance
+
+Ordinary medication/supply item creation, current catalog correction and unused
+item lifecycle use exact original-actor request UUIDs, strict reviewed input,
+logical catalog versions and immutable original receipts. InventoryView governs
+the bounded administration directory/detail/history. InventoryManage governs
+commands and own receipts, with the existing ordinary credential policy and
+retained facility/session/profile/network/feature/demographics authority through
+the final database clock. Neither operation grants an admin role or factor.
+
+Current metadata and history are distinct. A supported past/today correction
+updates current metadata at publication and appends its own immutable revision.
+Same-day and out-of-order reviewed dates are supported. A new UUID recording an
+identical projection still appends a revision/audit without changing the catalog
+version. Exact UUID replay returns the original actor's result before applying
+later CAS or eligibility to a new command. Lifecycle no-ops preserve current
+state/version while recording one original command/audit. Supplier timestamps
+are separate from the catalog CAS token.
+
+Legacy dated rows retain their exact original intervals. New writes do not close
+or normalize those rows. History has separately tagged legacy dated records and
+governed corrections, ordered by recording time/source rank/UUID, including ties
+across tables. General history exposes reason presence, without actor or private
+reason text. Only an actor's original receipt includes its reviewed input and
+actor attribution. Imported future intervals remain historical evidence; future
+activation and true as-of projection are separate work.
+
+Permanent item identity, facility, category, classification and creation time
+are retained. New or changed text is bounded and validated; unchanged raw legacy
+blank/long/spaced values remain available for correcting another field. Unknown
+and controlled classifications remain readable in the governed administration
+projection; their unit/lifecycle operations are unavailable. Unit/lifecycle
+changes require an ordinary item with no retained operational reference in any
+of ten direct stock/clinical/template/requisition families, including zero or
+terminal records and malformed redundant facility edges. Pure catalog history
+does not itself make an item used. No quantity conversion or stock rewrite is
+implied by metadata correction.
+
+New/changed references retain an exact active local item before publication.
+Unchanged historical links retain their existing closeout rules. Item and source
+locks, sorted code/request try-reservations, immutable evidence and final current
+authority prevent partial publication; refusal is separate from an unknown
+transport result. Missing-only supplier initialization binds canonical UUIDs
+after both seed loops and preserves configured suppliers and catalog state.
+
+Transfer request metadata has a strict exact raw expected_unit and stores the
+reviewed requested_unit. Existing legacy rows retain NULL when the unit was not
+recorded. Item/location proof, insert, readback/codec, audit and final authority
+share one transaction. This command creates a request only; it does not move
+stock or implement completion, conversion or UUID replay. Its existing onsite
+InventoryManage policy does not acquire the catalog's fresh-credential gate.
+
+The frontend uses generated methods, scoped bounded queries and explicit exact
+review. Current denial/error conceals stale protected choices. Ordinary current
+directory/detail/history reads cannot resolve an uncertain catalog write. Only
+its exact original actor/input/fingerprint receipt can establish that result.
+Existing UUID-null or ambiguous legacy uncertainty stays unresolved; a new
+catalog UUID cannot acknowledge another family. The unkeyed transfer workflow
+retains the existing uncertainty barrier, has no automatic retry or fabricated
+receipt, captures the reviewed unit before awaiting and locks dismissal during
+actual dispatch. The actual list and form read audiences are separate purposes.
+
+Migration030 is a coordinated breaking write/runtime epoch. Matching API,
+worker, migrator, actual OpenAPI/SDK and ops protocol are required. Runtime029
+or earlier is not a supported rollback after030 commits. Old artifacts are not
+assumed to recognize future migrations merely because readiness can succeed.

@@ -80,9 +80,16 @@ describe('opaque recovery evidence at the real fetch boundary', () => {
   });
   it.each([
     ['/api/v2/nhis/batches', { claim_ids: [patient] }, '/api/v2/nhis/claims'],
-    ['/api/v2/inventory/catalog-edits', { item_id: patient }, '/api/v2/inventory/items'],
   ])('supports the actual related read for %s instead of requiring a nonexistent write-family GET', async (writePath, payload, readPath) => {
     await loseWrite(payload, writePath); globalThis.fetch.mockResolvedValueOnce(json({ data: [{ id: patient }] })); await v2Request({ path: readPath }); expect(getWriteUncertaintySnapshot().entries[0].reviewed).toBe(true);
+  });
+  it('keeps an old UUID-less catalog marker unresolved after an ordinary current item read', async () => {
+    await loseWrite({ item_id: patient }, '/api/v2/inventory/catalog-edits');
+    expect(entries()[0].uuid).toBe(null);
+    globalThis.fetch.mockResolvedValueOnce(json({ data: [{ id: patient }] })); await v2Request({ path: '/api/v2/inventory/items' });
+    const marker = getWriteUncertaintySnapshot().entries[0]; expect(marker.reviewed).toBe(false);
+    await expect(acknowledgeWriteReview(marker.id, actor)).rejects.toMatchObject({ status: 409 }); expect(entries()).toHaveLength(1);
+    expect(sessionStorage.getItem(WRITE_UNCERTAINTY_KEY)).not.toContain(patient);
   });
   it('does not expose, clear or replay one account’s marker from another account', async () => {
     await loseWrite(); const marker = entries()[0].id; actor = { ...principal, id: 'synthetic-other-actor' }; token = 'synthetic-other-token'; bind(); await vi.waitFor(() => expect(getWriteUncertaintySnapshot().entries).toHaveLength(0));

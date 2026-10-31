@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useLayoutEffect, useMemo, useCallback, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -26,6 +26,7 @@ import {
   SheetBody,
   SheetTitle,
 } from '@/components/ui/sheet';
+import { RustTransferList, RustTransferPagination } from '../transfers/RustTransferList';
 import { TransferRequestForm } from '@/components/inventory';
 import { InventoryPagination } from '@/features/inventory/components/InventoryPagination';
 import { useTransferRequests, useStorageLocations } from '@/features/inventory/hooks';
@@ -347,11 +348,11 @@ function TransferRequestsLoadingState() {
   );
 }
 
-function TransferRequestsHeader({ totalCount, isLoading, onRefresh, onCreate }) {
+function TransferRequestsHeader({ totalCount, pageCount, rustV2Mode, isLoading, onRefresh, onCreate }) {
   return (
     <PageHeader
       title="Transfer Requests"
-      description={`${totalCount} transfer${totalCount !== 1 ? 's' : ''}`}
+      description={rustV2Mode ? `${pageCount} request${pageCount === 1 ? '' : 's'} on this page` : `${totalCount} transfer${totalCount !== 1 ? 's' : ''}`}
       actions={(
         <div className="flex items-center gap-2">
           <Button variant="outline" onClick={onRefresh}>
@@ -492,10 +493,12 @@ function TransfersEmptyState({ hasActiveFilters, onCreate }) {
   );
 }
 
-function TransfersDisplay({ transfers, columns, hasActiveFilters, onOpenTransfer, onCreate }) {
+function TransfersDisplay({ transfers, columns, hasActiveFilters, onOpenTransfer, onCreate, rustV2Mode, locations }) {
   if (transfers.length === 0) {
     return <TransfersEmptyState hasActiveFilters={hasActiveFilters} onCreate={onCreate} />;
   }
+
+  if (rustV2Mode) return <RustTransferList transfers={transfers} locations={locations} />;
 
   return (
     <TransfersTable
@@ -507,9 +510,16 @@ function TransfersDisplay({ transfers, columns, hasActiveFilters, onOpenTransfer
 }
 
 function CreateTransferSheet({ isOpen, initialToLocation, onClose, onCreateSuccess }) {
+  const [busy, setBusy] = useState(false);
+  const busyRef = useRef(false);
+  const changeBusy = useCallback(value => { busyRef.current = value; setBusy(value); }, []);
+  const close = () => { if (!busyRef.current) onClose(); };
   return (
-    <Sheet open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <SheetContent className="sm:max-w-2xl overflow-y-auto">
+    <Sheet open={isOpen} onOpenChange={(open) => !open && close()}>
+      <SheetContent data-busy={busy} className="sm:max-w-2xl overflow-y-auto"
+        onEscapeKeyDown={(event) => { if (busyRef.current) event.preventDefault(); }}
+        onPointerDownOutside={(event) => { if (busyRef.current) event.preventDefault(); }}
+        onClickCapture={(event) => { if (busyRef.current && event.target.closest('[data-slot="sheet-close"]')) { event.preventDefault(); event.stopPropagation(); } }}>
         <SheetHeader>
           <SheetTitle className="font-display text-2xl">New Transfer Request</SheetTitle>
           <SheetDescription>
@@ -520,7 +530,8 @@ function CreateTransferSheet({ isOpen, initialToLocation, onClose, onCreateSucce
           <TransferRequestForm
             initialToLocation={initialToLocation}
             onSuccess={onCreateSuccess}
-            onCancel={onClose}
+            onCancel={close}
+            onBusyChange={changeBusy}
           />
         </SheetBody>
       </SheetContent>
@@ -531,7 +542,7 @@ function CreateTransferSheet({ isOpen, initialToLocation, onClose, onCreateSucce
 /**
  * TransferRequestsPage - Stock transfer requests page
  */
-export default function TransferRequestsPage() {
+export default function TransferRequestsPage({ readScope, onReadState, locationLabelsAvailable = true }) {
   const navigate = useNavigate();
   const rustV2Mode = isRustV2ApiMode();
   const transferActionsAvailable = !rustV2Mode;
@@ -553,11 +564,12 @@ export default function TransferRequestsPage() {
     clearFilters,
     setSearchParams,
   } = useTransferRequestFilters({ statusTabs });
-  const { data: transfersData, isLoading, error, refetch } = useTransferRequests(queryParams);
-  const { data: locationsData } = useStorageLocations();
+  const { data: transfersData, isLoading, isFetching, error, refetch } = useTransferRequests(queryParams, readScope ? { scope: readScope } : undefined);
+  const { data: locationsData, error: locationsError, isFetching: locationsFetching } = useStorageLocations({}, readScope ? { scope: readScope, enabled: locationLabelsAvailable } : undefined);
+  useLayoutEffect(() => { onReadState?.(); }, [transfersData, error, isLoading, locationsData, locationsError, onReadState]);
   const transfers = transfersData?.results || [];
   const totalCount = transfersData?.count || 0;
-  const locations = locationsData?.results || locationsData || [];
+  const locations = rustV2Mode && (!locationLabelsAvailable || locationsError || locationsFetching) ? [] : locationsData?.results || locationsData || [];
   const isCreateOpen = action === 'create';
   const initialToLocation = toLocation;
 
@@ -623,6 +635,8 @@ export default function TransferRequestsPage() {
     <PageShell>
       <TransferRequestsHeader
         totalCount={totalCount}
+        pageCount={transfers.length}
+        rustV2Mode={rustV2Mode}
         isLoading={isLoading}
         onRefresh={refetch}
         onCreate={handleCreate}
@@ -652,6 +666,8 @@ export default function TransferRequestsPage() {
         </>
 
         <TransfersDisplay
+          rustV2Mode={rustV2Mode}
+          locations={locations}
           transfers={transfers}
           columns={transferColumns}
           hasActiveFilters={hasActiveFilters}
@@ -659,6 +675,7 @@ export default function TransferRequestsPage() {
           onCreate={handleCreate}
         />
 
+        {rustV2Mode ? <RustTransferPagination data={transfersData} page={page} onPageChange={handlePageChange} busy={isFetching} /> : (
         <InventoryPagination
           data={transfersData}
           itemLabel="transfers"
@@ -666,6 +683,7 @@ export default function TransferRequestsPage() {
           pageSize={20}
           onPageChange={handlePageChange}
         />
+        )}
 
         <CreateTransferSheet
           isOpen={isCreateOpen}

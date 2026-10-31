@@ -1,0 +1,32 @@
+import { useEffect } from 'react';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { validId, validTimestamp } from '../catalog/model';
+const statuses = new Map([['requested', 'Requested'], ['completed', 'Completed']]);
+const timeFormat = new Intl.DateTimeFormat('en-GB', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'UTC' });
+function Reference({ value }) { return <span className="break-all font-mono text-xs">{validId(value) ? value : 'Request reference unavailable'}</span>; }
+function Item({ row }) { return <div className="grid min-w-0 gap-1"><p className="break-words font-medium">{typeof row.item_name === 'string' && row.item_name.trim() ? row.item_name : 'Item name unavailable'}</p><p className="text-sm text-muted-foreground">Quantity requested: {Number.isSafeInteger(row.quantity) && row.quantity > 0 ? row.quantity : 'Exact quantity unavailable'}</p></div>; }
+function RecordedUnit({ value }) { return value === null ? <span className="text-sm text-muted-foreground">Unit not recorded</span> : typeof value === 'string' ? <code className="block max-h-24 min-w-0 overflow-y-auto whitespace-pre-wrap break-all font-mono text-xs">{JSON.stringify(value)}</code> : <span className="text-sm text-muted-foreground">Recorded unit unavailable</span>; }
+function Location({ id, label, locations }) { const name = locations.get(id); return <div className="grid min-w-0 gap-1"><p className="text-xs text-muted-foreground">{label}</p><Reference value={id} /><p className="break-words text-xs text-muted-foreground">{name ? <>Current label: {name}</> : 'Current label unavailable'}</p></div>; }
+function Route({ row, locations }) { return <div className="grid min-w-0 gap-3"><Location id={row.from_location_id} label="Source" locations={locations} /><Location id={row.to_location_id} label="Destination" locations={locations} /></div>; }
+function Status({ value }) { return <Badge variant="secondary">{statuses.get(value) || 'Status unavailable'}</Badge>; }
+function RecordedTime({ value }) { if (!validTimestamp(value)) return <span>Recorded time unavailable</span>; const date = new Date(value); return <time dateTime={value} className="break-words text-xs">{Number.isFinite(date.getTime()) ? `${timeFormat.format(date)} UTC` : value}</time>; }
+function DesktopList({ rows, locations }) {
+ return <div className="hidden min-w-0 max-w-full overflow-x-auto rounded-xl border bg-card md:block"><Table aria-label="Transfer requests"><TableHeader><TableRow><TableHead>Request reference</TableHead><TableHead>Item and quantity</TableHead><TableHead>Recorded stock unit</TableHead><TableHead>Locations</TableHead><TableHead>Status</TableHead><TableHead>Requested at</TableHead></TableRow></TableHeader><TableBody>{rows.map(row => <TableRow key={row.id}><TableCell className="min-w-48 max-w-64 whitespace-normal align-top"><Reference value={row.id} /></TableCell><TableCell className="min-w-48 max-w-72 whitespace-normal align-top"><Item row={row} /></TableCell><TableCell className="min-w-40 max-w-64 whitespace-normal align-top"><RecordedUnit value={row.requested_unit} /></TableCell><TableCell className="min-w-64 max-w-80 whitespace-normal align-top"><Route row={row} locations={locations} /></TableCell><TableCell className="align-top"><Status value={row.status} /></TableCell><TableCell className="min-w-40 whitespace-normal align-top"><RecordedTime value={row.created_at} /></TableCell></TableRow>)}</TableBody></Table></div>;
+}
+function MobileList({ rows, locations }) {
+ return <ul aria-label="Transfer request cards" className="grid min-w-0 gap-4 md:hidden">{rows.map(row => <li key={row.id} className="grid min-w-0 gap-4 rounded-xl border bg-card p-4"><div className="flex min-w-0 flex-wrap items-start justify-between gap-3"><div className="min-w-0 flex-1"><Item row={row} /></div><Status value={row.status} /></div><dl className="grid min-w-0 gap-4 text-sm"><div className="grid min-w-0 gap-1"><dt className="text-xs text-muted-foreground">Request reference</dt><dd className="min-w-0"><Reference value={row.id} /></dd></div><div className="grid min-w-0 gap-1"><dt className="text-xs text-muted-foreground">Recorded stock unit</dt><dd className="min-w-0"><RecordedUnit value={row.requested_unit} /></dd></div><div className="grid min-w-0 gap-1"><dt className="text-xs text-muted-foreground">Locations</dt><dd className="min-w-0"><Route row={row} locations={locations} /></dd></div><div className="grid min-w-0 gap-1"><dt className="text-xs text-muted-foreground">Requested at</dt><dd><RecordedTime value={row.created_at} /></dd></div></dl></li>)}</ul>;
+}
+export function RustTransferList({ transfers, locations = [] }) {
+ // Current labels are optional bounded-page evidence, never historical labels.
+ // Keep the recorded opaque identities visible even when a current label exists.
+ const labels = new Map(locations.filter(row => validId(row?.id) && typeof row.name === 'string' && row.name.trim()).map(row => [row.id, row.name]));
+ return <div className="grid min-w-0 gap-3"><p className="text-xs text-muted-foreground">Units are recorded on each request. Older requests can have no recorded unit. Location labels describe current scoped data; recorded location identities stay unchanged.</p><DesktopList rows={transfers} locations={labels} /><MobileList rows={transfers} locations={labels} /></div>;
+}
+
+export function RustTransferPagination({ data, page, onPageChange, busy }) {
+ const current = Number(data?.page || page || 1), count = Array.isArray(data?.results) ? data.results.length : 0;
+ useEffect(() => { if (data?.cursor_missing && Number(data?.requested_page || page || 1) !== current) onPageChange(current); }, [current, data?.cursor_missing, data?.requested_page, page, onPageChange]);
+ return <nav aria-label="Transfer request pages" className="flex min-w-0 flex-wrap items-center justify-between gap-3"><p className="text-sm text-muted-foreground">Page {current} · {count} {count === 1 ? 'request' : 'requests'} on this page</p><div className="flex gap-2"><Button type="button" variant="outline" disabled={busy || current <= 1} onClick={() => onPageChange(current - 1)}>Previous</Button><Button type="button" variant="outline" disabled={busy || !data?.next} onClick={() => onPageChange(current + 1)}>Next</Button></div></nav>;
+}

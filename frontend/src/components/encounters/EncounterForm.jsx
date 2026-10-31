@@ -29,7 +29,7 @@ const legacyEncounterFormSchema = z.object({
   status: z.string().min(1, { message: 'Status is required' }),
   reason: z.string().min(1, { message: 'Reason for visit is required' }),
   service_type: z.string().min(1, { message: 'Service type is required' }),
-  start_time: z.date({ required_error: 'Start time is required' }),
+  start_time: z.date({ error: issue => issue.input === undefined ? 'Start time is required' : undefined }),
   end_time: z.date().nullable().optional(),
   location: z.string().min(1, { message: 'Location is required' }),
   admission_source: z.string().optional()

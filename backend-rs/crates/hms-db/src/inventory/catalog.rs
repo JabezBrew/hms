@@ -9,7 +9,7 @@ use sqlx::{FromRow, Postgres, QueryBuilder};
 use uuid::Uuid;
 
 use super::{
-    apply_cursor, apply_forward_cursor, CatalogEditCommand, InventoryCursor, InventoryItemFilters,
+    apply_cursor, apply_forward_cursor, InventoryCursor, InventoryItemFilters,
     InventorySortDirection, StorageLocationFilters, SupplierFilters,
 };
 use crate::codec;
@@ -367,125 +367,6 @@ pub async fn get_location(
     .await?;
 
     Ok(row.map(location_from_row))
-}
-
-pub async fn apply_catalog_edit(
-    pool: &PgPool,
-    edit: CatalogEditCommand,
-) -> anyhow::Result<InventoryCatalogVersionItem> {
-    let mut tx = pool.begin().await?;
-    let actor = crate::clinical::stock_basis::authorize(
-        &mut tx,
-        edit.facility_id,
-        edit.actor_user_id,
-        edit.authorization.clone(),
-    )
-    .await?;
-    // Serialize version changes on the source item, including when no catalog
-    // version exists yet. Locking only existing versions misses that case.
-    let item = sqlx::query_as::<_, (String, bool, String)>(
-        "SELECT unit,controlled,item_type FROM inventory_items
-         WHERE facility_id = $1 AND id = $2 AND is_active = TRUE
-         FOR UPDATE",
-    )
-    .bind(edit.facility_id)
-    .bind(edit.item_id)
-    .fetch_optional(&mut *tx)
-    .await?;
-    if item.is_none() {
-        anyhow::bail!("inventory item was not found");
-    }
-
-    let (current_unit, controlled, kind) = item.expect("item checked above");
-    if current_unit != edit.unit {
-        if controlled || kind == "controlled_substance" {
-            return Err(
-                crate::clinical::stock_basis::StockBasisError::ControlledUnitImmutable.into(),
-            );
-        }
-        let in_use:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM stock_batches WHERE facility_id=$1 AND item_id=$2) OR EXISTS(SELECT 1 FROM stock_movements WHERE facility_id=$1 AND item_id=$2) OR EXISTS(SELECT 1 FROM pharmacy_dispenses WHERE facility_id=$1 AND item_id=$2)")
-            .bind(edit.facility_id).bind(edit.item_id).fetch_one(&mut *tx).await?;
-        if in_use {
-            return Err(crate::clinical::stock_basis::StockBasisError::InventoryUnitInUse.into());
-        }
-    }
-    let previous_effective_to = edit
-        .effective_from
-        .pred_opt()
-        .unwrap_or(edit.effective_from);
-    sqlx::query(
-        "UPDATE inventory_item_catalog_versions
-         SET effective_to = $3
-         WHERE facility_id = $1
-           AND item_id = $2
-           AND effective_to IS NULL",
-    )
-    .bind(edit.facility_id)
-    .bind(edit.item_id)
-    .bind(previous_effective_to)
-    .execute(&mut *tx)
-    .await?;
-
-    sqlx::query(
-        r#"
-        INSERT INTO inventory_item_catalog_versions (
-            id, facility_id, item_id, effective_from, code, name, unit, reason, created_by_user_id
-        )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-        "#,
-    )
-    .bind(edit.id)
-    .bind(edit.facility_id)
-    .bind(edit.item_id)
-    .bind(edit.effective_from)
-    .bind(&edit.code)
-    .bind(&edit.name)
-    .bind(&edit.unit)
-    .bind(&edit.reason)
-    .bind(edit.actor_user_id)
-    .execute(&mut *tx)
-    .await?;
-
-    if edit.effective_from <= Utc::now().date_naive() {
-        sqlx::query(
-            "UPDATE inventory_items
-             SET code = $3, name = $4, unit = $5, updated_at = now()
-             WHERE facility_id = $1 AND id = $2",
-        )
-        .bind(edit.facility_id)
-        .bind(edit.item_id)
-        .bind(&edit.code)
-        .bind(&edit.name)
-        .bind(&edit.unit)
-        .execute(&mut *tx)
-        .await?;
-    }
-
-    sqlx::query(
-        "INSERT INTO audit_events (
-            id, facility_id, actor_user_id, event_type, resource_type, resource_id, metadata
-         )
-         VALUES ($1, $2, $3, $4, $5, $6, $7)",
-    )
-    .bind(Uuid::new_v4())
-    .bind(edit.facility_id)
-    .bind(edit.actor_user_id)
-    .bind("inventory.catalog.edited")
-    .bind("inventory_item")
-    .bind(edit.item_id)
-    .bind(json!({
-        "severity": "high",
-        "effective_from": edit.effective_from,
-        "reason": edit.reason,
-    }))
-    .execute(&mut *tx)
-    .await?;
-
-    crate::clinical::stock_basis::check_authorization(&mut tx, &actor).await?;
-    tx.commit().await?;
-    fetch_catalog_version_by_id(pool, edit.facility_id, edit.id)
-        .await?
-        .ok_or_else(|| anyhow::anyhow!("created catalog version was not found"))
 }
 
 pub async fn inventory_dashboard_summary(

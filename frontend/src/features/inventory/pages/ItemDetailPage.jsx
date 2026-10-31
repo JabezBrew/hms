@@ -1,7 +1,6 @@
 import { useLocation, useParams, useNavigate, useSearchParams } from 'react-router-dom';
-import { useState } from 'react';
-import { useAuth } from '@/lib/auth';
-import { userHasCapability } from '@/shared/lib/access';
+import { useLayoutEffect, useState } from 'react';
+import { isCurrentReadDenial } from '@/lib/api/v2/readDenials';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -33,7 +32,6 @@ import {
   useItemStockByLocation,
 } from '@/features/inventory/hooks';
 import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
-import { CatalogCorrectionDialog } from '../components/CatalogCorrectionDialog';
 import { format, parseISO } from 'date-fns';
 import ArrowLeft from 'lucide-react/dist/esm/icons/arrow-left.js';
 import Edit from 'lucide-react/dist/esm/icons/pencil.js';
@@ -500,15 +498,16 @@ export default function ItemDetailPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
-  const { user } = useAuth();
-  const [catalogCorrectionOpen, setCatalogCorrectionOpen] = useState(false);
+  const [catalogDenied, setCatalogDenied] = useState(false);
   const itemMutationAvailable = !isRustV2ApiMode();
 
   const activeTab = searchParams.get('tab') || 'overview';
 
   const { data: item, isLoading, error, refetch } = useInventoryItem(id);
-  const catalogCorrectionAvailable = !itemMutationAvailable && item?.is_active !== false
-    && userHasCapability(user, 'inventory.manage');
+  useLayoutEffect(() => { if (isRustV2ApiMode() && isCurrentReadDenial(error)) setCatalogDenied(true); }, [error]);
+  // Once a genuine current read is denied, later failures cannot revive the
+  // cached item. A separate authorized workflow owns catalog administration.
+  const itemConcealed = !itemMutationAvailable && (catalogDenied || isCurrentReadDenial(error));
 
   const handleTabChange = (value) => {
     setSearchParams((prev) => {
@@ -531,6 +530,8 @@ export default function ItemDetailPage() {
   };
 
   // Loading state
+  if (itemConcealed) return <PageShell><PageState variant="error" title="Inventory item unavailable" description="A current protected request was denied. Previous item details are hidden. Open catalog administration to refresh current authority." action={<Button type="button" variant="outline" onClick={() => navigate(`/inventory/catalog/${id}`)}>Open catalog administration</Button>} /></PageShell>;
+
   if (isLoading) {
     return (
       <PageState variant="loading" fullHeight={false} className="space-y-6">
@@ -632,10 +633,10 @@ export default function ItemDetailPage() {
                 Edit
               </Button>
             )}
-            {catalogCorrectionAvailable ? (
-              <Button variant="outline" onClick={() => setCatalogCorrectionOpen(true)} disabled={Boolean(error)}>
+            {!itemMutationAvailable ? (
+              <Button variant="outline" onClick={() => navigate(`/inventory/catalog/${id}`)} disabled={Boolean(error)}>
                 <Edit data-icon="inline-start" />
-                Correct catalog details
+                Open catalog administration
               </Button>
             ) : null}
             <DropdownMenu>
@@ -680,9 +681,7 @@ export default function ItemDetailPage() {
       </Alert> : null}
       {!itemMutationAvailable && (
         <Alert role="note"><AlertDescription>
-          {catalogCorrectionAvailable
-            ? 'Catalog corrections record changes to the code, name and unit with an effective date and reason.'
-            : 'Catalog corrections require inventory management permission and an active item.'}
+          Current metadata, dated corrections and active-state review are available in catalog administration. Stock and recorded operations stay separate.
         </AlertDescription></Alert>
       )}
 
@@ -769,9 +768,6 @@ export default function ItemDetailPage() {
         </TabsContent>
       </Tabs>
       </div>
-      {catalogCorrectionOpen && catalogCorrectionAvailable ? (
-        <CatalogCorrectionDialog key={id} item={item} onClose={() => setCatalogCorrectionOpen(false)} />
-      ) : null}
     </PageShell>
   );
 }

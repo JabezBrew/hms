@@ -1,3 +1,5 @@
+#[path = "support_item_governance/mod.rs"]
+mod governed;
 use chrono::{Duration, NaiveDate, Utc};
 use hms_db::{inventory::*, test_support::TestDb};
 use hms_domain::{inventory::StandingOrderStatus, inventory_standing::*};
@@ -12,7 +14,19 @@ struct Fixture {
 }
 impl Fixture {
     async fn new() -> Self {
-        let db = TestDb::hospital().await.unwrap();
+        Self::with_historical_source(false).await
+    }
+    async fn with_historical_source(historical: bool) -> Self {
+        let db = if historical {
+            TestDb::with_profile_and_migrator(
+                hms_domain::deployment::DeploymentProfile::Hospital,
+                &governed::before030(),
+            )
+            .await
+            .unwrap()
+        } else {
+            TestDb::hospital().await.unwrap()
+        };
         let (item,unit):(Uuid,String)=sqlx::query_as("SELECT id,unit FROM inventory_items WHERE facility_id=$1 AND is_active AND NOT controlled ORDER BY id LIMIT 1").bind(db.facility_id()).fetch_one(db.pool()).await.unwrap();
         let locations:Vec<Uuid>=sqlx::query_scalar("SELECT id FROM storage_locations WHERE facility_id=$1 AND is_active ORDER BY id LIMIT 2").bind(db.facility_id()).fetch_all(db.pool()).await.unwrap();
         assert_eq!(locations.len(), 2);
@@ -284,7 +298,7 @@ async fn fulfilled_manual_supply_cannot_repeat_stock_movements() {
 
 #[tokio::test]
 async fn templates_validate_references_units_and_empty_or_duplicate_lines_before_any_write() {
-    let f = Fixture::new().await;
+    let f = Fixture::with_historical_source(true).await;
     let mut empty = f.data();
     empty.items.clear();
     conflict(
@@ -324,6 +338,7 @@ async fn templates_validate_references_units_and_empty_or_duplicate_lines_before
         .execute(f.db.pool())
         .await
         .unwrap();
+    hms_db::migrate::run(f.db.pool()).await.unwrap();
     conflict(
         create_standing_template(f.db.pool(), f.actor(), f.data()).await,
         StandingTemplateError::ReferencesUnavailable,
@@ -337,13 +352,14 @@ async fn templates_validate_references_units_and_empty_or_duplicate_lines_before
 
 #[tokio::test]
 async fn a_catalog_unit_change_requires_explicit_template_review_before_generation() {
-    let f = Fixture::new().await;
+    let f = Fixture::with_historical_source(true).await;
     let template = f.create().await;
     sqlx::query("UPDATE inventory_items SET unit='box' WHERE id=$1")
         .bind(f.item)
         .execute(f.db.pool())
         .await
         .unwrap();
+    hms_db::migrate::run(f.db.pool()).await.unwrap();
     let current = get_standing_template(f.db.pool(), f.db.facility_id(), template.summary.id)
         .await
         .unwrap()
@@ -407,13 +423,14 @@ async fn a_catalog_unit_change_requires_explicit_template_review_before_generati
 
 #[tokio::test]
 async fn pausing_and_cancelling_remain_possible_after_references_deactivate_and_terminal_is_safe() {
-    let f = Fixture::new().await;
+    let f = Fixture::with_historical_source(true).await;
     let template = f.create().await;
     sqlx::query("UPDATE inventory_items SET is_active=FALSE WHERE id=$1")
         .bind(f.item)
         .execute(f.db.pool())
         .await
         .unwrap();
+    hms_db::migrate::run(f.db.pool()).await.unwrap();
     let paused = change_standing_template_status(
         f.db.pool(),
         f.actor(),

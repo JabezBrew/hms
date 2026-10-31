@@ -230,6 +230,7 @@ pub struct StorageLocationStockItem {
 
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
 pub struct StockTransferListItem {
+    pub requested_unit: Option<String>,
     pub id: Uuid,
     pub item_id: Uuid,
     pub item_name: String,
@@ -241,7 +242,9 @@ pub struct StockTransferListItem {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
 pub struct CreateStockTransferRequest {
+    pub expected_unit: String,
     pub item_id: Uuid,
     pub from_location_id: Uuid,
     pub to_location_id: Uuid,
@@ -363,7 +366,10 @@ pub struct CreateControlledSubstanceCountRequest {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
 pub struct CreateInventoryCatalogEditRequest {
+    pub client_request_id: Uuid,
+    pub expected_version: i64,
     pub item_id: Uuid,
     pub effective_from: NaiveDate,
     pub code: String,
