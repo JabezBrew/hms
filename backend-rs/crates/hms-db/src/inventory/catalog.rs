@@ -26,7 +26,7 @@ struct CategoryRow {
 struct ItemRow {
     id: Uuid,
     category_id: Uuid,
-    category_name: String,
+    category_name: Option<String>,
     code: String,
     name: String,
     item_type: String,
@@ -125,7 +125,7 @@ pub async fn list_items(
                    inventory_items.controlled,
                    inventory_items.updated_at
             FROM inventory_items
-            INNER JOIN inventory_categories ON inventory_categories.id = inventory_items.category_id
+            LEFT JOIN inventory_categories ON inventory_categories.id = inventory_items.category_id AND inventory_categories.facility_id = inventory_items.facility_id
             WHERE inventory_items.facility_id =
         "#,
     );
@@ -472,7 +472,7 @@ fn item_query() -> QueryBuilder<'static, Postgres> {
                ) AS nearest_expiry,
                inventory_items.updated_at
         FROM inventory_items
-        INNER JOIN inventory_categories ON inventory_categories.id = inventory_items.category_id
+        LEFT JOIN inventory_categories ON inventory_categories.id = inventory_items.category_id AND inventory_categories.facility_id = inventory_items.facility_id
         LEFT JOIN stock_batches ON stock_batches.item_id = inventory_items.id
             AND stock_batches.facility_id = inventory_items.facility_id
         "#,

@@ -598,6 +598,16 @@ describe('Rust V2 inventory bridge', () => {
     }));
   });
 
+  it('preserves a local item and its recorded category UUID when the category display observation is unavailable', async () => {
+    const item = { id: '25252525-0000-4000-8000-000000000021', category_id: '25252525-0000-4000-8000-000000000022', category_name: null, code: 'SYNTHETIC-IMPORT', name: 'Synthetic imported supply', item_type: 'supply', unit: 'pack', controlled: false, is_active: true };
+    globalThis.fetch.mockResolvedValueOnce(jsonResponse({ data: [item], page: { limit: 25, has_next: false, next_cursor: null }, meta: {} }));
+    const directory = await inventoryApi.getInventoryItems({ page_size: 25 });
+    expect(directory.results).toHaveLength(1);
+    expect(directory.results[0]).toMatchObject({ id: item.id, category_id: item.category_id, category_name: null });
+    globalThis.fetch.mockResolvedValueOnce(jsonResponse({ data: item, meta: {} }));
+    expect(await inventoryApi.getInventoryItem(item.id)).toMatchObject({ id: item.id, category_id: item.category_id, category_name: null });
+  });
+
   it('loads storage location detail and location stock through generated Rust V2 endpoints', async () => {
     const controller = new AbortController();
     globalThis.fetch

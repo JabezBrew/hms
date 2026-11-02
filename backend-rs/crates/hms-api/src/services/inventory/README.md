@@ -18,6 +18,7 @@ not coordinate multi-step stock or procurement behavior directly.
 | `mod.rs` | public inventory service exports. |
 | `common.rs` | shared scope, DTO, and workflow helper code. |
 | `catalog.rs` | inventory item catalog, categories, units, and location-facing metadata. |
+| `categories.rs` | governed current category administration, explicit parent commands and own original receipts. |
 | `stock_control.rs` | stock levels, movements, adjustments, transfers, and low-stock views. |
 | `standing_orders.rs` | explicit line-backed template configuration, due generation, request review and governed approval/cancel/issue actions. |
 | `procurement.rs` | requisitions, purchase orders, goods receipt, suppliers, and approval paths. |
@@ -57,3 +58,20 @@ Run from `backend-rs/`:
 cargo test -p hms-api --test inventory_contract
 cargo test -p hms-db inventory -- --nocapture
 ```
+
+## Category administration
+
+`InventoryCategoryService` keeps bounded view-protected directory/detail/history
+separate from manage-protected UUID commands and original actor receipts.
+Directory rows are lean metadata; history returns only versions and change flags.
+Description remains in exact detail and immutable original receipts.
+Commands retain existing Inventory, demographics, facility/profile/session/network
+and credential proof through final database time. Admin authority is not added.
+Current reads cannot confirm an uncertain write. Requests are closed and nullable
+description/parent choices are explicit. Parent retain/clear/set is a direct
+metadata change with no recursive or inherited item semantics.
+
+The actual generated OpenAPI owns the new `category-administration`, category
+correction/lifecycle/history and `category-commands` operations. Existing
+`GET /inventory/categories` stays the active local paged `{id,code,name}` picker.
+Immutable item receipt category observations keep their original shape and values.

@@ -19,7 +19,7 @@ async fn historical(pool: &hms_db::PgPool, before: i64) {
         .expect("historical migrations apply");
 }
 #[tokio::test]
-async fn new_runtime_requires_item_epoch_while_probe_preserves_historical_epochs() {
+async fn new_runtime_requires_category_epoch_while_probe_preserves_historical_epochs() {
     let database = hms_db::test_support::TestDatabase::create().unwrap();
     let pool = hms_db::connect(database.database_url()).await.unwrap();
     assert_eq!(committed_breaking_epoch(&pool).await.unwrap(), 0);
@@ -52,8 +52,11 @@ async fn new_runtime_requires_item_epoch_while_probe_preserves_historical_epochs
     historical(&pool, 202610300030).await;
     assert_eq!(committed_breaking_epoch(&pool).await.unwrap(), 202610180029);
     assert!(require_runtime_schema(&pool).await.is_err());
-    hms_db::migrate::run(&pool).await.unwrap();
+    historical(&pool, 202610310031).await;
     assert_eq!(committed_breaking_epoch(&pool).await.unwrap(), 202610300030);
+    assert!(require_runtime_schema(&pool).await.is_err());
+    hms_db::migrate::run(&pool).await.unwrap();
+    assert_eq!(committed_breaking_epoch(&pool).await.unwrap(), 202610310031);
     require_runtime_schema(&pool).await.unwrap();
     let identities:(i64,i64,i64)=sqlx::query_as("SELECT (SELECT count(*) FROM facilities),(SELECT count(*) FROM users),(SELECT count(*) FROM audit_events)").fetch_one(&pool).await.unwrap();
     assert_eq!(identities, (0, 0, 0));
@@ -846,3 +849,170 @@ mod appointment_types;
 
 #[path = "schema_compatibility/inventory_items.rs"]
 mod inventory_items;
+
+#[tokio::test]
+async fn category25_checksum_layout_intrinsic_guards_and_indexes_are_required() {
+    let d = hms_db::test_support::TestDatabase::create().unwrap();
+    let p = hms_db::connect(d.database_url()).await.unwrap();
+    hms_db::migrate::run(&p).await.unwrap();
+    require_runtime_schema(&p).await.unwrap();
+    let checksum = hms_db::migrate::MIGRATOR
+        .iter()
+        .find(|m| m.version == 202610310031)
+        .unwrap()
+        .checksum
+        .as_ref();
+    sqlx::query(
+        "UPDATE _sqlx_migrations SET checksum=decode('00','hex') WHERE version=202610310031",
+    )
+    .execute(&p)
+    .await
+    .unwrap();
+    assert!(require_runtime_schema(&p).await.is_err());
+    sqlx::query("UPDATE _sqlx_migrations SET checksum=$1 WHERE version=202610310031")
+        .bind(checksum)
+        .execute(&p)
+        .await
+        .unwrap();
+    for (table, guard) in [
+        ("inventory_categories", "inventory_category_identity"),
+        (
+            "inventory_category_commands",
+            "inventory_category_command_immutable",
+        ),
+        (
+            "inventory_category_commands",
+            "inventory_category_command_complete",
+        ),
+    ] {
+        sqlx::query(&format!("ALTER TABLE {table} DISABLE TRIGGER {guard}"))
+            .execute(&p)
+            .await
+            .unwrap();
+        assert!(require_runtime_schema(&p).await.is_err());
+        sqlx::query(&format!("ALTER TABLE {table} ENABLE TRIGGER {guard}"))
+            .execute(&p)
+            .await
+            .unwrap();
+        require_runtime_schema(&p).await.unwrap();
+    }
+    for index in [
+        "inventory_category_administration_page_idx",
+        "inventory_category_item_reference_idx",
+        "inventory_category_child_reference_idx",
+        "inventory_category_commands_history_idx",
+        "inventory_category_search_idx",
+        "inventory_category_audit_command_idx",
+    ] {
+        sqlx::query(&format!(
+            "ALTER INDEX {index} RENAME TO synthetic_missing_category25_index"
+        ))
+        .execute(&p)
+        .await
+        .unwrap();
+        assert!(
+            require_runtime_schema(&p).await.is_err(),
+            "exact category index required"
+        );
+        sqlx::query(&format!(
+            "ALTER INDEX synthetic_missing_category25_index RENAME TO {index}"
+        ))
+        .execute(&p)
+        .await
+        .unwrap();
+        require_runtime_schema(&p).await.unwrap();
+    }
+}
+
+#[tokio::test]
+async fn category25_same_signature_noop_guard_body_is_not_a_valid_schema() {
+    let d = hms_db::test_support::TestDatabase::create().unwrap();
+    let p = hms_db::connect(d.database_url()).await.unwrap();
+    hms_db::migrate::run(&p).await.unwrap();
+    require_runtime_schema(&p).await.unwrap();
+    sqlx::query("CREATE OR REPLACE FUNCTION inventory_category_parent_proof(facility uuid,subject uuid,parent uuid,expected bigint DEFAULT NULL) RETURNS void LANGUAGE plpgsql AS $$BEGIN RETURN;END$$").execute(&p).await.unwrap();
+    assert!(
+        require_runtime_schema(&p).await.is_err(),
+        "matching function name and signature cannot hide changed guard semantics"
+    );
+}
+
+#[tokio::test]
+async fn category25_exact_version_one_default_is_required_before_runtime_startup() {
+    let d = hms_db::test_support::TestDatabase::create().unwrap();
+    let p = hms_db::connect(d.database_url()).await.unwrap();
+    hms_db::migrate::run(&p).await.unwrap();
+    require_runtime_schema(&p).await.unwrap();
+    sqlx::query("ALTER TABLE inventory_categories ALTER COLUMN version SET DEFAULT 2")
+        .execute(&p)
+        .await
+        .unwrap();
+    assert!(
+        require_runtime_schema(&p).await.is_err(),
+        "a positive but incompatible create default must refuse startup"
+    );
+    sqlx::query("ALTER TABLE inventory_categories ALTER COLUMN version SET DEFAULT 1")
+        .execute(&p)
+        .await
+        .unwrap();
+    require_runtime_schema(&p).await.unwrap();
+    for column in [
+        "description",
+        "parent_id",
+        "catalog_changed_at",
+        "created_by_user_id",
+        "updated_by_user_id",
+    ] {
+        let value = match column {
+            "description" => "'synthetic invented description'",
+            "catalog_changed_at" => "clock_timestamp()",
+            _ => "'00000000-0000-0000-0000-000000000001'::uuid",
+        };
+        sqlx::query(&format!(
+            "ALTER TABLE inventory_categories ALTER COLUMN {column} SET DEFAULT {value}"
+        ))
+        .execute(&p)
+        .await
+        .unwrap();
+        assert!(
+            require_runtime_schema(&p).await.is_err(),
+            "provisioning may not invent current metadata or historical actor provenance"
+        );
+        sqlx::query(&format!(
+            "ALTER TABLE inventory_categories ALTER COLUMN {column} DROP DEFAULT"
+        ))
+        .execute(&p)
+        .await
+        .unwrap();
+        require_runtime_schema(&p).await.unwrap();
+    }
+
+    let migration =
+        include_str!("../../../migrations/202610310031_inventory_category_governance.sql");
+    for (name, original, replacement) in [
+        (
+            "inventory_category_parent_proof",
+            "DEFAULT NULL",
+            "DEFAULT 2",
+        ),
+        (
+            "inventory_category_text_valid",
+            "DEFAULT false",
+            "DEFAULT true",
+        ),
+    ] {
+        let start = migration.find(&format!("CREATE FUNCTION {name}(")).unwrap();
+        let end = start + migration[start..].find("$$;").unwrap() + 3;
+        let exact =
+            migration[start..end].replacen("CREATE FUNCTION", "CREATE OR REPLACE FUNCTION", 1);
+        let wrong = exact.replacen(original, replacement, 1);
+        assert_ne!(wrong, exact);
+        sqlx::raw_sql(&wrong).execute(&p).await.unwrap();
+        assert!(
+            require_runtime_schema(&p).await.is_err(),
+            "intrinsic omitted-argument defaults are part of the exact guard contract"
+        );
+        sqlx::raw_sql(&exact).execute(&p).await.unwrap();
+        require_runtime_schema(&p).await.unwrap();
+    }
+}

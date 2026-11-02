@@ -4,7 +4,7 @@ async fn current_item24() -> (hms_db::test_support::TestDatabase, hms_db::PgPool
     let p = hms_db::connect(d.database_url()).await.unwrap();
     hms_db::migrate::run(&p).await.unwrap();
     require_runtime_schema(&p).await.unwrap();
-    assert_eq!(committed_breaking_epoch(&p).await.unwrap(), 202610300030);
+    assert_eq!(committed_breaking_epoch(&p).await.unwrap(), 202610310031);
     (d, p)
 }
 #[tokio::test]

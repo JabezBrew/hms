@@ -110,9 +110,10 @@ cargo test --workspace
 Start the root Docker Compose dependencies first with
 `docker compose up -d postgres redis`. Rust DB-backed tests use that Docker
 Postgres service and create isolated `hms_v2_test_*` databases via
-`createdb`/`dropdb`; keep client-tool passwords in a private shell environment
-so they do not fall back to a machine-local temporary Postgres cluster. Do not
-commit or print DB passwords.
+`createdb`/`dropdb`; make those client tools available on `PATH` and keep
+client-tool passwords in a private shell environment. Dependency or credential
+failures stop the tests; the helper never starts a machine-local Postgres cluster.
+Do not commit or print DB passwords.
 
 Focused suites:
 

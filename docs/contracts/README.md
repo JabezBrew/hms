@@ -618,8 +618,10 @@ New/changed references retain an exact active local item before publication.
 Unchanged historical links retain their existing closeout rules. Item and source
 locks, sorted code/request try-reservations, immutable evidence and final current
 authority prevent partial publication; refusal is separate from an unknown
-transport result. Missing-only supplier initialization binds canonical UUIDs
-after both seed loops and preserves configured suppliers and catalog state.
+transport result. Missing-only item-to-supplier link initialization binds a
+canonical supplier UUID after the seed loops and preserves configured item links
+and catalog state. The baseline supplier-row UPSERT itself remains a separate
+26B preservation gap.
 
 Transfer request metadata has a strict exact raw expected_unit and stores the
 reviewed requested_unit. Existing legacy rows retain NULL when the unit was not
@@ -642,3 +644,17 @@ Migration030 is a coordinated breaking write/runtime epoch. Matching API,
 worker, migrator, actual OpenAPI/SDK and ops protocol are required. Runtime029
 or earlier is not a supported rollback after030 commits. Old artifacts are not
 assumed to recognize future migrations merely because readiness can succeed.
+
+
+## Inventory category governance
+
+Checkpoint25 adds the finite current-metadata/direct-parent/unused-lifecycle
+contract at breaking epoch031, with retained ordinary InventoryView read proof
+and separately authorized management commands/original receipts. Parent links
+imply no inherited item membership. See the
+[category scope](../v2/2026-11-02-inventory-category-governance-scope.md) and
+[local verification](../v2/2026-11-02-checkpoint-25-verification.md) for exact
+privacy, migration, query and browser boundaries. Omni search admission/cache
+correctness (26A), supplier-row preservation (26B), legacy onboarding startup
+transport guarding (26C), and general item search's explicit category-label
+rebuild remain separate; no full parity or production acceptance is implied.

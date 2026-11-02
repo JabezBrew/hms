@@ -34,6 +34,7 @@ class SimulatedDeploy:
         (migrations / '202610170028_storage_location_lifecycle.sql').write_text('-- fixture\n')
         (migrations / '202610180029_appointment_type_lifecycle.sql').write_text('-- fixture\n')
         (migrations / '202610300030_inventory_item_governance.sql').write_text('-- fixture\n')
+        (migrations / '202610310031_inventory_category_governance.sql').write_text('-- fixture\n')
         copy_lease_helper(release, directory / '.hms-deploy-state/deploy.lock')
         self.env_file = directory / 'deploy.env'
         self.compose_file = directory / 'compose.yml'
@@ -104,7 +105,7 @@ elif tool == 'docker':
         elif command[:2] == ['ps', '-q']:
             print(command[-1])
         elif command[-2:] == ['hms-migrator', 'schema-compatibility']:
-            print('202610300030')
+            print('202610310031')
         elif command[0] == 'build':
             rust_services = {'hms-api', 'hms-worker', 'hms-migrator'}
             if len(rust_services.intersection(command[1:])) > 1:

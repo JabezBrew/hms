@@ -25,6 +25,7 @@ repositories should exchange domain types instead of ad hoc JSON shapes.
 | `dashboard.rs` | dashboard snapshots, notifications, realtime projections |
 | `deployment.rs` | deployment profile and capability shape |
 | `inventory.rs` | inventory, stock, procurement, controlled substances, pharmacy |
+| `inventory_categories.rs` | lean governed category metadata, explicit parent commands, exact detail and immutable own receipts |
 | `laboratory.rs` | catalog, panels, orders, specimens, results |
 | `patients.rs` | patient registry, context, Chronicle, break-glass |
 | `referrals.rs` | referrals, SLA, waitlist |

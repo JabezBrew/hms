@@ -45,7 +45,7 @@ async fn actual_binary_reports_only_committed_epoch_without_provisioning_or_writ
     hms_db::migrate::run(&pool).await.unwrap();
     let after = probe(database.database_url());
     assert!(after.status.success());
-    assert_eq!(after.stdout, b"202610300030\n");
+    assert_eq!(after.stdout, b"202610310031\n");
     assert!(after.stderr.is_empty());
     let identities: (i64, i64, i64) = sqlx::query_as("SELECT (SELECT count(*) FROM facilities),(SELECT count(*) FROM users),(SELECT count(*) FROM audit_events)")
         .fetch_one(&pool).await.unwrap();

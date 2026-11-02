@@ -1,5 +1,6 @@
 //! Read-only deployment compatibility metadata. Never returns database identity.
 mod appointment_types;
+mod inventory_categories;
 mod inventory_items;
 use crate::PgPool;
 use sqlx::{migrate::Migrate, Acquire};
@@ -23,7 +24,9 @@ pub const STORAGE_LOCATIONS_BREAKING_EPOCH: i64 = 202610170028;
 pub const APPOINTMENT_TYPES_BREAKING_EPOCH: i64 = 202610180029;
 /// Earlier runtimes bypass governed catalog corrections and retained item references.
 pub const INVENTORY_ITEMS_BREAKING_EPOCH: i64 = 202610300030;
-pub const REQUIRED_RUNTIME_SCHEMA_EPOCH: i64 = INVENTORY_ITEMS_BREAKING_EPOCH;
+/// Earlier runtimes do not preserve governed category and parent publication.
+pub const INVENTORY_CATEGORIES_BREAKING_EPOCH: i64 = 202610310031;
+pub const REQUIRED_RUNTIME_SCHEMA_EPOCH: i64 = INVENTORY_CATEGORIES_BREAKING_EPOCH;
 
 /// This once-per-process startup gate is separate from cheap health probes.
 pub async fn require_runtime_schema(pool: &PgPool) -> anyhow::Result<()> {
@@ -160,6 +163,7 @@ pub async fn committed_breaking_epoch(pool: &PgPool) -> anyhow::Result<i64> {
     let epoch = storage_locations::committed_epoch(&mut tx, history, epoch).await?;
     let epoch = appointment_types::committed_epoch(&mut tx, history, epoch).await?;
     let epoch = inventory_items::committed_epoch(&mut tx, history, epoch).await?;
+    let epoch = inventory_categories::committed_epoch(&mut tx, history, epoch).await?;
     Migrate::unlock(&mut *tx).await?;
     tx.commit().await?;
     Ok(epoch)

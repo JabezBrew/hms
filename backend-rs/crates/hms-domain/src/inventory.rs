@@ -122,7 +122,7 @@ pub struct InventoryCategoryListItem {
 pub struct InventoryItemListItem {
     pub id: Uuid,
     pub category_id: Uuid,
-    pub category_name: String,
+    pub category_name: Option<String>,
     pub code: String,
     pub sku: String,
     pub name: String,

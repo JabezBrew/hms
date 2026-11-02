@@ -16,6 +16,7 @@ pub mod dashboard;
 pub mod deployment;
 pub mod fluid;
 pub mod inventory;
+pub mod inventory_categories;
 pub mod inventory_items;
 pub mod inventory_standing;
 pub mod laboratory;

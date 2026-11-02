@@ -10,6 +10,7 @@ use uuid::Uuid;
 use crate::codec;
 
 mod catalog;
+pub mod category_governance;
 mod controlled_substances;
 pub mod items;
 mod pharmacy;

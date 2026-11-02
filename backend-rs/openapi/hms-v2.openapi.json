@@ -5791,6 +5791,43 @@
         ],
         "type": "object"
       },
+      "CorrectInventoryCategoryRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "client_request_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "expected_version": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "parent_change": {
+            "$ref": "#/components/schemas/InventoryCategoryParentChange"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "client_request_id",
+          "expected_version",
+          "name",
+          "description",
+          "parent_change",
+          "reason"
+        ],
+        "type": "object"
+      },
       "CreateAdmissionAdvisoryRequest": {
         "additionalProperties": false,
         "properties": {
@@ -6767,6 +6804,45 @@
           "name",
           "unit",
           "reason"
+        ],
+        "type": "object"
+      },
+      "CreateInventoryCategoryRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "client_request_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "code": {
+            "type": "string"
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "parent": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/InventoryCategoryParentSelection"
+              }
+            ]
+          }
+        },
+        "required": [
+          "client_request_id",
+          "code",
+          "name",
+          "description",
+          "parent"
         ],
         "type": "object"
       },
@@ -10153,6 +10229,86 @@
         ],
         "type": "object"
       },
+      "GovernedInventoryCategory": {
+        "additionalProperties": false,
+        "properties": {
+          "catalog_changed_at": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "code": {
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "created_by_user_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "is_active": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          },
+          "parent": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/InventoryCategoryParent"
+              }
+            ]
+          },
+          "parent_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "updated_by_user_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "version": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "code",
+          "name",
+          "description",
+          "is_active",
+          "version",
+          "created_at"
+        ],
+        "type": "object"
+      },
       "GovernedInventoryItem": {
         "additionalProperties": false,
         "properties": {
@@ -10962,6 +11118,270 @@
         },
         "type": "object"
       },
+      "InventoryCategoryAdministration": {
+        "additionalProperties": false,
+        "properties": {
+          "category": {
+            "$ref": "#/components/schemas/GovernedInventoryCategory"
+          },
+          "eligibility": {
+            "$ref": "#/components/schemas/InventoryCategoryEligibility"
+          }
+        },
+        "required": [
+          "category",
+          "eligibility"
+        ],
+        "type": "object"
+      },
+      "InventoryCategoryAdministrationListItem": {
+        "additionalProperties": false,
+        "description": "Bounded administration metadata; descriptions and actor provenance require detail.",
+        "properties": {
+          "catalog_changed_at": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "code": {
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "is_active": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          },
+          "parent_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "version": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "code",
+          "name",
+          "is_active",
+          "version",
+          "created_at"
+        ],
+        "type": "object"
+      },
+      "InventoryCategoryAdministrationQuery": {
+        "additionalProperties": false,
+        "properties": {
+          "cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "is_active": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "limit": {
+            "format": "int32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "search": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "InventoryCategoryCommandReceipt": {
+        "additionalProperties": false,
+        "properties": {
+          "before": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/GovernedInventoryCategory"
+              }
+            ]
+          },
+          "category": {
+            "$ref": "#/components/schemas/GovernedInventoryCategory"
+          },
+          "changed": {
+            "type": "boolean"
+          },
+          "client_request_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "input_digest": {
+            "type": "string"
+          },
+          "recorded_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "recorded_by_user_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "reviewed_input": {
+            "$ref": "#/components/schemas/InventoryCategoryReviewedInput"
+          }
+        },
+        "required": [
+          "client_request_id",
+          "input_digest",
+          "reviewed_input",
+          "recorded_by_user_id",
+          "category",
+          "changed",
+          "recorded_at"
+        ],
+        "type": "object"
+      },
+      "InventoryCategoryEligibility": {
+        "additionalProperties": false,
+        "properties": {
+          "lifecycle_blocked_by": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/InventoryCategoryEligibilityBlocker"
+              }
+            ]
+          },
+          "parent_unavailable": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "parent_unavailable"
+        ],
+        "type": "object"
+      },
+      "InventoryCategoryEligibilityBlocker": {
+        "enum": [
+          "item_reference",
+          "child_reference"
+        ],
+        "type": "string"
+      },
+      "InventoryCategoryHistoryQuery": {
+        "additionalProperties": false,
+        "properties": {
+          "cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "limit": {
+            "format": "int32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "InventoryCategoryHistoryRow": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "type": "string"
+          },
+          "active_changed": {
+            "type": "boolean"
+          },
+          "after_version": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "before_version": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "description_changed": {
+            "type": "boolean"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "name_changed": {
+            "type": "boolean"
+          },
+          "parent_changed": {
+            "type": "boolean"
+          },
+          "recorded_at": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "action",
+          "recorded_at",
+          "after_version",
+          "name_changed",
+          "description_changed",
+          "parent_changed",
+          "active_changed"
+        ],
+        "type": "object"
+      },
+      "InventoryCategoryLifecycleRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "client_request_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "expected_version": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "client_request_id",
+          "expected_version"
+        ],
+        "type": "object"
+      },
       "InventoryCategoryListItem": {
         "properties": {
           "code": {
@@ -10981,6 +11401,272 @@
           "name"
         ],
         "type": "object"
+      },
+      "InventoryCategoryParent": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "is_active": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          },
+          "version": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "code",
+          "name",
+          "version",
+          "is_active"
+        ],
+        "type": "object"
+      },
+      "InventoryCategoryParentChange": {
+        "oneOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "action": {
+                "enum": [
+                  "retain"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "action"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "action": {
+                "enum": [
+                  "clear"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "action"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "action": {
+                "enum": [
+                  "set"
+                ],
+                "type": "string"
+              },
+              "expected_parent_version": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "parent_id": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "parent_id",
+              "expected_parent_version",
+              "action"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "InventoryCategoryParentSelection": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_parent_version": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "parent_id": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "parent_id",
+          "expected_parent_version"
+        ],
+        "type": "object"
+      },
+      "InventoryCategoryReviewedInput": {
+        "oneOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "action": {
+                "enum": [
+                  "create"
+                ],
+                "type": "string"
+              },
+              "client_request_id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "code": {
+                "type": "string"
+              },
+              "description": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "name": {
+                "type": "string"
+              },
+              "parent": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/InventoryCategoryParentSelection"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "client_request_id",
+              "code",
+              "name",
+              "description",
+              "parent",
+              "action"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "action": {
+                "enum": [
+                  "correct"
+                ],
+                "type": "string"
+              },
+              "category_id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "client_request_id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "description": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "expected_version": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "name": {
+                "type": "string"
+              },
+              "parent_change": {
+                "$ref": "#/components/schemas/InventoryCategoryParentChange"
+              },
+              "reason": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "client_request_id",
+              "category_id",
+              "expected_version",
+              "name",
+              "description",
+              "parent_change",
+              "reason",
+              "action"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "action": {
+                "enum": [
+                  "retire"
+                ],
+                "type": "string"
+              },
+              "category_id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "client_request_id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "expected_version": {
+                "format": "int64",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "client_request_id",
+              "category_id",
+              "expected_version",
+              "action"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "action": {
+                "enum": [
+                  "reactivate"
+                ],
+                "type": "string"
+              },
+              "category_id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "client_request_id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "expected_version": {
+                "format": "int64",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "client_request_id",
+              "category_id",
+              "expected_version",
+              "action"
+            ],
+            "type": "object"
+          }
+        ]
       },
       "InventoryDashboardSummary": {
         "properties": {
@@ -11366,7 +12052,10 @@
             "type": "string"
           },
           "category_name": {
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "code": {
             "type": "string"
@@ -11415,7 +12104,6 @@
         "required": [
           "id",
           "category_id",
-          "category_name",
           "code",
           "sku",
           "name",
@@ -15858,6 +16546,140 @@
         ],
         "type": "object"
       },
+      "ListResponse_InventoryCategoryAdministrationListItem": {
+        "properties": {
+          "data": {
+            "items": {
+              "additionalProperties": false,
+              "description": "Bounded administration metadata; descriptions and actor provenance require detail.",
+              "properties": {
+                "catalog_changed_at": {
+                  "format": "date-time",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "code": {
+                  "type": "string"
+                },
+                "created_at": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "is_active": {
+                  "type": "boolean"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "parent_id": {
+                  "format": "uuid",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "version": {
+                  "format": "int64",
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "id",
+                "code",
+                "name",
+                "is_active",
+                "version",
+                "created_at"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "meta": {},
+          "page": {
+            "$ref": "#/components/schemas/PageInfo"
+          }
+        },
+        "required": [
+          "data",
+          "page",
+          "meta"
+        ],
+        "type": "object"
+      },
+      "ListResponse_InventoryCategoryHistoryRow": {
+        "properties": {
+          "data": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "action": {
+                  "type": "string"
+                },
+                "active_changed": {
+                  "type": "boolean"
+                },
+                "after_version": {
+                  "format": "int64",
+                  "type": "integer"
+                },
+                "before_version": {
+                  "format": "int64",
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "description_changed": {
+                  "type": "boolean"
+                },
+                "id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "name_changed": {
+                  "type": "boolean"
+                },
+                "parent_changed": {
+                  "type": "boolean"
+                },
+                "recorded_at": {
+                  "format": "date-time",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "action",
+                "recorded_at",
+                "after_version",
+                "name_changed",
+                "description_changed",
+                "parent_changed",
+                "active_changed"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "meta": {},
+          "page": {
+            "$ref": "#/components/schemas/PageInfo"
+          }
+        },
+        "required": [
+          "data",
+          "page",
+          "meta"
+        ],
+        "type": "object"
+      },
       "ListResponse_InventoryCategoryListItem": {
         "properties": {
           "data": {
@@ -16023,7 +16845,10 @@
                   "type": "string"
                 },
                 "category_name": {
-                  "type": "string"
+                  "type": [
+                    "string",
+                    "null"
+                  ]
                 },
                 "code": {
                   "type": "string"
@@ -16072,7 +16897,6 @@
               "required": [
                 "id",
                 "category_id",
-                "category_name",
                 "code",
                 "sku",
                 "name",
@@ -28227,6 +29051,91 @@
         ],
         "type": "object"
       },
+      "ObjectResponse_InventoryCategoryAdministration": {
+        "properties": {
+          "data": {
+            "additionalProperties": false,
+            "properties": {
+              "category": {
+                "$ref": "#/components/schemas/GovernedInventoryCategory"
+              },
+              "eligibility": {
+                "$ref": "#/components/schemas/InventoryCategoryEligibility"
+              }
+            },
+            "required": [
+              "category",
+              "eligibility"
+            ],
+            "type": "object"
+          },
+          "meta": {}
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "type": "object"
+      },
+      "ObjectResponse_InventoryCategoryCommandReceipt": {
+        "properties": {
+          "data": {
+            "additionalProperties": false,
+            "properties": {
+              "before": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/GovernedInventoryCategory"
+                  }
+                ]
+              },
+              "category": {
+                "$ref": "#/components/schemas/GovernedInventoryCategory"
+              },
+              "changed": {
+                "type": "boolean"
+              },
+              "client_request_id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "input_digest": {
+                "type": "string"
+              },
+              "recorded_at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "recorded_by_user_id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "reviewed_input": {
+                "$ref": "#/components/schemas/InventoryCategoryReviewedInput"
+              }
+            },
+            "required": [
+              "client_request_id",
+              "input_digest",
+              "reviewed_input",
+              "recorded_by_user_id",
+              "category",
+              "changed",
+              "recorded_at"
+            ],
+            "type": "object"
+          },
+          "meta": {}
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "type": "object"
+      },
       "ObjectResponse_InventoryDashboardSummary": {
         "properties": {
           "data": {
@@ -28383,7 +29292,10 @@
                 "type": "string"
               },
               "category_name": {
-                "type": "string"
+                "type": [
+                  "string",
+                  "null"
+                ]
               },
               "code": {
                 "type": "string"
@@ -28432,7 +29344,6 @@
             "required": [
               "id",
               "category_id",
-              "category_name",
               "code",
               "sku",
               "name",
@@ -63271,6 +64182,764 @@
             "description": ""
           },
           "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "inventory"
+        ]
+      }
+    },
+    "/api/v2/inventory/categories/{id}/administration": {
+      "get": {
+        "operationId": "getInventoryCategoryAdministrationById",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_InventoryCategoryAdministration"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "inventory"
+        ]
+      }
+    },
+    "/api/v2/inventory/categories/{id}/corrections": {
+      "post": {
+        "operationId": "postInventoryCategoryCorrection",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CorrectInventoryCategoryRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_InventoryCategoryCommandReceipt"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "inventory"
+        ]
+      }
+    },
+    "/api/v2/inventory/categories/{id}/history": {
+      "get": {
+        "operationId": "getInventoryCategoryHistory",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "minimum": 0,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListResponse_InventoryCategoryHistoryRow"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "inventory"
+        ]
+      }
+    },
+    "/api/v2/inventory/categories/{id}/reactivate": {
+      "post": {
+        "operationId": "postInventoryCategoryReactivate",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InventoryCategoryLifecycleRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_InventoryCategoryCommandReceipt"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "inventory"
+        ]
+      }
+    },
+    "/api/v2/inventory/categories/{id}/retire": {
+      "post": {
+        "operationId": "postInventoryCategoryRetire",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InventoryCategoryLifecycleRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_InventoryCategoryCommandReceipt"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "inventory"
+        ]
+      }
+    },
+    "/api/v2/inventory/category-administration": {
+      "get": {
+        "operationId": "getInventoryCategoryAdministration",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "search",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "is_active",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListResponse_InventoryCategoryAdministrationListItem"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "inventory"
+        ]
+      },
+      "post": {
+        "operationId": "postInventoryCategory",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateInventoryCategoryRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_InventoryCategoryCommandReceipt"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "inventory"
+        ]
+      }
+    },
+    "/api/v2/inventory/category-commands/{client_request_id}": {
+      "get": {
+        "operationId": "getInventoryCategoryCommandReceipt",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "client_request_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_InventoryCategoryCommandReceipt"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
             "content": {
               "application/json": {
                 "schema": {

@@ -1587,7 +1587,7 @@ async fn insert_inventory_documents(
                ),
                inventory_items.is_active
         FROM inventory_items
-        INNER JOIN inventory_categories ON inventory_categories.id = inventory_items.category_id
+        LEFT JOIN inventory_categories ON inventory_categories.id = inventory_items.category_id AND inventory_categories.facility_id = inventory_items.facility_id
         WHERE inventory_items.facility_id = $1
         UNION ALL
         SELECT gen_random_uuid(),

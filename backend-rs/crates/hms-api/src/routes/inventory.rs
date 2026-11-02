@@ -8,6 +8,34 @@ pub fn routes() -> Router<AppState> {
     Router::new()
         .merge(super::inventory_standing::routes())
         .route(
+            "/api/v2/inventory/category-administration",
+            get(inventory::categories::list).post(inventory::categories::create),
+        )
+        .route(
+            "/api/v2/inventory/categories/:id/administration",
+            get(inventory::categories::detail),
+        )
+        .route(
+            "/api/v2/inventory/categories/:id/history",
+            get(inventory::categories::history),
+        )
+        .route(
+            "/api/v2/inventory/categories/:id/corrections",
+            post(inventory::categories::correct),
+        )
+        .route(
+            "/api/v2/inventory/categories/:id/retire",
+            post(inventory::categories::retire),
+        )
+        .route(
+            "/api/v2/inventory/categories/:id/reactivate",
+            post(inventory::categories::reactivate),
+        )
+        .route(
+            "/api/v2/inventory/category-commands/:client_request_id",
+            get(inventory::categories::receipt),
+        )
+        .route(
             "/api/v2/inventory/categories",
             get(inventory::list_categories),
         )

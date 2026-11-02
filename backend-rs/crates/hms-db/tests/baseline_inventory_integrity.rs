@@ -304,3 +304,194 @@ async fn performance_seed_original_receipt_preserves_later_governed_inventory_an
     let after:Value=sqlx::query_scalar("SELECT jsonb_build_object('item',(SELECT to_jsonb(i) FROM inventory_items i WHERE id=$1),'revisions',(SELECT jsonb_agg(to_jsonb(r) ORDER BY id) FROM inventory_item_catalog_revisions r WHERE item_id=$1),'batches',(SELECT jsonb_agg(to_jsonb(b) ORDER BY id) FROM stock_batches b WHERE item_id=$1),'movements',(SELECT jsonb_agg(to_jsonb(m) ORDER BY id) FROM stock_movements m WHERE item_id=$1),'receipt',(SELECT jsonb_agg(to_jsonb(a) ORDER BY id) FROM audit_events a WHERE event_type='performance.seed.provisioned'))").bind(item).fetch_one(&p).await.unwrap();
     assert_eq!(after, before);
 }
+
+fn before031() -> sqlx::migrate::Migrator {
+    sqlx::migrate::Migrator {
+        migrations: std::borrow::Cow::Owned(
+            hms_db::migrate::MIGRATOR
+                .iter()
+                .filter(|m| m.version < 202610310031)
+                .cloned()
+                .collect(),
+        ),
+        ..sqlx::migrate::Migrator::DEFAULT
+    }
+}
+#[tokio::test]
+async fn category25_baseline_rerun_preserves_exact_retired_legacy_metadata_and_existing_defaults() {
+    let d = hms_db::test_support::TestDatabase::create().unwrap();
+    let p = hms_db::connect(d.database_url()).await.unwrap();
+    before031().run(&p).await.unwrap();
+    let b = BaselineProvisioning::hms_local(DeploymentProfile::Hospital);
+    provision::provision_baseline(&p, &b).await.unwrap();
+    let id = Uuid::from_u128(provision::DEFAULT_INVENTORY_CATEGORY_MED_ID);
+    // This observation is genuinely constructed under030, before031 makes identity permanent.
+    sqlx::query("UPDATE inventory_categories SET code='  retained code  ',name='  retained configured name  ',is_active=false WHERE id=$1").bind(id).execute(&p).await.unwrap();
+    hms_db::migrate::run(&p).await.unwrap();
+    let before: Value =
+        sqlx::query_scalar("SELECT to_jsonb(c) FROM inventory_categories c WHERE id=$1")
+            .bind(id)
+            .fetch_one(&p)
+            .await
+            .unwrap();
+    provision::provision_baseline(&p, &b).await.unwrap();
+    let after: Value =
+        sqlx::query_scalar("SELECT to_jsonb(c) FROM inventory_categories c WHERE id=$1")
+            .bind(id)
+            .fetch_one(&p)
+            .await
+            .unwrap();
+    assert_eq!(after, before);
+    assert!(after["created_by_user_id"].is_null() && after["catalog_changed_at"].is_null());
+}
+#[tokio::test]
+async fn category25_baseline_conflicting_code_is_typed_operator_review_and_never_rekeys() {
+    let (d, p, b) = fixture().await;
+    let _keep = d;
+    let id = Uuid::from_u128(provision::DEFAULT_INVENTORY_CATEGORY_MED_ID);
+    let foreign_id = Uuid::new_v4();
+    // Existing items first move to a separately retained category under actual pre030 schema.
+    sqlx::query("INSERT INTO inventory_categories(id,facility_id,code,name)VALUES($1,$2,'S25_RETAINED','Synthetic retained')").bind(foreign_id).bind(b.facility_id).execute(&p).await.unwrap();
+    sqlx::query("UPDATE inventory_items SET category_id=$1 WHERE category_id=$2")
+        .bind(foreign_id)
+        .bind(id)
+        .execute(&p)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE inventory_categories SET id=$1 WHERE id=$2")
+        .bind(Uuid::new_v4())
+        .bind(id)
+        .execute(&p)
+        .await
+        .unwrap();
+    hms_db::migrate::run(&p).await.unwrap();
+    let before: Value =
+        sqlx::query_scalar("SELECT jsonb_agg(to_jsonb(c) ORDER BY id) FROM inventory_categories c")
+            .fetch_one(&p)
+            .await
+            .unwrap();
+    let e = provision::provision_baseline(&p, &b).await.unwrap_err();
+    assert_eq!(
+        e.downcast_ref::<provision::InventoryCategoryProvisioningError>(),
+        Some(&provision::InventoryCategoryProvisioningError::OperatorReview)
+    );
+    let after: Value =
+        sqlx::query_scalar("SELECT jsonb_agg(to_jsonb(c) ORDER BY id) FROM inventory_categories c")
+            .fetch_one(&p)
+            .await
+            .unwrap();
+    assert_eq!(after, before);
+}
+
+#[tokio::test]
+async fn category25_missing_default_item_cannot_publish_under_retired_canonical_category() {
+    let (_d, p, b) = fixture().await;
+    let category = Uuid::from_u128(provision::DEFAULT_INVENTORY_CATEGORY_MED_ID);
+    let missing = Uuid::from_u128(provision::DEFAULT_INVENTORY_ITEM_PARACETAMOL_ID);
+    // The missing default and retired state are genuine pre030 import facts.
+    sqlx::query("DELETE FROM inventory_items WHERE id=$1")
+        .bind(missing)
+        .execute(&p)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE inventory_categories SET is_active=false WHERE id=$1")
+        .bind(category)
+        .execute(&p)
+        .await
+        .unwrap();
+    hms_db::migrate::run(&p).await.unwrap();
+    let before: Value =
+        sqlx::query_scalar("SELECT to_jsonb(c) FROM inventory_categories c WHERE id=$1")
+            .bind(category)
+            .fetch_one(&p)
+            .await
+            .unwrap();
+    let error = provision::provision_baseline(&p, &b).await.unwrap_err();
+    assert!(error.chain().any(|e| e
+        .downcast_ref::<sqlx::Error>()
+        .and_then(|e| e.as_database_error())
+        .is_some_and(|e| e.message() == "inventory_item_category_unavailable")));
+    let after: Value =
+        sqlx::query_scalar("SELECT to_jsonb(c) FROM inventory_categories c WHERE id=$1")
+            .bind(category)
+            .fetch_one(&p)
+            .await
+            .unwrap();
+    assert_eq!(after, before);
+    let exists: bool =
+        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM inventory_items WHERE id=$1)")
+            .bind(missing)
+            .fetch_one(&p)
+            .await
+            .unwrap();
+    assert!(!exists);
+}
+
+#[tokio::test]
+async fn category25_foreign_canonical_id_requires_typed_operator_review() {
+    let (_d, p, b) = fixture().await;
+    let category = Uuid::from_u128(provision::DEFAULT_INVENTORY_CATEGORY_MED_ID);
+    let foreign = Uuid::new_v4();
+    sqlx::query("INSERT INTO facilities(id,code,name,deployment_profile) VALUES($1,'S25_CANONICAL_OWNER','Synthetic other facility','hospital')").bind(foreign).execute(&p).await.unwrap();
+    // Existing foreign ownership is imported under pre030; no current guard bypass.
+    sqlx::query("UPDATE inventory_categories SET facility_id=$1 WHERE id=$2")
+        .bind(foreign)
+        .bind(category)
+        .execute(&p)
+        .await
+        .unwrap();
+    hms_db::migrate::run(&p).await.unwrap();
+    let before: Value =
+        sqlx::query_scalar("SELECT to_jsonb(c) FROM inventory_categories c WHERE id=$1")
+            .bind(category)
+            .fetch_one(&p)
+            .await
+            .unwrap();
+    let error = provision::provision_baseline(&p, &b).await.unwrap_err();
+    assert_eq!(
+        error.downcast_ref::<provision::InventoryCategoryProvisioningError>(),
+        Some(&provision::InventoryCategoryProvisioningError::OperatorReview)
+    );
+    let after: Value =
+        sqlx::query_scalar("SELECT to_jsonb(c) FROM inventory_categories c WHERE id=$1")
+            .bind(category)
+            .fetch_one(&p)
+            .await
+            .unwrap();
+    assert_eq!(after, before);
+}
+
+#[tokio::test]
+async fn category25_pending_foreign_canonical_insert_is_definite_busy_without_uniqueness_wait() {
+    let d = hms_db::test_support::TestDatabase::create().unwrap();
+    let p = hms_db::connect(d.database_url()).await.unwrap();
+    hms_db::migrate::run(&p).await.unwrap();
+    sqlx::query("INSERT INTO deployment_profiles(code,label)VALUES('hospital','Synthetic hospital profile')").execute(&p).await.unwrap();
+    let foreign = Uuid::new_v4();
+    let canonical = Uuid::from_u128(provision::DEFAULT_INVENTORY_CATEGORY_MED_ID);
+    sqlx::query("INSERT INTO facilities(id,code,name,deployment_profile)VALUES($1,'S25_PENDING_FOREIGN','Synthetic foreign facility','hospital')").bind(foreign).execute(&p).await.unwrap();
+    let mut pending = p.begin().await.unwrap();
+    // Returning from this INSERT proves the intrinsic global ID gate is held.
+    sqlx::query("INSERT INTO inventory_categories(id,facility_id,code,name)VALUES($1,$2,'S25_FOREIGN_PENDING','Synthetic pending foreign category')").bind(canonical).bind(foreign).execute(&mut *pending).await.unwrap();
+    let b = BaselineProvisioning::hms_local(DeploymentProfile::Hospital);
+    let error = tokio::time::timeout(
+        std::time::Duration::from_secs(5),
+        provision::provision_baseline(&p, &b),
+    )
+    .await
+    .expect("canonical identity try gate never waits for a pending foreign unique-key owner")
+    .unwrap_err();
+    assert_eq!(
+        error.downcast_ref::<provision::InventoryCategoryProvisioningError>(),
+        Some(&provision::InventoryCategoryProvisioningError::Busy)
+    );
+    pending.rollback().await.unwrap();
+    provision::provision_baseline(&p, &b).await.unwrap();
+    let owner: Uuid =
+        sqlx::query_scalar("SELECT facility_id FROM inventory_categories WHERE id=$1")
+            .bind(canonical)
+            .fetch_one(&p)
+            .await
+            .unwrap();
+    assert_eq!(owner, b.facility_id);
+}

@@ -4,6 +4,7 @@ export async function classifyWriteScope(request) {
   const path = String(request.resolvedPath).split('?')[0];
   if (/^\/api\/v2\/patients\/[^/]+\/clinical\/note-requests(?:\/|$)/.test(path)) return (await import('./clinicalNoteWriteScopes')).classifyClinicalNoteReceipt(path);
   if (/^\/api\/v2\/admin\/org-units(?:\/|$)/.test(path)) return (await import('./organizationWriteScopes')).classifyOrganizationWriteScope(path);
+  if (/^\/api\/v2\/inventory\/(?:categories|category-administration|category-commands)(?:\/|$)/.test(path)) return (await import('./inventoryCategoryWriteScopes')).classifyInventoryCategoryWriteScope(path);
   if (/^\/api\/v2\/inventory\/(?:items|catalog-edits|item-commands)(?:\/|$)/.test(path)) return (await import('./inventoryItemWriteScopes')).classifyInventoryItemWriteScope(path);
   if (/^\/api\/v2\/inventory\/storage-locations(?:\/|$)/.test(path)) return (await import('./storageLocationWriteScopes')).classifyStorageLocationWriteScope(path);
   if (/^\/api\/v2\/scheduling\/services(?:\/|$)/.test(path)) return (await import('./bookableServiceWriteScopes')).classifyBookableServiceWriteScope(path);
@@ -26,4 +27,8 @@ export async function bookableServiceRecoveryCandidate(store, origin) {
 
 export async function inventoryItemRecoveryCandidate(store, origin) {
   return (await import('./inventoryItemWriteScopes')).inventoryItemRecoveryCandidate(store, origin);
+}
+
+export async function inventoryCategoryRecoveryCandidate(store, origin) {
+  return (await import('./inventoryCategoryWriteScopes')).inventoryCategoryRecoveryCandidate(store, origin);
 }

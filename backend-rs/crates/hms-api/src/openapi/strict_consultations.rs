@@ -20,6 +20,8 @@ impl Modify for StrictConsultationSchemas {
             "ReferralConsultationVisitChoice",
             "AppointmentTypeReviewedInput",
             "InventoryItemReviewedInput",
+            "InventoryCategoryParentChange",
+            "InventoryCategoryReviewedInput",
             "InventoryItemHistoryRow",
         ] {
             let Some(RefOr::T(Schema::OneOf(schema))) = components.schemas.get_mut(name) else {

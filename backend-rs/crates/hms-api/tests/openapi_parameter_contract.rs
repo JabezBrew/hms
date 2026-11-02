@@ -227,3 +227,62 @@ fn governed_command_body_schemas_keep_exact_required_fields_and_reject_extra_fie
         );
     }
 }
+
+#[test]
+fn inventory_category_enums_are_closed_and_nullable_review_fields_are_required() {
+    let document = document();
+    let schemas = &document["components"]["schemas"];
+    for name in [
+        "CreateInventoryCategoryRequest",
+        "CorrectInventoryCategoryRequest",
+        "InventoryCategoryParentSelection",
+        "InventoryCategoryLifecycleRequest",
+    ] {
+        assert_eq!(
+            schemas[name]["additionalProperties"], false,
+            "closed request {name}"
+        );
+    }
+    for name in [
+        "InventoryCategoryParentChange",
+        "InventoryCategoryReviewedInput",
+    ] {
+        let variants = schemas[name]["oneOf"].as_array().unwrap();
+        for variant in variants {
+            assert_eq!(
+                variant["additionalProperties"], false,
+                "closed variant {name}"
+            );
+        }
+    }
+    for name in [
+        "CreateInventoryCategoryRequest",
+        "CorrectInventoryCategoryRequest",
+    ] {
+        assert!(schemas[name]["required"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|v| v == "description"));
+    }
+    for variant in schemas["InventoryCategoryReviewedInput"]["oneOf"]
+        .as_array()
+        .unwrap()
+    {
+        let action = variant["properties"]["action"]["enum"][0].as_str().unwrap();
+        if action == "create" || action == "correct" {
+            assert!(variant["required"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|v| v == "description"));
+        }
+        if action == "create" {
+            assert!(variant["required"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|v| v == "parent"));
+        }
+    }
+}

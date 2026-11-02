@@ -32,6 +32,29 @@ use uuid::Uuid;
 use crate::codec;
 use crate::PgPool;
 
+/// Conflicting canonical category identity/code ownership needs operator review.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum InventoryCategoryProvisioningError {
+    OperatorReview,
+    Busy,
+}
+impl std::fmt::Display for InventoryCategoryProvisioningError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::OperatorReview => "baseline_inventory_category_review_required",
+            Self::Busy => "baseline_inventory_category_busy",
+        })
+    }
+}
+impl std::error::Error for InventoryCategoryProvisioningError {}
+fn inventory_category_provisioning_error(error: sqlx::Error) -> anyhow::Error {
+    if error.as_database_error().and_then(|e| e.code()).as_deref() == Some("55P03") {
+        InventoryCategoryProvisioningError::Busy.into()
+    } else {
+        error.into()
+    }
+}
+
 static PROVISION_LOCK: OnceLock<tokio::sync::Mutex<()>> = OnceLock::new();
 
 pub const FACILITY_ID: u128 = 0x10000000000000000000000000000001;
@@ -7351,20 +7374,72 @@ async fn seed_inventory_baseline(
     pool: &PgPool,
     baseline: &BaselineProvisioning,
 ) -> anyhow::Result<()> {
-    sqlx::query(
-        r#"
-        INSERT INTO inventory_categories (id, facility_id, code, name)
-        VALUES ($1, $2, 'MED', 'Medicines')
-        ON CONFLICT (facility_id, code) DO UPDATE
-        SET id = EXCLUDED.id,
-            name = EXCLUDED.name,
-            is_active = TRUE
-        "#,
+    // Canonical identity is checked before code. Preserve every configured field,
+    // including retired state; defaults are missing-only and never repair/rekey.
+    let category_id = Uuid::from_u128(DEFAULT_INVENTORY_CATEGORY_MED_ID);
+    let mut category_seed = pool
+        .begin()
+        .await
+        .map_err(inventory_category_provisioning_error)?;
+    // Historical fixture/provisioning remains supported before031. Current
+    // provisioning enters the intrinsic all-writer graph gate before probes.
+    let governed: bool = sqlx::query_scalar(
+        "SELECT to_regprocedure('public.inventory_category_graph_gate(uuid)') IS NOT NULL",
     )
-    .bind(Uuid::from_u128(DEFAULT_INVENTORY_CATEGORY_MED_ID))
-    .bind(baseline.facility_id)
-    .execute(pool)
-    .await?;
+    .fetch_one(&mut *category_seed)
+    .await
+    .map_err(inventory_category_provisioning_error)?;
+    if governed {
+        sqlx::query("SELECT inventory_category_identity_gate($1)")
+            .bind(category_id)
+            .execute(&mut *category_seed)
+            .await
+            .map_err(inventory_category_provisioning_error)?;
+
+        sqlx::query("SELECT inventory_category_graph_gate($1)")
+            .bind(baseline.facility_id)
+            .execute(&mut *category_seed)
+            .await
+            .map_err(inventory_category_provisioning_error)?;
+    }
+    let owner: Option<Uuid> = sqlx::query_scalar(
+        "SELECT facility_id FROM inventory_categories WHERE id=$1 FOR SHARE NOWAIT",
+    )
+    .bind(category_id)
+    .fetch_optional(&mut *category_seed)
+    .await
+    .map_err(inventory_category_provisioning_error)?;
+    match owner {
+        Some(owner) => anyhow::ensure!(
+            owner == baseline.facility_id,
+            InventoryCategoryProvisioningError::OperatorReview
+        ),
+        None => {
+            let collision: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM inventory_categories WHERE facility_id=$1 AND code='MED')")
+                .bind(baseline.facility_id).fetch_one(&mut *category_seed).await.map_err(inventory_category_provisioning_error)?;
+            anyhow::ensure!(
+                !collision,
+                InventoryCategoryProvisioningError::OperatorReview
+            );
+            sqlx::query("INSERT INTO inventory_categories(id,facility_id,code,name) VALUES($1,$2,'MED','Medicines') ON CONFLICT DO NOTHING")
+                .bind(category_id).bind(baseline.facility_id).execute(&mut *category_seed).await.map_err(inventory_category_provisioning_error)?;
+            let actual: Option<Uuid> = sqlx::query_scalar(
+                "SELECT facility_id FROM inventory_categories WHERE id=$1 FOR SHARE NOWAIT",
+            )
+            .bind(category_id)
+            .fetch_optional(&mut *category_seed)
+            .await
+            .map_err(inventory_category_provisioning_error)?;
+            anyhow::ensure!(
+                actual == Some(baseline.facility_id),
+                InventoryCategoryProvisioningError::OperatorReview
+            );
+        }
+    }
+    category_seed
+        .commit()
+        .await
+        .map_err(inventory_category_provisioning_error)?;
 
     for (id, code, name, item_type, unit, controlled) in [
         (

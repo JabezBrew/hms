@@ -71,3 +71,8 @@ async fn api_refuses_028_before_provisioning_and_accepts_029() {
 async fn api_refuses_029_before_provisioning_and_accepts_030() {
     refuses_before_provisioning_and_accepts_required_schema(202610300030).await;
 }
+
+#[tokio::test]
+async fn api_refuses_030_before_provisioning_and_accepts_031() {
+    refuses_before_provisioning_and_accepts_required_schema(202610310031).await;
+}

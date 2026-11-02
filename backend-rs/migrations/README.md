@@ -43,3 +43,14 @@ Run from `backend-rs/`:
 cargo test -p hms-db --test migrations
 cargo test -p hms-db --test provision_demo_seed
 ```
+
+## Category epoch031
+
+`202610310031_inventory_category_governance.sql` introduces current category CAS,
+nullable description/direct parent, immutable UUID receipts, intrinsic parent and
+lifecycle guards, indexed administration/history/references and a mandatory
+producer-backed item search projection repair. Deploy matching API, worker and
+migrator with all writers quiesced and no old-runtime restart. New runtime31
+refuses older schemas before provisioning. Accepted runtime030 cannot know a
+future031 epoch; its observed startup/write behavior is a separate diagnostic,
+not a supported rollback policy. Do not modify accepted030 migration bytes.

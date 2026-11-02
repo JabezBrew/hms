@@ -544,3 +544,21 @@ does not establish supported write compatibility. Roll forward with a compatible
 artifact or use the separately governed backup/restore procedure; no automatic
 down migration discards original command/history evidence. Local schema/process
 tests and old-client diagnostics do not establish a live deployment/restore drill.
+
+Migration `202610310031` requires runtime epoch `202610310031`. It adds governed
+inventory category metadata, direct-parent publication and immutable original
+command receipts. Use matching API/worker/migrator and generated frontend under
+the existing deployment lease. Quiesce writers before migration and retain the
+no-old-runtime restart fence: runtime030 or earlier is not a supported rollback
+after031 commits. The new runtime must prove the required031 schema before
+provisioning or readiness. An already-built030 executable is not assumed to
+recognize a future migration merely because its health endpoint can succeed.
+
+The migration repairs existing producer-backed inventory-item search text and
+category observations using only same-facility category data. This maintenance
+cost grows with the item-document population and belongs inside the coordinated
+migration window; it is not constant-time clinical work or a synchronous category
+save fanout. Keep backup/release anchors and measure the migration at the intended
+scale. Subsequent local category renames reach general item search through its
+existing explicit rebuild and cache turnover. Local protocol fixtures do not
+establish a live migration, recovery drill or production latency acceptance.
