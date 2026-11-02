@@ -350,6 +350,25 @@ async fn omni_search_index_backfills_and_filters_before_ranking() {
         .any(|item| item.title.contains("Paracetamol")));
     assert!(inventory_results.groups.patients.is_empty());
 
+    for query in ["Pa", "Paracetamol"] {
+        let without_feature = hms_db::search::omni_search(
+            &pool,
+            OmniSearchFilters {
+                facility_id,
+                user_id: owner_id,
+                query: Some(query.to_owned()),
+                types: vec![SearchResourceType::Inventory],
+                limit_per_group: 5,
+                permission_codes: vec![PermissionCode::InventoryView],
+                feature_keys: vec![],
+                patient_visibility: vec![PatientDataVisibility::None],
+            },
+        )
+        .await
+        .expect("feature-disabled search succeeds");
+        assert!(without_feature.groups.inventory.is_empty());
+    }
+
     let encounter_document_id = uuid::Uuid::new_v4();
     let encounter_resource_id = uuid::Uuid::new_v4();
     let billing_document_id = uuid::Uuid::new_v4();

@@ -1,6 +1,6 @@
 # Python to Rust and UI feature parity
 
-Updated: 2026-10-31. Scope: the user's expanded request for all phases after the
+Updated: 2026-11-02. Scope: the user's expanded request for all phases after the
 phase-one release. This ledger extends `v2-cutover-scope.md`; its old baseline
 labels are historical evidence, not a claim that all Python workflows work in
 the Rust UI. Python is a behavior reference; Rust access and PHI contracts win
@@ -77,10 +77,14 @@ remaining organization, billing catalog, external delivery or realtime backlog.
 | Controlled-stock integrity | Rust controlled register/count/movement and active UI adapters | Active local location/witness, coupled physical/register evidence, serialized movement and single-dispatch errors; no inferred opening balance. | twelfth checkpoint fixes eligibility, drift refusal and unsafe frontend retry; governed reconciliation, cryptographic witness attestation and UUID receipts remain queued; frozen local acceptance passed |
 | Catalog versions | Rust legacy dated rows and governed current configuration | Preserve old intervals; distinguish recording from current projection and future activation. | twenty-fourth adds immutable correction revisions, bounded tagged history, same-day/out-of-order reviewed dates and exact original receipts; past/today changes apply current metadata at publication. Future legacy rows remain display-only; activation/projector and true as-of reads remain queued. |
 
-Priority follow-ups are 26A Omni personal-recent cache/effective-feature admission
-correctness, 26B supplier-row seed preservation, and 26C legacy onboarding startup
-transport guarding. Attribution of two coarse browser API 500 counts remains
-unproven. General item search still
+Checkpoint 26A closes the finite Omni personal-recent cache/effective-feature
+admission slice: 1,176 tests in one complete Rust workspace run and actual
+protected HTTP/SQL checks pass. See its
+[verification](2026-11-02-checkpoint-26a-verification.md); retained in-flight final
+publication and whole-application parity are not implied. Supplier-row seed
+preservation (26B) and legacy onboarding startup transport guarding (26C) remain
+separately staged, unaccepted work. Attribution of two coarse browser API 500
+counts remains unproven. General item search still
 requires explicit rebuild/cache turnover for a local category label rename.
 Checkpoint25 closes the stated category slice, not the wider inventory/search
 backlog or whole-application parity; see its verification qualifications.

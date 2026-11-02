@@ -30,11 +30,11 @@ const MAX_QUERY_CHARS: usize = 120;
 )]
 pub async fn omni_search(
     State(state): State<AppState>,
-    RequestContext(user): RequestContext,
+    RequestContext(ctx): RequestContext,
     Json(payload): Json<OmniSearchRequest>,
 ) -> Result<Json<ObjectResponse<OmniSearchResponse>>, ApiError> {
-    hms_access::require_facility(&user, state.facility_id())
-        .and_then(|_| hms_access::require_any_permission(&user, &SEARCH_PERMISSIONS))
+    hms_access::require_facility(&ctx, state.facility_id())
+        .and_then(|_| hms_access::require_any_permission(&ctx, &SEARCH_PERMISSIONS))
         .map_err(|_| {
             ApiError::forbidden(
                 "search_permission_denied",
@@ -48,7 +48,7 @@ pub async fn omni_search(
     let types = payload.types.unwrap_or_default();
     let result = state
         .omni_search(
-            &user,
+            &ctx,
             if query.is_empty() {
                 None
             } else {

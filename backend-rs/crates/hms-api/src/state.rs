@@ -358,7 +358,7 @@ struct OmniSearchCacheKey {
 impl OmniSearchCacheKey {
     fn new(
         facility_id: Uuid,
-        user: &AuthUser,
+        ctx: &hms_access::RequestContext,
         query: &Option<String>,
         types: &[SearchResourceType],
         limit_per_group: i64,
@@ -366,14 +366,14 @@ impl OmniSearchCacheKey {
         let query_present = query.is_some();
         Self {
             facility_id,
-            user_id: (!query_present).then_some(user.id),
-            active_profile: user.active_profile,
+            user_id: (!query_present).then_some(ctx.user_id),
+            active_profile: ctx.active_profile,
             query_fingerprint: search_query_fingerprint(query),
             query_present,
             resource_types: enum_scope_key(types),
-            permission_codes: enum_scope_key(&user.permissions),
-            feature_keys: enum_scope_key(&user.features),
-            patient_visibility: enum_scope_key(&user.patient_visibility),
+            permission_codes: enum_scope_key(&ctx.permissions),
+            feature_keys: enum_scope_key(&ctx.enabled_features),
+            patient_visibility: enum_scope_key(&ctx.patient_visibility),
             limit_per_group,
         }
     }
@@ -1177,18 +1177,16 @@ impl AppState {
 
     pub async fn omni_search(
         &self,
-        user: &AuthUser,
+        ctx: &hms_access::RequestContext,
         query: Option<String>,
         types: Vec<SearchResourceType>,
         limit_per_group: i64,
     ) -> Result<OmniSearchResult> {
-        let cache_key = OmniSearchCacheKey::new(
-            self.inner.facility_id,
-            user,
-            &query,
-            &types,
-            limit_per_group,
-        );
+        hms_access::require_facility(ctx, self.inner.facility_id)
+            .map_err(|_| anyhow::anyhow!("search facility scope is unavailable"))?;
+        let query = hms_domain::search::effective_omni_query(query.as_deref());
+        let cache_key =
+            OmniSearchCacheKey::new(self.inner.facility_id, ctx, &query, &types, limit_per_group);
         if let Some(result) = self.inner.hot_read_cache.omni_search.get(&cache_key) {
             return Ok(result);
         }
@@ -1207,13 +1205,13 @@ impl AppState {
             &self.inner.pool,
             OmniSearchFilters {
                 facility_id: self.inner.facility_id,
-                user_id: user.id,
+                user_id: ctx.user_id,
                 query,
                 types,
                 limit_per_group,
-                permission_codes: user.permissions.clone(),
-                feature_keys: user.features.clone(),
-                patient_visibility: user.patient_visibility.clone(),
+                permission_codes: ctx.permissions.clone(),
+                feature_keys: ctx.enabled_features.clone(),
+                patient_visibility: ctx.patient_visibility.clone(),
             },
         )
         .await?;
@@ -1574,6 +1572,7 @@ impl AppState {
                     facts.user.auth_security.factor_version != versions.auth_factor_version
                         || facts.user.auth_security.assurance_version != versions.assurance_version
                         || facts.user.password_change_required != versions.password_change_required
+                        || facts.feature_flags_fingerprint() != versions.feature_flags_fingerprint
                 })
             || self.inner.auth_cache.get_user(&key).is_some_and(|u| {
                 u.auth_security.factor_version != versions.auth_factor_version

@@ -15,6 +15,7 @@ Scope: Rust V2 backend architecture, seed behavior, cutover scope, and productio
 | `rust-v2-demo-seed.md` | demo seed behavior and provisioning expectations. |
 | `2026-11-02-inventory-category-governance-scope.md` | category metadata, parent/lifecycle commands, retained read authority, migration031 and search/provisioning limits. |
 | `2026-11-02-checkpoint-25-verification.md` | scoped category local/composite, native and browser evidence, visual limits and remaining26 gaps. |
+| `2026-11-02-checkpoint-26a-verification.md` | personal-search cache isolation, effective-feature admission, complete workspace run with 1,176 passing tests and actual protected-read/query-plan evidence. |
 | `2026-10-15-phase-one-verification.md` | scoped security, worker reliability, clinical UI changes, acceptance evidence, and remaining gaps. |
 | `2026-10-15-parity-ledger.md` | expanded Python-to-Rust and UI parity phases, concrete gaps, acceptance rules, and implementation state. |
 | `2026-10-15-phase-two-verification.md` | first parity increment and exact staged-source local acceptance. |

@@ -4,6 +4,48 @@ use serde_json::Value;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
+/// Canonical query used by both the result cache and repository. A query below
+/// two UTF-8 bytes selects personal recents; the historical byte threshold is
+/// deliberately distinct from the 120-Unicode-scalar input cap.
+pub fn effective_omni_query(query: Option<&str>) -> Option<String> {
+    let bounded = query?.trim().chars().take(120).collect::<String>();
+    // The public handler already caps before repository normalization. Apply
+    // that same order here: truncation can expose trailing whitespace, so the
+    // bounded value must be trimmed before testing the historical byte limit.
+    // The returned value is a fixed point when the repository checks it again.
+    let effective = bounded.trim();
+    (effective.len() >= 2).then(|| effective.to_owned())
+}
+
+#[cfg(test)]
+mod effective_query_tests {
+    use super::effective_omni_query;
+
+    #[test]
+    fn bounded_whitespace_keeps_public_byte_threshold_and_is_a_fixed_point() {
+        let cases = [
+            (None, None),
+            (Some(String::new()), None),
+            (Some(" \t\n ".to_owned()), None),
+            (Some(" a ".to_owned()), None),
+            (Some(format!("a{}b", " ".repeat(119))), None),
+            (
+                Some(format!("ab{}c", " ".repeat(118))),
+                Some("ab".to_owned()),
+            ),
+            (Some(format!("É{}b", " ".repeat(119))), Some("É".to_owned())),
+            (Some(" É ".to_owned()), Some("É".to_owned())),
+            (Some(" ab ".to_owned()), Some("ab".to_owned())),
+            (Some("É".repeat(121)), Some("É".repeat(120))),
+        ];
+        for (input, expected) in cases {
+            let once = effective_omni_query(input.as_deref());
+            assert_eq!(once, expected);
+            assert_eq!(effective_omni_query(once.as_deref()), once);
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum SearchResourceType {

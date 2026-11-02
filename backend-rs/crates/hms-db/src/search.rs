@@ -2,7 +2,8 @@ use chrono::{DateTime, NaiveDate, Utc};
 use hms_domain::auth::PatientDataVisibility;
 use hms_domain::deployment::{FeatureKey, PermissionCode};
 use hms_domain::search::{
-    OmniSearchGroups, OmniSearchItem, SearchIndexState, SearchIndexStatus, SearchResourceType,
+    effective_omni_query, OmniSearchGroups, OmniSearchItem, SearchIndexState, SearchIndexStatus,
+    SearchResourceType,
 };
 use hms_observability::observe_db_query;
 use serde::de::DeserializeOwned;
@@ -84,12 +85,7 @@ pub async fn omni_search(
     pool: &PgPool,
     filters: OmniSearchFilters,
 ) -> anyhow::Result<OmniSearchResult> {
-    let query = filters
-        .query
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| value.len() >= 2)
-        .map(|value| value.chars().take(120).collect::<String>());
+    let query = effective_omni_query(filters.query.as_deref());
     let query_is_empty = query.is_none();
     let type_codes = search_type_codes(&filters.types)?;
     let permission_codes = codec::encode_slice(&filters.permission_codes)?;

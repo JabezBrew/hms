@@ -655,6 +655,8 @@ imply no inherited item membership. See the
 [category scope](../v2/2026-11-02-inventory-category-governance-scope.md) and
 [local verification](../v2/2026-11-02-checkpoint-25-verification.md) for exact
 privacy, migration, query and browser boundaries. Omni search admission/cache
-correctness (26A), supplier-row preservation (26B), legacy onboarding startup
+correctness is separately verified in
+[checkpoint 26A](../v2/2026-11-02-checkpoint-26a-verification.md). Supplier-row
+preservation (26B), legacy onboarding startup
 transport guarding (26C), and general item search's explicit category-label
 rebuild remain separate; no full parity or production acceptance is implied.

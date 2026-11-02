@@ -15,6 +15,55 @@ use serde_json::Value;
 use sqlx::FromRow;
 use uuid::Uuid;
 
+// The existing live version probe and full context hydration must observe the
+// same facility/profile policy. The projection contains exactly one row per
+// known feature (currently fourteen), never an unbounded entitlement JSON list.
+// Unknown stored keys remain fail-closed rather than disappearing from policy.
+// All uses bind the canonical ALL_FEATURES labels as parameter four.
+macro_rules! with_current_feature_flags {
+    ($before:literal, $after:literal) => {
+        concat!(
+            $before,
+            r#"
+            CASE WHEN EXISTS (
+                SELECT 1 FROM facility_feature_entitlements AS invalid_entitlement
+                WHERE invalid_entitlement.facility_id = $2
+                  AND NOT (invalid_entitlement.feature_key = ANY($4::text[]))
+            ) THEN 'null'::jsonb ELSE COALESCE((
+                SELECT jsonb_agg(to_jsonb(feature_rows) ORDER BY feature_rows.feature_key)
+                FROM (
+                    SELECT feature_facility.deployment_profile,
+                           known_feature.feature_key,
+                           entitlement.enabled
+                    FROM facilities AS feature_facility
+                    CROSS JOIN unnest($4::text[]) AS known_feature(feature_key)
+                    LEFT JOIN facility_feature_entitlements AS entitlement
+                      ON entitlement.facility_id = feature_facility.id
+                     AND entitlement.feature_key = known_feature.feature_key
+                    WHERE feature_facility.id = $2 AND feature_facility.is_active
+                ) feature_rows
+            ), '[]'::jsonb) END
+            "#,
+            $after
+        )
+    };
+}
+
+/// Exact resolved booleans in canonical feature order; no hash collisions or
+/// timestamp assumptions. Profile defaults and overrides use the same resolver
+/// as full request-context hydration.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct EffectiveFeatureFlagsFingerprint([bool; hms_domain::capabilities::ALL_FEATURES.len()]);
+
+impl EffectiveFeatureFlagsFingerprint {
+    fn from_flags(flags: &HashMap<FeatureKey, bool>) -> Self {
+        Self(
+            hms_domain::capabilities::ALL_FEATURES
+                .map(|feature| flags.get(&feature).copied().unwrap_or(false)),
+        )
+    }
+}
+
 use crate::codec;
 use crate::PgPool;
 
@@ -122,6 +171,7 @@ pub struct UserAuthVersions {
     pub assurance_version: i64,
     pub password_change_required: bool,
     pub feature_entitlements_updated_at: Option<DateTime<Utc>>,
+    pub feature_flags_fingerprint: EffectiveFeatureFlagsFingerprint,
 }
 
 #[derive(Clone, Debug)]
@@ -141,6 +191,10 @@ pub struct RequestContextAuthFacts {
 }
 
 impl RequestContextAuthFacts {
+    pub fn feature_flags_fingerprint(&self) -> EffectiveFeatureFlagsFingerprint {
+        EffectiveFeatureFlagsFingerprint::from_flags(&self.feature_flags)
+    }
+
     /// A fresh probe may shorten cached time authority, never renew its stored TTL.
     /// Going backwards requires fresh authority/permission hydration as well.
     pub fn cache_is_current_at(&self, clock: AuthorizationClock) -> bool {
@@ -624,13 +678,14 @@ async fn auth_versions_inner(
     facility_id: Uuid,
     session: Option<Uuid>,
 ) -> anyhow::Result<Option<UserAuthVersions>> {
+    let feature_keys = codec::encode_slice(&hms_domain::capabilities::ALL_FEATURES)?;
     let (row, started_at) = hms_observability::observe_db_query(
         "auth.user_auth_versions_for_facility",
         async {
             let mut connection = pool.acquire().await?;
             let started_at = Instant::now();
-            let row = sqlx::query_as::<_, (i64, i64, bool, i64, String, Option<DateTime<Utc>>, i64, DateTime<Utc>) >(
-            r#"
+            let row = sqlx::query_as::<_, (i64, i64, bool, i64, String, Option<DateTime<Utc>>, Value, i64, DateTime<Utc>) >(
+            with_current_feature_flags!(r#"
             WITH security_point AS MATERIALIZED (SELECT clock_timestamp() AS at)
             SELECT users.session_version, users.auth_factor_version, users.password_change_required,
                    users.permission_version,
@@ -640,6 +695,7 @@ async fn auth_versions_inner(
                        FROM facility_feature_entitlements
                        WHERE facility_feature_entitlements.facility_id = users.facility_id
                    ) AS feature_entitlements_updated_at,
+                   "#, r#" AS feature_flags,
                    COALESCE((SELECT assurance_version FROM refresh_sessions WHERE session_id=$3),0) AS assurance_version,
                    security_point.at AS observed_at
             FROM users CROSS JOIN security_point
@@ -649,11 +705,12 @@ async fn auth_versions_inner(
               AND users.is_active = TRUE
               AND facilities.is_active = TRUE
               AND ($3::uuid IS NULL OR EXISTS(SELECT 1 FROM refresh_sessions s WHERE s.session_id=$3 AND s.user_id=users.id AND s.facility_id=users.facility_id AND s.session_version=users.session_version AND s.permission_version_at_issue=users.permission_version AND s.revoked_at IS NULL AND LEAST(s.expires_at,s.idle_expires_at,s.absolute_expires_at)>security_point.at))
-            "#,
+            "#),
         )
         .bind(user_id)
         .bind(facility_id)
         .bind(session)
+        .bind(&feature_keys)
         .fetch_optional(&mut *connection).await?;
             Ok::<_, sqlx::Error>((row, started_at))
         },
@@ -667,18 +724,25 @@ async fn auth_versions_inner(
             permission_version,
             active_profile,
             feature_entitlements_updated_at,
+            feature_flags,
             assurance_version,
             observed_at,
         )| {
+            let active_profile = codec::decode(&active_profile)?;
+            let feature_rows: Vec<crate::admin::EffectiveFeatureFlagRow> =
+                serde_json::from_value(feature_flags)?;
+            let flags =
+                crate::admin::effective_feature_flags_from_rows(feature_rows, active_profile)?;
             Ok(UserAuthVersions {
                 authorization_clock: AuthorizationClock::new(observed_at, started_at),
                 session_version,
                 permission_version,
-                active_profile: codec::decode(&active_profile)?,
+                active_profile,
                 auth_factor_version,
                 assurance_version,
                 password_change_required,
                 feature_entitlements_updated_at,
+                feature_flags_fingerprint: EffectiveFeatureFlagsFingerprint::from_flags(&flags),
             })
         },
     )
@@ -692,13 +756,14 @@ pub async fn request_context_facts(
     session_id: Uuid,
     fallback_profile: DeploymentProfile,
 ) -> anyhow::Result<Option<RequestContextAuthFacts>> {
+    let feature_keys = codec::encode_slice(&hms_domain::capabilities::ALL_FEATURES)?;
     let (row, started_at) = hms_observability::observe_db_query(
         "auth.request_context_facts",
         async {
             let mut connection = pool.acquire().await?;
             let started_at = Instant::now();
             let row = sqlx::query_as::<_, RequestContextFactsRow>(
-            r#"
+            with_current_feature_flags!(r#"
             WITH security_point AS MATERIALIZED (SELECT clock_timestamp() AS at)
             SELECT security_point.at AS observed_at,
                    users.id,
@@ -725,19 +790,7 @@ pub async fn request_context_facts(
                          AND auth_webauthn_credentials.disabled_at IS NULL
                    ) AS passkey_enrolled,
                    COALESCE(auth_recovery_codes.remaining, 0)::bigint AS recovery_codes_remaining,
-                   COALESCE((
-                     SELECT jsonb_agg(to_jsonb(feature_rows) ORDER BY feature_rows.feature_key NULLS FIRST)
-                     FROM (
-                       SELECT feature_facility.deployment_profile,
-                              facility_feature_entitlements.feature_key,
-                              facility_feature_entitlements.enabled
-                       FROM facilities AS feature_facility
-                       LEFT JOIN facility_feature_entitlements
-                         ON facility_feature_entitlements.facility_id = feature_facility.id
-                       WHERE feature_facility.id = $2
-                         AND feature_facility.is_active = TRUE
-                     ) feature_rows
-                   ), '[]'::jsonb) AS feature_flags,
+                   "#, r#" AS feature_flags,
                    COALESCE((
                      SELECT jsonb_agg(to_jsonb(active_authorities) ORDER BY active_authorities.starts_at ASC, active_authorities.source_id ASC, active_authorities.permission_code ASC NULLS LAST)
                      FROM (
@@ -863,11 +916,12 @@ pub async fn request_context_facts(
 	              AND users.facility_id = $2
 	              AND users.is_active = TRUE
 	              AND facilities.is_active = TRUE
-	            "#,
+	            "#),
         )
         .bind(user_id)
         .bind(facility_id)
         .bind(session_id)
+        .bind(&feature_keys)
         .fetch_optional(&mut *connection).await?;
             Ok::<_, sqlx::Error>((row, started_at))
         },
