@@ -5,6 +5,11 @@ This kit deploys the Rust HMS V2 API and the maintained React/Vite frontend in
 frontend, `hms-api`, `hms-worker`, one-shot `hms-migrator`, Postgres,
 PgBouncer, and Redis.
 
+The Oracle synthetic profile supports an explicit
+[prebuilt ARM64 release mode](../free-testing/PREBUILT_RELEASES.md). Use its
+wrapper for that mode; the GCP archive installer and generic source-build path
+do not acquire prebuilt recovery guarantees.
+
 The stack serves only `/api/v2/*` from Rust. It does not include Django admin,
 Django sessions, old API shapes, old data migration, or AI shell modules.
 

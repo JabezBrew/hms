@@ -19,12 +19,16 @@ function readGitValue(command, fallback = null) {
 export default defineConfig(({ mode }) => {
   const analyze = mode === "analyze" || process.env.ANALYZE === "true"
   const packageJson = JSON.parse(fs.readFileSync(path.resolve(__dirname, "package.json"), "utf8"))
+  const releaseCommit = process.env.HMS_BUILD_SHA
+  if (releaseCommit && (releaseCommit.length !== 40 || !/^[a-f0-9]{40}$/.test(releaseCommit))) {
+    throw new Error("HMS_BUILD_SHA must be a full lowercase Git commit SHA")
+  }
   const buildInfo = {
     version: packageJson.version,
     commit:
-      process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 7) ||
-      readGitValue("git rev-parse --short HEAD"),
-    branch:
+      releaseCommit || process.env.VERCEL_GIT_COMMIT_SHA ||
+      readGitValue("git rev-parse HEAD"),
+    branch: releaseCommit ? null :
       process.env.VERCEL_GIT_COMMIT_REF ||
       readGitValue("git rev-parse --abbrev-ref HEAD"),
     builtAt: new Date().toISOString(),
@@ -37,6 +41,16 @@ export default defineConfig(({ mode }) => {
       "globalThis.__HMS_STATIC_BUILD_INFO__": JSON.stringify(buildInfo),
     },
     plugins: [
+      {
+        name: "hms-build-provenance",
+        generateBundle() {
+          this.emitFile({
+            type: "asset",
+            fileName: "build-info.json",
+            source: JSON.stringify(buildInfo) + "\n",
+          })
+        },
+      },
       react(),
       tailwindcss(),
       ...(analyze

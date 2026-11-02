@@ -25,6 +25,12 @@ RUN --mount=type=cache,id=hms-rust-registry,target=/usr/local/cargo/registry,sha
 
 FROM debian:bookworm-slim AS runtime
 
+ARG HMS_BUILD_SHA=unknown
+ARG HMS_SCHEMA_EPOCH=unknown
+LABEL org.opencontainers.image.revision="${HMS_BUILD_SHA}" \
+      systems.thehms.component="rust" \
+      systems.thehms.schema-epoch="${HMS_SCHEMA_EPOCH}"
+
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates curl \
     && rm -rf /var/lib/apt/lists/* \

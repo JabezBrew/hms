@@ -27,6 +27,10 @@ SKIP_PULL="${SKIP_PULL:-false}"
 SKIP_BACKUP="${SKIP_BACKUP:-false}"
 SKIP_HEALTHCHECK="${SKIP_HEALTHCHECK:-false}"
 COMPOSE_CONFIG_FILE=""
+HMS_PREBUILT_BUNDLE="${HMS_PREBUILT_BUNDLE:-}"
+PREBUILT_ARGUMENT_SEEN=false
+HMS_PREBUILT_OVERRIDE="${HMS_PREBUILT_OVERRIDE:-}"
+PREBUILT_TEMP_DIR=""
 HMS_SCHEMA_FENCE_FILE="${HMS_SCHEMA_FENCE_FILE:-$ROOT_DIR/.hms-schema-compatibility.local}"
 HMS_DEPLOY_ATTEMPT_FILE="${HMS_DEPLOY_ATTEMPT_FILE:-$ROOT_DIR/.hms-deploy-attempt.local}"
 
@@ -38,6 +42,8 @@ Deploy the Rust HMS V2 stack from /opt/hms.
 
 Options:
   --skip-pull          Do not run git pull --ff-only.
+  --prebuilt-bundle DIR  Verified ARM64 bundle; use the free-testing wrapper.
+                        Never builds or pulls; requires --skip-pull.
   --skip-backup        Skip the required production backup gate.
   --skip-migrations    Skip hms-migrator. Requires
                        HMS_ROLLBACK_SKIP_MIGRATIONS_ALLOWED=true and is only
@@ -79,6 +85,15 @@ EOF
 parse_arguments() {
 while [ "$#" -gt 0 ]; do
   case "$1" in
+    --prebuilt-bundle)
+      if [ "$#" -lt 2 ] || [ -z "$2" ] || [ "$PREBUILT_ARGUMENT_SEEN" = true ]; then
+        printf 'A single nonempty prebuilt bundle directory is required.\n' >&2; exit 2
+      fi
+      case "$2" in -*) printf 'Prebuilt bundle directory cannot be an option.\n' >&2; exit 2 ;; esac
+      PREBUILT_ARGUMENT_SEEN=true
+      HMS_PREBUILT_BUNDLE="$2"
+      shift
+      ;;
     --skip-pull)
       SKIP_PULL=true
       ;;
@@ -175,7 +190,17 @@ reject_external_database_host() {
 }
 
 compose() {
+  if [ -n "$HMS_PREBUILT_BUNDLE" ]; then
+    case "$1" in
+      up) shift; set -- up --no-build --pull never "$@" ;;
+      run) shift; set -- run --pull never --no-deps "$@" ;;
+      build|pull) printf 'Prebuilt mode refuses build or pull.\n' >&2; exit 1 ;;
+    esac
+  fi
   compose_args=""
+  if [ -n "$HMS_PREBUILT_BUNDLE" ] && [ "${HMS_PREBUILT_TUNNEL:-false}" = true ]; then
+    compose_args="--profile tunnel"
+  fi
   for compose_file in $COMPOSE_FILES; do
     compose_args="$compose_args -f $compose_file"
   done
@@ -185,12 +210,19 @@ compose() {
 }
 
 cleanup() {
+  if [ -n "$PREBUILT_TEMP_DIR" ]; then
+    rm -f "$PREBUILT_TEMP_DIR/compose.yml" "$PREBUILT_TEMP_DIR/compose.yml.verification.json" "$PREBUILT_TEMP_DIR/compose.yml.compose.json"
+    rmdir "$PREBUILT_TEMP_DIR" 2>/dev/null || true
+  fi
   if [ -n "$COMPOSE_CONFIG_FILE" ] && [ -f "$COMPOSE_CONFIG_FILE" ]; then
     rm -f "$COMPOSE_CONFIG_FILE"
   fi
 }
 
-trap cleanup EXIT HUP INT TERM
+trap cleanup EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 require_command() {
   command -v "$1" >/dev/null 2>&1 || {
@@ -455,7 +487,7 @@ require_command python3
 require_file "$ENV_FILE"
 require_file "$ROOT_DIR/ops/schema-compatibility.sh"
 . "$ROOT_DIR/ops/schema-compatibility.sh"
-hms_validate_schema_fence "$HMS_SCHEMA_FENCE_FILE"
+if [ -z "$HMS_PREBUILT_BUNDLE" ]; then hms_validate_schema_fence "$HMS_SCHEMA_FENCE_FILE"; fi
 for compose_file in $COMPOSE_FILES; do
   require_file "$compose_file"
 done
@@ -512,6 +544,41 @@ if ! python3 "$lease_helper" --check >/dev/null 2>&1; then
   exec python3 "$lease_helper" -- /bin/sh "$ROOT_DIR/ops/compose-v2/deploy.sh" "$@"
 fi
 
+if [ -n "$HMS_PREBUILT_BUNDLE" ]; then
+  if [ "$SKIP_PULL" != true ] || [ "$DATABASE_MODE" != compose-postgres ] ||
+     [ "${HMS_PREBUILT_PROFILE:-}" != free-testing ] ||
+     [ "$COMPOSE_FILES" != "$ROOT_DIR/ops/compose-v2/compose.yml $ROOT_DIR/ops/free-testing/compose.yml" ] ||
+     [ "$DB_CONNECTIVITY_CHECK" != true ] || [ "$SKIP_BACKUP" != false ]; then
+    printf 'Prebuilt deployment requires the reviewed free-testing wrapper and all safety gates.\n' >&2
+    exit 1
+  fi
+  HMS_DEPLOYED_AT="${HMS_DEPLOYED_AT:-$(date -u '+%Y-%m-%dT%H:%M:%SZ')}"
+  export HMS_DEPLOYED_AT
+  require_file "$ROOT_DIR/ops/prebuilt_state.py"
+  prebuilt_state="$(python3 "$ROOT_DIR/ops/prebuilt_state.py" --root "$ROOT_DIR")"
+  HMS_SCHEMA_FENCE_FILE="$prebuilt_state/schema-compatibility"
+  HMS_DEPLOY_ATTEMPT_FILE="$prebuilt_state/deploy-attempt"
+  HMS_PREBUILT_STATE_DIR="$prebuilt_state"
+  export HMS_SCHEMA_FENCE_FILE HMS_DEPLOY_ATTEMPT_FILE HMS_PREBUILT_STATE_DIR
+  hms_validate_schema_fence "$HMS_SCHEMA_FENCE_FILE"
+  prebuilt_helper="$ROOT_DIR/ops/prebuilt_release.py"
+  require_file "$prebuilt_helper"
+  prebuilt_revision="$(python3 "$prebuilt_helper" revision --bundle "$HMS_PREBUILT_BUNDLE")"
+  if [ -n "${HMS_BUILD_SHA:-}" ] && [ "$HMS_BUILD_SHA" != "$prebuilt_revision" ]; then
+    printf 'Prebuilt runtime revision conflicts with the bundle.\n' >&2; exit 1
+  fi
+  HMS_BUILD_SHA="$prebuilt_revision"
+  export HMS_BUILD_SHA
+  if [ -z "$HMS_PREBUILT_OVERRIDE" ]; then
+    PREBUILT_TEMP_DIR="$(mktemp -d /tmp/hms-prebuilt.XXXXXX)"
+    HMS_PREBUILT_OVERRIDE="$PREBUILT_TEMP_DIR/compose.yml"
+  fi
+  set -- prepare --bundle "$HMS_PREBUILT_BUNDLE" --root "$ROOT_DIR" --env-file "$ENV_FILE" --override "$HMS_PREBUILT_OVERRIDE"
+  if [ "${HMS_PREBUILT_TUNNEL:-false}" = true ]; then set -- "$@" --tunnel; fi
+  python3 "$prebuilt_helper" "$@"
+  COMPOSE_FILES="$COMPOSE_FILES $HMS_PREBUILT_OVERRIDE"
+fi
+
 if [ "$SKIP_PULL" != "true" ]; then
   require_command git
   step "Deploying $client_slug ($hms_env, database: $DATABASE_MODE) from $ROOT_DIR"
@@ -537,8 +604,19 @@ export HMS_BUILD_SHA HMS_DEPLOYED_AT
 
 step 'Validating Compose configuration'
 compose_config_file
+if [ -z "$HMS_PREBUILT_BUNDLE" ] && [ "$(compose_project_name)" = hms-free-test ]; then
+  require_file "$ROOT_DIR/ops/prebuilt_state.py"
+  python3 "$ROOT_DIR/ops/prebuilt_state.py" --root "$ROOT_DIR" --check-source-mode
+fi
 if [ "$DATABASE_MODE" = "external-postgres" ]; then
   validate_external_postgres_compose_contract
+fi
+
+if [ -n "$HMS_PREBUILT_BUNDLE" ]; then
+  compose config --format json > "$HMS_PREBUILT_OVERRIDE.compose.json"
+  set -- check-compose --bundle "$HMS_PREBUILT_BUNDLE" --config "$HMS_PREBUILT_OVERRIDE.compose.json" --override "$HMS_PREBUILT_OVERRIDE"
+  if [ "${HMS_PREBUILT_TUNNEL:-false}" = true ]; then set -- "$@" --tunnel; fi
+  python3 "$prebuilt_helper" "$@"
 fi
 
 step 'Ensuring infrastructure services are running'
@@ -582,14 +660,18 @@ if [ "$hms_env" = "production" ]; then
     printf 'WARNING: skipping production backup gate because --skip-backup was passed.\n' >&2
   else
     step 'Running required production backup before migrations'
-    COMPOSE_FILE="$COMPOSE_FILE" ENV_FILE="$ENV_FILE" "$KIT_DIR/backup-postgres.sh"
+    BACKUP_PIN=true COMPOSE_FILES="$COMPOSE_FILES" COMPOSE_FILE="$COMPOSE_FILE" ENV_FILE="$ENV_FILE" "$KIT_DIR/backup-postgres.sh"
   fi
 fi
 
-step 'Building application images'
-# All three Rust services share one image containing API, worker, and migrator
-# binaries. Build it once so parallel exporters do not race on the same tag.
-compose build hms-api frontend
+if [ -n "$HMS_PREBUILT_BUNDLE" ]; then
+  step 'Using verified prebuilt application images'
+  python3 "$prebuilt_helper" headroom --bundle "$HMS_PREBUILT_BUNDLE" --root "$ROOT_DIR" --env-file "$ENV_FILE"
+else
+  step 'Building application images'
+  # All Rust services share the same API, worker and migrator image.
+  compose build hms-api frontend
+fi
 
 if [ "$DB_CONNECTIVITY_CHECK" = "true" ]; then
   step 'Checking database connectivity from migrator'
@@ -654,6 +736,12 @@ else
   healthcheck_url="${HEALTHCHECK_URL:-https://$client_domain/api/v2/health/ready}"
   step "Checking public edge readiness endpoint ($PUBLIC_HEALTHCHECK_MODE)"
   wait_for_public_http "$healthcheck_url" "$PUBLIC_HEALTH_TIMEOUT" "$PUBLIC_HEALTHCHECK_MODE"
+fi
+
+if [ -n "$HMS_PREBUILT_BUNDLE" ]; then
+  set -- verify-containers --bundle "$HMS_PREBUILT_BUNDLE" --config "$HMS_PREBUILT_OVERRIDE.compose.json" --override "$HMS_PREBUILT_OVERRIDE"
+  if [ "${HMS_PREBUILT_TUNNEL:-false}" = true ]; then set -- "$@" --tunnel; fi
+  python3 "$prebuilt_helper" "$@"
 fi
 
 step 'Deployment complete'

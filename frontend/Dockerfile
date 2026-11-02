@@ -25,12 +25,17 @@ ARG VITE_DEFAULT_FACILITY_CODE
 ARG VITE_MULTI_FACILITY_MODE
 ARG VITE_RUM_ENABLED
 ARG VITE_OPS_DASHBOARD_HOSTS
+ARG HMS_BUILD_SHA
 
 # Build the application
 RUN npm run build
 
 # Production stage
 FROM nginx:alpine
+
+ARG HMS_BUILD_SHA=unknown
+LABEL org.opencontainers.image.revision="${HMS_BUILD_SHA}" \
+      systems.thehms.component="frontend"
 
 ARG VITE_API_BASE_URL
 ARG VITE_HMS_API_MODE

@@ -3,6 +3,7 @@ set -eu
 
 ROOT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)"
 COMPOSE_FILE="${COMPOSE_FILE:-$ROOT_DIR/ops/compose-v2/compose.yml}"
+COMPOSE_FILES="${COMPOSE_FILES:-$COMPOSE_FILE}"
 DEFAULT_ENV_FILE="$ROOT_DIR/ops/compose-v2/.env"
 if [ -z "${ENV_FILE+x}" ] && [ ! -f "$DEFAULT_ENV_FILE" ] && [ -f "$ROOT_DIR/ops/hetzner-v2/.env" ]; then
   ENV_FILE="$ROOT_DIR/ops/hetzner-v2/.env"
@@ -35,12 +36,12 @@ if [ -z "$DUMP_PATH" ]; then
 fi
 
 if [ ! -f "$ENV_FILE" ]; then
-  printf 'Missing env file: %s\n' "$ENV_FILE" >&2
+  printf 'Missing private deployment env file.\n' >&2
   exit 1
 fi
 
 if [ ! -f "$DUMP_PATH" ]; then
-  printf 'Missing dump file: %s\n' "$DUMP_PATH" >&2
+  printf 'Missing PostgreSQL dump file.\n' >&2
   exit 1
 fi
 
@@ -50,21 +51,44 @@ required_confirmation="restore-$client_slug"
 
 if [ "${RESTORE_CONFIRM:-}" != "$required_confirmation" ]; then
   printf 'Refusing destructive restore.\n' >&2
-  printf 'Set RESTORE_CONFIRM=%s and rerun only after verifying the dump and target client.\n' "$required_confirmation" >&2
+  printf 'Set RESTORE_CONFIRM=restore-<client-slug> only after verifying the dump and target client.\n' >&2
   exit 1
 fi
 
-printf 'Stopping Rust HMS V2 app services for %s...\n' "$client_slug"
-docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" stop hms-api hms-worker caddy
+lease_helper="$ROOT_DIR/ops/deploy-lease.py"
+if ! python3 "$lease_helper" --check >/dev/null 2>&1; then
+  exec python3 "$lease_helper" -- /bin/sh "$ROOT_DIR/ops/compose-v2/restore-postgres.sh" "$@"
+fi
 
-printf 'Restoring %s into the Postgres service...\n' "$DUMP_PATH"
-cat "$DUMP_PATH" | docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" exec -T db \
-  sh -c 'dropdb -U "$POSTGRES_USER" --force "$POSTGRES_DB" && createdb -U "$POSTGRES_USER" "$POSTGRES_DB" && pg_restore -U "$POSTGRES_USER" -d "$POSTGRES_DB" --no-owner --no-acl'
+# Validate the selected deployment, receipt bytes and PostgreSQL archive before
+# stopping any writers. Legacy archives require a second explicit opt-in.
+python3 "$ROOT_DIR/ops/backup_retention.py" restore-check \
+  --root "$ROOT_DIR" --env-file "$ENV_FILE" --dump "$DUMP_PATH"
+
+compose() {
+  compose_args=""
+  for compose_file in $COMPOSE_FILES; do
+    compose_args="$compose_args -f $compose_file"
+  done
+  # shellcheck disable=SC2086
+  docker compose --env-file "$ENV_FILE" $compose_args "$@"
+}
+
+printf 'Stopping Rust HMS V2 application services for the confirmed restore...\n'
+compose stop hms-api hms-worker caddy
+
+printf 'Restoring the validated PostgreSQL archive...\n'
+if ! compose exec -T db \
+  sh -c 'dropdb -U "$POSTGRES_USER" --force "$POSTGRES_DB" && createdb -U "$POSTGRES_USER" "$POSTGRES_DB" && pg_restore -U "$POSTGRES_USER" -d "$POSTGRES_DB" --no-owner --no-acl' \
+  < "$DUMP_PATH" >/dev/null 2>&1; then
+  printf 'Database restore failed; application services remain stopped.\n' >&2
+  exit 1
+fi
 
 printf 'Running migrations after restore...\n'
-docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" run --rm hms-migrator
+compose run --rm hms-migrator
 
 printf 'Starting app services...\n'
-docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d hms-api hms-worker frontend caddy
+compose up -d hms-api hms-worker frontend caddy
 
 printf 'Restore complete. Check /api/v2/health/ready before returning the client to service.\n'

@@ -16,6 +16,12 @@ Python 3 and the private canonical lease under `/opt/.hms-deploy-state/` are
 required; unsafe ownership or a pre-existing legacy deployment lock fails closed.
 See the [runtime schema compatibility contract](../../docs/v2/2026-10-17-runtime-schema-compatibility-scope.md).
 
+For routine releases, use the [offline ARM64 release workflow](PREBUILT_RELEASES.md)
+to build on the Mac and deploy finished images. Its explicit prebuilt mode
+verifies source, images, runtime configuration and disk headroom, and refuses a
+build or pull fallback. The source-build instructions below remain available
+for initial preparation and explicit legacy operation.
+
 ## 1. Obtain the host
 
 Choose `VM.Standard.A1.Flex`, **2 OCPUs / 12 GB RAM**, an Always Free eligible

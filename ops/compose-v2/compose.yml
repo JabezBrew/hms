@@ -184,6 +184,7 @@ services:
       - --config.file=/etc/prometheus/prometheus.yml
       - --storage.tsdb.path=/prometheus
       - --storage.tsdb.retention.time=${PROMETHEUS_RETENTION:-7d}
+      - --storage.tsdb.retention.size=${PROMETHEUS_RETENTION_SIZE:-3GB}
       - --web.listen-address=0.0.0.0:9090
     expose:
       - "9090"

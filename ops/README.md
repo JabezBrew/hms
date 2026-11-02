@@ -21,6 +21,7 @@ client VPS kit is legacy Django deployment material.
 | Path | Role |
 | --- | --- |
 | `free-testing/README.md` | Oracle Always Free or existing-computer synthetic solo-testing runbook; Cloudflare Tunnel/Access domain setup. |
+| `free-testing/PREBUILT_RELEASES.md` | Exact-commit local ARM64 images, offline transfer, source staging, disk admission and scoped retention. |
 | `../deploy` / `deploy.sh` | GCP staging deploy and edge-verification front door. |
 | `gcp-staging/README.md` | earlier GCP staging/perf-lab topology, dated smoke evidence, rollback anchors, cost guardrails. |
 | `compose-v2/` | reusable Rust V2 single-VM Docker Compose deployment kit and rollback reference. |
