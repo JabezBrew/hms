@@ -3,7 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { keyWith } from '@/shared/lib/queryKeys'
 import { useAuth } from '@/lib/auth'
-import { onboardingApi } from '../api'
+import { isOnboardingTransportAvailable, onboardingApi } from '../api'
 import {
   configureOnboardingEventTransport,
   emitOnboardingEvent,
@@ -242,42 +242,48 @@ function mergeStepMeta(step) {
   }
 }
 
+function availableRows(data, field, enabled) {
+  const value = enabled ? data?.[field] : null
+  return Array.isArray(value) ? value : []
+}
+
+function runtimeAccess(user) {
+  const role = getRole(user)
+  const enabled = Boolean(isOnboardingTransportAvailable() && user?.id && role && SUPPORTED_ROLES.has(role))
+  // A different disabled read owner detaches the old observer and cancels
+  // consumed AbortSignals without changing supported legacy query keys.
+  return { role, enabled, readRole: enabled ? role : null }
+}
+
 export function useOnboardingRuntime() {
   const { user } = useAuth()
   const location = useLocation()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
-  const role = getRole(user)
-  const enabled = Boolean(user?.id && role && SUPPORTED_ROLES.has(role))
+  const { role, enabled, readRole } = runtimeAccess(user)
 
   const flowsQuery = useQuery({
-    queryKey: onboardingKeys.flows(role),
+    queryKey: onboardingKeys.flows(readRole),
     queryFn: onboardingApi.getActiveFlows,
     enabled,
     staleTime: 5 * 60 * 1000,
     refetchOnWindowFocus: false,
   })
 
-  const flows = useMemo(() => {
-    const payload = flowsQuery.data?.flows
-    return Array.isArray(payload) ? payload : []
-  }, [flowsQuery.data])
+  const flows = useMemo(() => availableRows(flowsQuery.data, 'flows', enabled), [enabled, flowsQuery.data])
 
   const flowKeys = useMemo(() => flows.map((flow) => flow.flow_key), [flows])
   const flowKeyToken = useMemo(() => flowKeys.join(','), [flowKeys])
 
   const progressQuery = useQuery({
-    queryKey: onboardingKeys.progress(role, flowKeyToken),
-    queryFn: () => onboardingApi.getProgress(flowKeys),
+    queryKey: onboardingKeys.progress(readRole, flowKeyToken),
+    queryFn: ({ signal }) => onboardingApi.getProgress(flowKeys, { signal }),
     enabled: enabled && flowKeys.length > 0,
     staleTime: 15 * 1000,
     refetchOnWindowFocus: false,
   })
 
-  const progressList = useMemo(() => {
-    const payload = progressQuery.data?.progress
-    return Array.isArray(payload) ? payload : []
-  }, [progressQuery.data])
+  const progressList = useMemo(() => availableRows(progressQuery.data, 'progress', enabled), [enabled, progressQuery.data])
 
   const progressByKey = useMemo(() => {
     return progressList.reduce((acc, snapshot) => {
@@ -316,7 +322,7 @@ export function useOnboardingRuntime() {
 
   const eventTransport = useCallback(
     async (events) => {
-      if (!enabled || events.length === 0) {
+      if (!enabled || !isOnboardingTransportAvailable() || events.length === 0) {
         return
       }
       const result = await ingestEvents.mutateAsync(events)
@@ -443,14 +449,15 @@ export function useOnboardingRuntime() {
     : 0
 
   const openCurrentStep = useCallback(() => {
+    if (!enabled || !isOnboardingTransportAvailable()) return
     const route = currentStep?.action?.route
     if (route) {
       navigate(route)
     }
-  }, [currentStep, navigate])
+  }, [enabled, currentStep, navigate])
 
   const skipCurrentStep = useCallback(async () => {
-    if (!activeFlow || !currentStep?.id) {
+    if (!enabled || !isOnboardingTransportAvailable() || !activeFlow || !currentStep?.id) {
       return
     }
     await skipStep.mutateAsync({
@@ -459,11 +466,11 @@ export function useOnboardingRuntime() {
       step_id: currentStep.id,
       reason: 'user_skipped',
     })
-  }, [activeFlow, currentStep?.id, skipStep])
+  }, [enabled, activeFlow, currentStep?.id, skipStep])
 
   return {
     enabled,
-    isLoading: flowsQuery.isLoading || progressQuery.isLoading,
+    isLoading: enabled && (flowsQuery.isLoading || progressQuery.isLoading),
     shouldRender: Boolean(enabled && activeFlow && currentStep),
     flowTitle: flowMeta?.title || '',
     flowDescription: flowMeta?.description || '',
@@ -472,7 +479,7 @@ export function useOnboardingRuntime() {
     totalSteps,
     currentStepNumber,
     progressPercent,
-    isMutating: startProgress.isPending || skipStep.isPending,
+    isMutating: enabled && (startProgress.isPending || skipStep.isPending),
     openCurrentStep,
     skipCurrentStep,
   }

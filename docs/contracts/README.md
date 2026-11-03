@@ -657,6 +657,16 @@ imply no inherited item membership. See the
 privacy, migration, query and browser boundaries. Omni search admission/cache
 correctness is separately verified in
 [checkpoint 26A](../v2/2026-11-02-checkpoint-26a-verification.md). Supplier-row
-preservation (26B), legacy onboarding startup
-transport guarding (26C), and general item search's explicit category-label
-rebuild remain separate; no full parity or production acceptance is implied.
+preservation (26B) and general item search's explicit category-label rebuild
+remain separate; no full parity or production acceptance is implied.
+
+## Optional guided-onboarding transport
+
+The active compiled Rust API has no guided-onboarding producer. Optional
+startup reads/actions must reject unsupported transport before legacy fetch,
+detach unavailable observers, preserve cancellation and mask retained legacy
+state. Held callbacks recheck transport before navigation or mutation.
+[Checkpoint26C verification](../v2/2026-11-03-checkpoint-26c-verification.md)
+records full frontend and actual ordinary-user startup/reload checks; it does
+not implement the absent Rust feature or prove broader legacy actor/facility
+cache isolation.

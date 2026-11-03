@@ -1,6 +1,6 @@
 # Python to Rust and UI feature parity
 
-Updated: 2026-11-02. Scope: the user's expanded request for all phases after the
+Updated: 2026-11-03. Scope: the user's expanded request for all phases after the
 phase-one release. This ledger extends `v2-cutover-scope.md`; its old baseline
 labels are historical evidence, not a claim that all Python workflows work in
 the Rust UI. Python is a behavior reference; Rust access and PHI contracts win
@@ -71,7 +71,7 @@ remaining organization, billing catalog, external delivery or realtime backlog.
 | Billing catalog/insurance/cash review | Python billing models/views; UI `billing.js` guarded mutations | Persist supported effective catalog/insurance lifecycle and cash review; preserve immutable finalized invoices/reversal ledger. | queued |
 | PSP settlement | Python billing provider modules; Rust adapter guarded | Provider scope, credential isolation, idempotent async intake and settlement reconciliation; sandbox evidence required. | queued; external configuration required |
 | Inventory item/location administration | Python inventory; Rust governed configuration | Preserve identity, history, current authorization, exact reviewed input and stock/source constraints through native UI. | twenty-first location acceptance retained; twenty-fourth adds ordinary medication/supply creation, UUID/CAS current correction, tagged immutable history and unused-item lifecycle, with all ten retained reference families. Frozen local checks: 1133 Rust, 3611 frontend, 216 ops/four existing opt-in skips, actual524 SDK/native migration+persistence and finite six-image browser coverage. Used/controlled-item lifecycle and supplier administration remain queued; category administration is the separately bounded checkpoint25 slice below. |
-| Inventory category administration | Python category metadata/direct parent; active Rust031 and shadcn category workspace | Retain identity, current ordinary read proof, parent/source constraints, exact original commands and lifecycle history without moving stock or implying recursive membership. | checkpoint25 finite local/composite, native and 77-check browser slice verified, with scoped ten-image visual review; root final promotion remains separate. See [verification](2026-11-02-checkpoint-25-verification.md). |
+| Inventory category administration | Python category metadata/direct parent; active Rust031 and shadcn category workspace | Retain identity, current ordinary read proof, parent/source constraints, exact original commands and lifecycle history without moving stock or implying recursive membership. | checkpoint25 finite local/composite, native and 77-check browser slice verified, with scoped ten-image visual review; committed/pushed as81381dd; wider rendered/live acceptance remains separate. See [verification](2026-11-02-checkpoint-25-verification.md). |
 | GRN/procurement/transfers | Python inventory; Rust limited transitions | GRN correction/rejection, requisition conversion and actual transfer stock lifecycle/conservation. | twenty-fourth closes finite request metadata: exact raw expected unit, nullable legacy stamp, atomic insert/readback/audit/final authority, reachable scoped UI and wire-accurate list/cards. No physical move/completion, conversion, new UUID replay or original-command recovery. GRN/procurement/fulfillment remain queued. |
 | Standing orders | Rust previously created metadata and generated empty drafts; legacy UI expects recurring items | Versioned recurring-item payload, populated requisitions and conserved stock issue. Scheduled automatic generation remains separate. | explicit templates/approval/full stock issue implemented; automatic scheduler queued |
 | Controlled-stock integrity | Rust controlled register/count/movement and active UI adapters | Active local location/witness, coupled physical/register evidence, serialized movement and single-dispatch errors; no inferred opening balance. | twelfth checkpoint fixes eligibility, drift refusal and unsafe frontend retry; governed reconciliation, cryptographic witness attestation and UUID receipts remain queued; frozen local acceptance passed |
@@ -81,10 +81,14 @@ Checkpoint 26A closes the finite Omni personal-recent cache/effective-feature
 admission slice: 1,176 tests in one complete Rust workspace run and actual
 protected HTTP/SQL checks pass. See its
 [verification](2026-11-02-checkpoint-26a-verification.md); retained in-flight final
-publication and whole-application parity are not implied. Supplier-row seed
-preservation (26B) and legacy onboarding startup transport guarding (26C) remain
-separately staged, unaccepted work. Attribution of two coarse browser API 500
-counts remains unproven. General item search still
+publication and whole-application parity are not implied. Supplier administration
+and preserving provisioning (26B) remain staged, with full workflow/UI/native
+acceptance pending. Checkpoint26C repairs the unsupported legacy onboarding
+startup transport:3,744 frontend tests,66 browser assertions and40 actual
+auth-setup assertions pass. See its [verification](2026-11-03-checkpoint-26c-verification.md).
+The Rust guided-onboarding producer remains absent; that feature parity is not
+claimed. Attribution of two earlier coarse API500 counts remains unproven.
+General item search still
 requires explicit rebuild/cache turnover for a local category label rename.
 Checkpoint25 closes the stated category slice, not the wider inventory/search
 backlog or whole-application parity; see its verification qualifications.
