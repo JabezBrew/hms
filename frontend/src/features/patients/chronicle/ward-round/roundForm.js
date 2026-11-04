@@ -22,7 +22,7 @@ export function roundForm(patientId, admissionId, round) {
       const selected = [];
       for (const kind of ['test', 'panel']) for (const id of payload[kind === 'test' ? 'test_ids' : 'panel_ids']) {
         const target = targets.find((row) => row.selected && row.resource_type === `lab_${kind}` && row.resource_id === id);
-        if (target) selected.push({ id, kind, name: target.display_name, code: target.code });
+        if (target) selected.push({ id, kind, name: target.display_name, code: target.code, ...(Object.hasOwn(target, 'catalog_version') ? { catalog_version: target.catalog_version } : {}) });
       }
       if (selected.length !== payload.test_ids.length + payload.panel_ids.length) { unsupported(); continue; }
       form.labOrders.push(...selected); form.labPriority = payload.priority; form.labPosition = position; form.labExpandedTargets = targets.filter((row) => !row.selected);

@@ -7,7 +7,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { AuthContext } from '@/lib/auth/AuthContext';
 import { ReadOnlyModeProvider } from '@/contexts/ReadOnlyModeContext';
 import { __resetV2ApiClientForTests, configureV2ApiClient, getV2ClientScopeKey, v2Request } from '@/lib/api/v2/client';
-import { bindNetworkAccessGuard } from '@/lib/api/v2/networkAccessGuard';
+import { bindNetworkAccessGuard, networkClockCurrent } from '@/lib/api/v2/networkAccessGuard';
 import { activateWriteUncertainty, getWriteUncertaintySnapshot } from '@/lib/api/v2/writeUncertainty';
 import { authorizationIdentity } from '@/shared/lib/authorizationScope';
 import { networkApi } from '@/features/settings/network/api';
@@ -128,8 +128,8 @@ it('genuine current403 conceals cached detail and private draft even after inval
   mount(`/inventory/suppliers/${supplierId}`); const ev = await openCorrection(); detailMode = 'denied'; await ev.click(screen.getByRole('button', { name: 'Refresh and review supplier change' })); await screen.findByRole('heading', { name: 'Inventory suppliers unavailable' }); expect(screen.queryByDisplayValue('Synthetic reviewed correction')).not.toBeInTheDocument(); expect(writes).toHaveLength(0);
 });
 it('keeps cached rows hidden after403 then500 until an explicit fresh200', async () => {
-  const view = mount(); await screen.findByRole('button', { name: `View supplier details for ${supplier.name}` }); listMode = 'denied'; fireEvent.click(screen.getByRole('button', { name: 'Refresh suppliers' })); await screen.findByRole('heading', { name: 'Inventory suppliers unavailable' }); listMode = 'failed'; fireEvent.click(screen.getByRole('button', { name: 'Retry' })); await screen.findByRole('heading', { name: 'Supplier could not be loaded' }); expect(screen.queryByRole('button', { name: `View supplier details for ${supplier.name}` })).not.toBeInTheDocument();
-  listMode = 'ready'; await act(async () => { await establish(); view.update(); }); fireEvent.click(screen.getByRole('button', { name: 'Retry' })); await screen.findByRole('button', { name: `View supplier details for ${supplier.name}` });
+  const view = mount(); await screen.findByRole('button', { name: `View supplier details for ${supplier.name}` }); listMode = 'denied'; fireEvent.click(screen.getByRole('button', { name: 'Refresh suppliers' })); await screen.findByRole('heading', { name: 'Inventory suppliers unavailable' }); listMode = 'failed'; expect(networkClockCurrent(decision)).toBe(false); await act(async () => { await establish(); view.update(); }); expect(networkClockCurrent(decision)).toBe(true); fireEvent.click(screen.getByRole('button', { name: 'Retry' })); await screen.findByRole('heading', { name: 'Supplier could not be loaded' }); expect(screen.queryByRole('button', { name: `View supplier details for ${supplier.name}` })).not.toBeInTheDocument();
+  listMode = 'ready'; fireEvent.click(screen.getByRole('button', { name: 'Retry' })); await screen.findByRole('button', { name: `View supplier details for ${supplier.name}` });
 });
 it('genuine original receipt403 conceals retained unknown fields while retaining opaque uncertainty', async () => {
   mount(`/inventory/suppliers/${supplierId}`); const ev = await openCorrection(); await review(ev); writeMode = 'lost'; await ev.click(screen.getByRole('button', { name: 'Confirm reviewed supplier change' })); await screen.findByText('Supplier change needs reconciliation'); receiptMode = 'denied'; await ev.click(screen.getByRole('button', { name: 'Check original supplier result' })); await screen.findByRole('heading', { name: 'Inventory suppliers unavailable' }); expect(screen.queryByText('Supplier change needs reconciliation')).not.toBeInTheDocument(); expect(getWriteUncertaintySnapshot().entries).toHaveLength(1); expect(writes).toHaveLength(1);
@@ -147,7 +147,16 @@ it.each(['actor', 'facility', 'profile', 'permission', 'feature', 'visibility'])
   await act(async () => old(json({ error: { code: 'synthetic_old_ABA_denial' } }, 403))); expect(screen.queryByRole('heading', { name: 'Inventory suppliers unavailable' })).not.toBeInTheDocument(); expect(screen.getByLabelText('Supplier name')).toHaveValue(supplier.name); expect(writes).toHaveLength(0);
 });
 it('settles preparation after an unrelated current403 without publishing stale review', async () => {
-  mount(`/inventory/suppliers/${supplierId}`); await openCorrection(); detailMode = 'pending'; fireEvent.click(screen.getByRole('button', { name: 'Refresh and review supplier change' })); await waitFor(() => expect(pending).toHaveLength(1)); await act(async () => { await v2Request({ path: '/api/v2/dashboard/snapshot' }).catch(() => {}); pending[0](); });
+  const view = mount(`/inventory/suppliers/${supplierId}`); await openCorrection(); const originalClock = decision, reasonInput = screen.getByLabelText('Correction reason'); detailMode = 'pending'; fireEvent.click(screen.getByRole('button', { name: 'Refresh and review supplier change' })); await waitFor(() => expect(pending).toHaveLength(1)); await act(async () => { await v2Request({ path: '/api/v2/dashboard/snapshot' }).catch(() => {}); pending[0](); });
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Refresh and review supplier change' })).toBeDisabled());
+  expect(screen.queryByRole('button', { name: 'Confirming current supplier…' })).not.toBeInTheDocument();
+  expect(networkClockCurrent(originalClock)).toBe(false);
+  expect(screen.queryByRole('heading', { name: 'Review exact supplier change' })).not.toBeInTheDocument();
+  expect(screen.queryByLabelText('I reviewed this exact supplier change')).not.toBeInTheDocument();
+  expect(writes).toHaveLength(0);
+  detailMode = 'ready'; await act(async () => { await establish(); view.update(); });
+  expect(networkClockCurrent(decision)).toBe(true); expect(networkClockCurrent(originalClock)).toBe(false);
+  expect(screen.getByLabelText('Correction reason')).toBe(reasonInput);
   await waitFor(() => expect(screen.getByRole('button', { name: 'Refresh and review supplier change' })).toBeEnabled()); expect(screen.queryByRole('heading', { name: 'Review exact supplier change' })).not.toBeInTheDocument(); expect(writes).toHaveLength(0);
 });
 it('preserves unchanged malformed and oversized nullable contacts exactly through separate review and correction', async () => {

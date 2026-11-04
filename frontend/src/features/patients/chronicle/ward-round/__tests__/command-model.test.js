@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { buildRoundDraft, roundWorkspace, validateRoundReceipt } from '../commandModel';
+import { assertCurrentCatalogReview, buildRoundDraft, canonical, catalogReviewFrom, roundCatalogReviewReady, roundDetail, roundWorkspace, validateRoundReceipt } from '../commandModel';
 import { roundForm } from '../roundForm';
 import { ids, patientId, admissionId, actor, workspace, receipt } from './command-fixtures';
 const base = () => ({ ...roundForm(patientId, admissionId, null), renderedNote: 'Synthetic reviewed narrative' });
@@ -80,4 +80,35 @@ it('rejects two completed actions claiming the same resource while an unrelated 
   value.created_artifacts = [ids[10], ids[11]].map((resource_id) => ({ resource_id, resource_type: 'nursing_task', title: 'Synthetic task result' })); value.ward_round.artifacts = value.created_artifacts;
   expect(() => validateRoundReceipt(value, command)).toThrow('could not be confirmed');
   value.ward_round.actions[1].committed_resource_id = ids[11]; expect(validateRoundReceipt(value, command)).toBe(value);
+});
+
+// Proposed033 compatibility cases; authored only, not executed.
+function laboratoryDraft() {
+  const form = base(); form.labOrders = [{ id: ids[10], kind: 'test', name: 'Synthetic retained test' }];
+  const wire = buildRoundDraft(form, null, ids[8]); return { wire, draft: receipt(wire).ward_round };
+}
+it('reads an old unversioned draft without inventing a current source and permits an explicit same-body re-review save', () => {
+  const { wire, draft } = laboratoryDraft(); delete draft.actions[0].reviewed_targets[0].catalog_version;
+  const historical = JSON.stringify(draft); expect(roundDetail(draft, { patientId, admissionId })).toBe(draft); expect(roundCatalogReviewReady(draft)).toBe(false);
+  const form = roundForm(patientId, admissionId, draft); expect(form.labOrders[0]).not.toHaveProperty('catalog_version');
+  const next = buildRoundDraft(form, draft, ids[9]); expect(next.client_request_id).not.toBe(wire.client_request_id); expect(next.expected_version).toBe(draft.version); expect(next.actions).toEqual(wire.actions); expect(JSON.stringify(next)).not.toContain('catalog_version'); expect(JSON.stringify(draft)).toBe(historical);
+});
+it('requires known versions for every expanded source as well as directly selected laboratory definitions', () => {
+  const { draft } = laboratoryDraft(); expect(roundCatalogReviewReady(draft)).toBe(true);
+  draft.actions[0].reviewed_targets.push({ resource_type: 'lab_test', resource_id: ids[11], display_name: 'Synthetic expanded test', code: 'SYNTHETIC-EXPANDED', selected: false, prescription: null });
+  expect(roundCatalogReviewReady(draft)).toBe(false); draft.actions[0].reviewed_targets[1].catalog_version = 4; expect(roundCatalogReviewReady(draft)).toBe(true);
+  const saved = roundForm(patientId, admissionId, draft); expect(saved.labOrders[0].catalog_version).toBe(1); expect(saved.labExpandedTargets[0].catalog_version).toBe(4);
+});
+it.each([null, 0, -1, 1.1, Number.MAX_SAFE_INTEGER + 1])('refuses invalid present reviewed catalog version %s rather than rounding it', version => {
+  const { draft } = laboratoryDraft(); draft.actions[0].reviewed_targets[0].catalog_version = version; expect(() => roundDetail(draft, { patientId, admissionId })).toThrow();
+});
+it('checks new commit review without changing its wire or historical receipt validation', () => {
+  const { wire, draft } = laboratoryDraft(), reviewed = { note_sections: draft.note_sections, rendered_note: draft.rendered_note, actions: wire.actions };
+  const command = { kind: 'commit', patientId, admissionId, actorId: actor.id, roundId: draft.id, wire: { client_request_id: ids[9], expected_version: draft.version }, reviewed, catalogReview: catalogReviewFrom(draft) };
+  const fingerprint = canonical(command.wire); expect(() => assertCurrentCatalogReview(command)).not.toThrow(); expect(canonical(command.wire)).toBe(fingerprint);
+  const old = structuredClone(draft); delete old.actions[0].reviewed_targets[0].catalog_version;
+  expect(() => catalogReviewFrom(old)).toThrow('Save and review'); delete command.catalogReview; expect(() => assertCurrentCatalogReview(command)).toThrow('Save and review');
+  const original = receipt(command.wire, 'commit', old), artifact = { resource_id: ids[11], resource_type: 'lab_order', title: 'Synthetic accepted historical lab order' };
+  original.ward_round.actions[0].committed_resource_id = ids[11]; original.ward_round.actions[0].committed_resource_type = 'lab_order'; original.ward_round.artifacts = [artifact]; original.created_artifacts = [artifact];
+  const bytesBefore = JSON.stringify(original); expect(validateRoundReceipt(original, command)).toBe(original); expect(JSON.stringify(original)).toBe(bytesBefore); expect(original.ward_round.actions[0].reviewed_targets[0]).not.toHaveProperty('catalog_version'); expect(canonical(command.wire)).toBe(fingerprint);
 });

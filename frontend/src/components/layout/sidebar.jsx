@@ -1,3 +1,4 @@
+import { canReadCatalogAdministration as canReadLaboratoryCatalogAdministration, catalogRouteAccess as laboratoryCatalogRouteAccess } from '@/features/laboratory/administration/access'
 import { transferNavigationFeatures, transferNavigationHref, transferRouteAccess, TRANSFER_READ_CAPABILITIES } from '@/features/inventory/transfers/access'
 import { supplierRouteAccess } from '@/features/inventory/suppliers/access'
 import { categoryRouteAccess } from '@/features/inventory/categories/access'
@@ -334,6 +335,7 @@ const globalSections = [
       features: ['ward_task_board', 'patient_chronicle', 'wards', 'inpatient_admissions', 'nursing_workflows'],
       exact: true,
     }),
+    ...(isRustV2ApiMode() ? [item({ key: 'lab-catalog-administration', label: 'Catalog administration', href: '/laboratory/catalog-administration', icon: FlaskConical, ...laboratoryCatalogRouteAccess(), exact: false })] : []),
     item({
       key: 'laboratory',
       label: 'Laboratory',
@@ -588,6 +590,7 @@ const inventorySections = [
 
 const laboratorySections = [
   section('laboratory', 'Laboratory', [
+    ...(isRustV2ApiMode() ? [item({ key: 'lab-catalog-administration', label: 'Catalog administration', href: '/laboratory/catalog-administration', icon: FlaskConical, ...laboratoryCatalogRouteAccess(), exact: false })] : []),
     item({ key: 'lab-dashboard', label: 'Worklist', href: '/laboratory/dashboard', icon: LayoutDashboard, roles: ROLE_GROUPS.LAB_TECHS, features: ['laboratory'], exact: true }),
     item({ key: 'lab-catalog', label: 'Catalog', href: '/laboratory/catalog', icon: FlaskConical, roles: LAB_CATALOG_ROLES, features: ['laboratory'], exact: true }),
     item({ key: 'lab-orders', label: 'Orders', href: '/laboratory/orders', icon: TestTube2, roles: ROLE_GROUPS.LAB_ACCESS, features: ['laboratory'], exact: true }),
@@ -658,6 +661,7 @@ function hasFeatureAccess(features, enabledFeatures, context) {
 }
 
 function hasAccess(user, entry) {
+  if (entry.key === 'lab-catalog-administration' && !canReadLaboratoryCatalogAdministration(user)) return false
   return userCanAccess(user, { roles: entry.roles, capabilities: entry.capabilities })
 }
 

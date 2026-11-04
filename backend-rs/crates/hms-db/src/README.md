@@ -29,3 +29,11 @@ Scope: SQLx repositories and database infrastructure.
 ## Session-bound credential ceremonies
 
 `auth/webauthn.rs` owns exact-session challenge binding, canonical facility/user/session proof locks, post-wait database-clock expiry and atomic credential/consume/audit persistence. The public enrollment/assertion endpoints retain their existing assurance semantics. See [ceremony scope](../../../../docs/v2/2026-10-16-webauthn-ceremony-scope.md).
+
+- `laboratory_catalog.rs` and `laboratory_catalog/`: mandatory ordinary no-patient
+  catalog purpose, current metadata and immutable availability originals.
+- `laboratory/catalog_source.rs`: one complete bounded retained order selection.
+- `laboratory/governed.rs`: unchanged clinical catalog purpose/current proof and
+  protected direct order publication.
+- `schema_compatibility/laboratory_catalog.rs`: read-only exact033 layout/body and
+  checksum proof; startup requires033 for all matching writers.

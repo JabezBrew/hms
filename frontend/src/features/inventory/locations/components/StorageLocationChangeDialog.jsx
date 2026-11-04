@@ -6,6 +6,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { isCurrentReadDenial } from '@/lib/api/v2/readDenials';
 import { useScopedNotifications } from '@/shared/hooks/useScopedNotifications';
 import { storageLocationApi } from '../api';
 import { errorCopy, prepareCommand, validName, LOCATION_TYPES, TEMPERATURE_ZONES } from '../model';
@@ -29,11 +30,12 @@ function ReviewEvidence({ review }) {
 export function StorageLocationChangeDialog({ selection, open, onClose, access, controller, onDenied, onDone, finishing, sourceToken }) {
   const [fields, setFields] = useState({ name: selection.location?.name || '', code: '', location_type: '', temperature_zone: '' });
   const [review, setReview] = useState(null), [consent, setConsent] = useState(false), [error, setError] = useState(null), [preparing, setPreparing] = useState(false);
-  const operation = useRef(null), capture = useScopedNotifications(access.scope);
+  const operation = useRef(null), mounted = useRef(false), capture = useScopedNotifications(access.scope);
   const source = useRef(sourceToken), sourceEpoch = useRef(0);
   useLayoutEffect(() => { if (source.current !== sourceToken) { source.current = sourceToken; sourceEpoch.current++; setReview(null); setConsent(false); } }, [sourceToken]);
   useLayoutEffect(() => { if (controller.error && !controller.unknown) { setReview(null); setConsent(false); } }, [controller.error, controller.unknown]);
-  useLayoutEffect(() => () => operation.current?.abort(), []);
+  useLayoutEffect(() => { mounted.current = true; return () => { mounted.current = false; operation.current?.abort(); operation.current = null; }; }, []);
+  useLayoutEffect(() => { if (!access.canWrite) { setReview(null); setConsent(false); } }, [access.canWrite]);
   const change = patch => { setFields(old => ({ ...old, ...patch })); setReview(null); setConsent(false); setError(null); };
   const prepare = async event => {
     event.preventDefault(); if (operation.current || controller.locked || !access.canWrite) return;
@@ -47,9 +49,12 @@ export function StorageLocationChangeDialog({ selection, open, onClose, access, 
       } else previous = await storageLocationApi.get(selection.location.id, { signal: abort.signal });
       const input = selection.action === 'create' ? { action: 'create', client_request_id: crypto.randomUUID(), code: fields.code, name: fields.name, location_type: fields.location_type, temperature_zone: fields.temperature_zone } : { action: selection.action, client_request_id: crypto.randomUUID(), location_id: previous.id, expected_version: previous.version, ...(selection.action === 'rename' ? { name: fields.name } : {}) };
       const command = await prepareCommand(input, access.user.id, previous);
-      if (!abort.signal.aborted && lease.isCurrent()) { if (epoch === sourceEpoch.current) setReview(command); else setError('The directory changed during review. Refresh and review this change again.'); }
-    } catch (failure) { if (!abort.signal.aborted && lease.isCurrent()) { if (failure.status === 403) onDenied(); else setError(failure.status ? errorCopy(failure) : failure.message); } }
-    finally { if (operation.current === abort) operation.current = null; if (!abort.signal.aborted && lease.isCurrent()) setPreparing(false); }
+      if (!abort.signal.aborted && mounted.current && operation.current === abort && lease.isCurrent()) { if (epoch === sourceEpoch.current) setReview(command); else setError('The directory changed during review. Refresh and review this change again.'); }
+    } catch (failure) {
+      if (!abort.signal.aborted && mounted.current && operation.current === abort && isCurrentReadDenial(failure)) {
+        if (failure.data?.error?.code === 'reauth_required') setError(errorCopy(failure)); else onDenied();
+      } else if (!abort.signal.aborted && mounted.current && operation.current === abort && lease.isCurrent()) setError(failure.status ? errorCopy(failure) : failure.message);
+    } finally { if (operation.current === abort) { operation.current = null; if (mounted.current) setPreparing(false); } }
   };
   const busy = preparing || controller.busy || finishing;
   return <Dialog open={open} onOpenChange={next => { if (!next && !busy) onClose(); }}><DialogContent className="flex max-h-[92dvh] min-w-0 flex-col overflow-hidden sm:max-w-2xl" onEscapeKeyDown={event => { if (busy) event.preventDefault(); }} onInteractOutside={event => { if (busy) event.preventDefault(); }}><DialogHeader><DialogTitle>{titles[selection.action]}</DialogTitle><DialogDescription>Review a current exact location before submitting. Code, location type and temperature zone stay unchanged after creation. Active status changes are limited to unused locations.</DialogDescription></DialogHeader>

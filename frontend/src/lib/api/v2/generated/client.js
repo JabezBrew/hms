@@ -1630,6 +1630,16 @@ export const operations = {
     ],
     "hasBody": false
   },
+  "getLaboratoryCatalogCommandReceipt": {
+    "operationId": "getLaboratoryCatalogCommandReceipt",
+    "method": "GET",
+    "path": "/api/v2/laboratory/catalog-commands/{client_request_id}",
+    "pathParamNames": [
+      "client_request_id"
+    ],
+    "queryParamNames": [],
+    "hasBody": false
+  },
   "getLaboratoryOrderById": {
     "operationId": "getLaboratoryOrderById",
     "method": "GET",
@@ -1665,6 +1675,31 @@ export const operations = {
     ],
     "hasBody": false
   },
+  "getLaboratoryPanelAdministration": {
+    "operationId": "getLaboratoryPanelAdministration",
+    "method": "GET",
+    "path": "/api/v2/laboratory/panel-administration",
+    "pathParamNames": [],
+    "queryParamNames": [
+      "cursor",
+      "limit",
+      "search",
+      "is_active",
+      "is_system_default",
+      "is_facility_modified"
+    ],
+    "hasBody": false
+  },
+  "getLaboratoryPanelAdministrationById": {
+    "operationId": "getLaboratoryPanelAdministrationById",
+    "method": "GET",
+    "path": "/api/v2/laboratory/panels/{id}/administration",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [],
+    "hasBody": false
+  },
   "getLaboratoryPanelById": {
     "operationId": "getLaboratoryPanelById",
     "method": "GET",
@@ -1673,6 +1708,19 @@ export const operations = {
       "id"
     ],
     "queryParamNames": [],
+    "hasBody": false
+  },
+  "getLaboratoryPanelHistory": {
+    "operationId": "getLaboratoryPanelHistory",
+    "method": "GET",
+    "path": "/api/v2/laboratory/panels/{id}/history",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [
+      "cursor",
+      "limit"
+    ],
     "hasBody": false
   },
   "getLaboratoryPanels": {
@@ -1736,6 +1784,32 @@ export const operations = {
     ],
     "hasBody": false
   },
+  "getLaboratoryTestAdministration": {
+    "operationId": "getLaboratoryTestAdministration",
+    "method": "GET",
+    "path": "/api/v2/laboratory/test-administration",
+    "pathParamNames": [],
+    "queryParamNames": [
+      "cursor",
+      "limit",
+      "search",
+      "category",
+      "is_active",
+      "is_system_default",
+      "is_facility_modified"
+    ],
+    "hasBody": false
+  },
+  "getLaboratoryTestAdministrationById": {
+    "operationId": "getLaboratoryTestAdministrationById",
+    "method": "GET",
+    "path": "/api/v2/laboratory/test-catalog/{id}/administration",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [],
+    "hasBody": false
+  },
   "getLaboratoryTestCatalog": {
     "operationId": "getLaboratoryTestCatalog",
     "method": "GET",
@@ -1760,6 +1834,19 @@ export const operations = {
       "id"
     ],
     "queryParamNames": [],
+    "hasBody": false
+  },
+  "getLaboratoryTestHistory": {
+    "operationId": "getLaboratoryTestHistory",
+    "method": "GET",
+    "path": "/api/v2/laboratory/test-catalog/{id}/history",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [
+      "cursor",
+      "limit"
+    ],
     "hasBody": false
   },
   "getMedicationAdministrations": {
@@ -4793,6 +4880,16 @@ export const operations = {
     "queryParamNames": [],
     "hasBody": false
   },
+  "postLaboratoryPanelAvailability": {
+    "operationId": "postLaboratoryPanelAvailability",
+    "method": "POST",
+    "path": "/api/v2/laboratory/panels/{id}/availability",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [],
+    "hasBody": true
+  },
   "postLaboratoryResultBulkCreate": {
     "operationId": "postLaboratoryResultBulkCreate",
     "method": "POST",
@@ -4850,6 +4947,16 @@ export const operations = {
     "method": "POST",
     "path": "/api/v2/laboratory/specimens",
     "pathParamNames": [],
+    "queryParamNames": [],
+    "hasBody": true
+  },
+  "postLaboratoryTestAvailability": {
+    "operationId": "postLaboratoryTestAvailability",
+    "method": "POST",
+    "path": "/api/v2/laboratory/test-catalog/{id}/availability",
+    "pathParamNames": [
+      "id"
+    ],
     "queryParamNames": [],
     "hasBody": true
   },
@@ -5932,17 +6039,24 @@ export function createGeneratedClient(request) {
     getInventorySupplierCommandReceipt: createOperation(request, operations.getInventorySupplierCommandReceipt),
     getInventorySupplierHistory: createOperation(request, operations.getInventorySupplierHistory),
     getInventorySuppliers: createOperation(request, operations.getInventorySuppliers),
+    getLaboratoryCatalogCommandReceipt: createOperation(request, operations.getLaboratoryCatalogCommandReceipt),
     getLaboratoryOrderById: createOperation(request, operations.getLaboratoryOrderById),
     getLaboratoryOrderClinicalContext: createOperation(request, operations.getLaboratoryOrderClinicalContext),
     getLaboratoryOrders: createOperation(request, operations.getLaboratoryOrders),
+    getLaboratoryPanelAdministration: createOperation(request, operations.getLaboratoryPanelAdministration),
+    getLaboratoryPanelAdministrationById: createOperation(request, operations.getLaboratoryPanelAdministrationById),
     getLaboratoryPanelById: createOperation(request, operations.getLaboratoryPanelById),
+    getLaboratoryPanelHistory: createOperation(request, operations.getLaboratoryPanelHistory),
     getLaboratoryPanels: createOperation(request, operations.getLaboratoryPanels),
     getLaboratoryResultById: createOperation(request, operations.getLaboratoryResultById),
     getLaboratoryResults: createOperation(request, operations.getLaboratoryResults),
     getLaboratorySpecimenById: createOperation(request, operations.getLaboratorySpecimenById),
     getLaboratorySpecimens: createOperation(request, operations.getLaboratorySpecimens),
+    getLaboratoryTestAdministration: createOperation(request, operations.getLaboratoryTestAdministration),
+    getLaboratoryTestAdministrationById: createOperation(request, operations.getLaboratoryTestAdministrationById),
     getLaboratoryTestCatalog: createOperation(request, operations.getLaboratoryTestCatalog),
     getLaboratoryTestCatalogById: createOperation(request, operations.getLaboratoryTestCatalogById),
+    getLaboratoryTestHistory: createOperation(request, operations.getLaboratoryTestHistory),
     getMedicationAdministrations: createOperation(request, operations.getMedicationAdministrations),
     getMetrics: createOperation(request, operations.getMetrics),
     getMonitoringEvents: createOperation(request, operations.getMonitoringEvents),
@@ -6223,6 +6337,7 @@ export function createGeneratedClient(request) {
     postLaboratoryOrdersSearch: createOperation(request, operations.postLaboratoryOrdersSearch),
     postLaboratoryOrderStartProcessing: createOperation(request, operations.postLaboratoryOrderStartProcessing),
     postLaboratoryOrderSubmit: createOperation(request, operations.postLaboratoryOrderSubmit),
+    postLaboratoryPanelAvailability: createOperation(request, operations.postLaboratoryPanelAvailability),
     postLaboratoryResultBulkCreate: createOperation(request, operations.postLaboratoryResultBulkCreate),
     postLaboratoryResultBulkVerify: createOperation(request, operations.postLaboratoryResultBulkVerify),
     postLaboratoryResults: createOperation(request, operations.postLaboratoryResults),
@@ -6230,6 +6345,7 @@ export function createGeneratedClient(request) {
     postLaboratoryResultVerify: createOperation(request, operations.postLaboratoryResultVerify),
     postLaboratorySpecimenReceive: createOperation(request, operations.postLaboratorySpecimenReceive),
     postLaboratorySpecimens: createOperation(request, operations.postLaboratorySpecimens),
+    postLaboratoryTestAvailability: createOperation(request, operations.postLaboratoryTestAvailability),
     postMedicationAdministrationAdminister: createOperation(request, operations.postMedicationAdministrationAdminister),
     postMedicationAdministrationOutcome: createOperation(request, operations.postMedicationAdministrationOutcome),
     postMedicationAdministrations: createOperation(request, operations.postMedicationAdministrations),

@@ -26,13 +26,23 @@ function Harness() {
 beforeEach(() => {
   localStorage.clear(); sessionStorage.clear(); queryClient.clear(); queryClient.setDefaultOptions({ queries: { retry: false, gcTime: 0 }, mutations: { retry: false } }); __resetV2ApiClientForTests(); clearWorkflowContinuity(); window.__HMS_RUNTIME_CONFIG__ = { apiMode: 'rust-v2', v2ApiBaseUrl: 'http://localhost/api/v2', defaultFacilityCode: 'HMS' };
   vi.stubGlobal('crypto', webcrypto); vi.stubGlobal('PublicKeyCredential', class {}); vi.stubGlobal('navigator', { ...navigator, credentials: { get: vi.fn().mockResolvedValue(credential()) } });
-  initial = token('passkey', { id: actorId, facility_id: facilityId, permissions: ['patient.demographics.view', 'clinical_documentation.view', 'clinical_documentation.manage'], features: ['patients', 'encounters', 'nursing'], patient_visibility: ['full_clinical'] }); initial.access_token = jwtFor(initial, { auth_time: Math.floor(Date.now() / 1000) - 60 }); upgraded = structuredClone(initial); upgraded.user.auth_security.assurance_version += 1; upgraded.user.auth_security.session_assurance.verified_at = new Date().toISOString(); upgraded.access_token = jwtFor(upgraded, { auth_time: Math.floor(Date.now() / 1000) }); upgraded.user.auth_security.auth_clock = fixtureClock(Date.now(), upgraded.access_token); posts = []; lose = false; hold = false; oldSignal = null;
+  initial = token('passkey', { id: actorId, facility_id: facilityId, permissions: ['patient.demographics.view', 'clinical_documentation.view', 'clinical_documentation.manage'], features: ['patients', 'encounters', 'nursing'], patient_visibility: ['full_clinical'] }); initial.access_token = jwtFor(initial, { auth_time: Math.floor(Date.now() / 1000) - 60 }); upgraded = structuredClone(initial); upgraded.user.auth_security.assurance_version += 1; posts = []; lose = false; hold = false; oldSignal = null;
   vi.stubGlobal('fetch', vi.fn(async (input, request = {}) => {
     const path = new URL(input).pathname;
     if (path.endsWith('/auth/login')) return json({ data: pending() });
     if (path.endsWith('/login/passkey/options') || path.endsWith('/assurance/options')) return json({ data: options() });
     if (path.endsWith('/login/passkey/verify')) return json({ data: initial });
-    if (path.endsWith('/assurance/verify')) return json({ data: upgraded });
+    if (path.endsWith('/assurance/verify')) {
+      // One actual mocked response has one observation instant. Separate fixture
+      // samples can invent a verification-to-observation gap longer than this
+      // fast request, which the production validator must correctly reject.
+      const observed = Date.now();
+      upgraded.user.auth_security.session_assurance.verified_at = new Date(observed).toISOString();
+      upgraded.user.auth_security.session_assurance.expires_at = new Date(observed + 900000).toISOString();
+      upgraded.access_token = jwtFor(upgraded, { auth_time: Math.floor(observed / 1000) }, observed);
+      upgraded.user.auth_security.auth_clock = fixtureClock(observed, upgraded.access_token);
+      return json({ data: upgraded });
+    }
     if (path.endsWith('/auth/network-access')) return json({ data: networkDecision() });
     if (path.endsWith('/auth/me') || path.endsWith('/auth/logout')) return json({ data: {} });
     if (path.endsWith('/context')) return json({ data: context() });

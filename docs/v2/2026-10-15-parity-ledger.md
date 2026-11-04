@@ -1,6 +1,6 @@
 # Python to Rust and UI feature parity
 
-Updated: 2026-11-03. Scope: the user's expanded request for all phases after the
+Updated: 2026-11-04. Scope: the user's expanded request for all phases after the
 phase-one release. This ledger extends `v2-cutover-scope.md`; its old baseline
 labels are historical evidence, not a claim that all Python workflows work in
 the Rust UI. Python is a behavior reference; Rust access and PHI contracts win
@@ -104,9 +104,37 @@ backlog or whole-application parity; see its verification qualifications.
 | Appointment recurrence | Python appointment generation; Rust `create_appointment_series` repository exists without API | Expose audited series contract/UI with atomic capacity, conflicts, cancellation and exceptions. Normal booking/session templates already work. | explicit real-slot series implemented; fifth checkpoint local regression/HTTP acceptance passed; browser/staging pending; rule expansion and automatic scheduling queued |
 | Appointment type/availability administration | Legacy UI guards versus current scheduling contracts | Complete genuine missing administration without duplicating implemented scheduling sessions/exceptions. | twenty-third checkpoint frozen local acceptance: governed original-actor UUID/CAS create/metadata/retire/reactivate, bounded reachable directory, six retained reference families, preserving provisioning and booked-care closure; 1102 backend tests/154 targets, final frontend six gates,196 ops/four opt-in skips and actual native 517 SDK/659 assertions with persisted101 migrations/029 and400 protected reads pass; finite service browser checks pass, broader rendered/live acceptance remains separate |
 | Department rosters | Python `organization/views.py` roster generation/import/publish | Staff source, shifts/coverage, publish/override and bounded on-duty projections. Scheduling session templates are not roster parity. | queued |
-| Lab catalog management | Python `laboratory/views.py` customize/reset/CRUD | Facility-owned test/panel versioning and safe order/result historical snapshots. Normal lab order through verification already exists. | queued |
+| Lab catalog management | Python `laboratory/views.py` customize/reset/CRUD; active Rust 033 availability governance and BoardUI workspace | Govern availability of existing definitions separately from definition creation/editing/reset/composition and retained ordered-definition history. Normal lab order through verification already exists. | checkpoint 27 implements the finite nine-operation availability slice; complete 1,245 Rust/4,010 frontend/618 ops checks plus 25 separate storage-guard cases (643 ops/guard total) and actual 549-operation generated client pass. Fresh native17/timing and 326 catalog/80 Ward browser checks pass; selected visuals inspected and exact owned cleanup conserves all 63 unrelated entries. Historical snapshots and the remaining public definition/price/range/TAT features remain queued; see [scope](2026-11-04-laboratory-catalog-governance-scope.md) and [verification](2026-11-04-checkpoint-27-verification.md). |
+| Lab self-verification policy | Source-confirmed parity review of current result verification | Reproduce self-entry acceptance and validate the reviewed distinct-verifier rule through actual production interfaces. Normal result verification already exists. | checkpoint 28 source proposal only; regressions and repair remain uncompiled/unrun, with baseline reproduction and correction validation pending; not resolved by checkpoint 27 |
+| Lab aggregate result completion | Source-confirmed parity review of result completion | Validate complete required-test and retained-result coverage through actual production interfaces. | checkpoint 28 source proposal only; uncompiled/unrun and not resolved by checkpoint 27 |
+| Lab result/order ownership | Source-confirmed malformed retained facility/patient links | Reproduce verification and current-projection behavior, then validate fail-closed ownership and whole-order refusal without partial writes. | reviewed checkpoint 28 source proposal only; genuine baseline and compiled correction evidence pending; not resolved by checkpoint 27 |
 | Chart builder and assignments | Python `charts/models.py` templates/fields/assignments/critical entries/trends | Validated versioned schema, assignment lifecycle, safe entries/alerts/trends inside Chronicle. Scalar chart entries alone are partial. | queued |
 | Role dashboards / inventory analytics | Existing snapshots plus legacy metrics | Define sourced bounded projections and metric ownership, then implement/test; no fabricated summary data. | queued |
+
+Checkpoint 27 component acceptance covers existing-definition availability and
+its separate current metadata purpose, scoped BoardUI leases/recovery, preserved
+Ward originals and complete source-aware new publication. Old drafts require
+explicit server re-review via save with a new UUID. Optional seed laboratory
+journeys skip wholly unavailable sources; retained demo evidence refuses reset.
+The final native attempt separately proves the known one-owner permission baseline
+addition before demo-refusal conservation. Native17/timing and 326 catalog/80 Ward
+browser checks pass; selected final visuals were inspected and exact cleanup
+conserves all 63 unrelated database entries. Documentation supplements remain
+separate from the executed component maps. The same phase includes the finite UI clock/denial
+followup; its 290 focused cases are a subset of the final 4,010-test full run.
+The 18 route, 13 admission-linkage and nine initial-loading controls are also
+included subsets. Final V10 adds only a Ward completion Alert class-layout repair;
+it does not change the clinical command contract.
+Earlier native/timing success does not accept the failed browser attempt. The
+shared-target [Cargo guard](../../ops/CARGO_BUDGET.md) has 25 separate canonical
+lightweight tests; actual Cargo admission and original-six integration are pending.
+
+Historical ordered-definition snapshots are not implemented by 033. The optional
+nested order result summary is NULL pending a selection policy. Public creation,
+definition editing/reset, panel composition, price, ranges and TAT remain queued.
+Snapshot capture and the normal migrator live-layout check before all writes are
+checkpoint 28 proposals, not current 033 or whole-parity guarantees. Linux,
+hardware, WAN timing and deployment acceptance remain separate.
 
 Ordinary credential renewal and shared recovery hardening are in checkpoint22
 local acceptance. The ordinary route requires the exact existing session and current

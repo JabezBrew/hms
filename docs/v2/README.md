@@ -2,7 +2,7 @@
 
 Status: active for Rust V2 planning and cutover decisions
 Owner: Backend/Operations Engineering
-Last reviewed: 2026-06-01
+Last reviewed: 2026-11-04
 Scope: Rust V2 backend architecture, seed behavior, cutover scope, and production readiness.
 
 ## File Map
@@ -19,6 +19,8 @@ Scope: Rust V2 backend architecture, seed behavior, cutover scope, and productio
 | `2026-11-03-inventory-supplier-governance-scope.md` | supplier metadata/address, unused lifecycle, original receipts, preserving provisioning, schema032 and privacy/search limits. |
 | `2026-11-04-checkpoint-26b-verification.md` | complete1,200 Rust/3,856 frontend/595 ops checks, exact frozen producer/client and finite runtime/visual/cleanup evidence; finite local native/browser/visual/cleanup checks pass |
 | `2026-11-03-checkpoint-26c-verification.md` | optional onboarding transport guarding, complete frontend gates and actual authenticated startup/reload with native worker and exact cleanup. |
+| [2026-11-04-laboratory-catalog-governance-scope.md](2026-11-04-laboratory-catalog-governance-scope.md) | finite existing-definition availability, separate metadata/clinical purposes, source preservation and the remaining 033 laboratory gaps. |
+| [2026-11-04-checkpoint-27-verification.md](2026-11-04-checkpoint-27-verification.md) | complete 1,245 Rust/4,010 frontend/618 ops component checks, 25 separate storage-guard checks (643 ops/guard total), actual 549-operation SDK and finite UI clock/denial followup; fresh native17/timing and 326 catalog/80 Ward browser checks pass, selected visuals inspected and exact three-database cleanup conserves all 63 unrelated entries. |
 | `2026-10-15-phase-one-verification.md` | scoped security, worker reliability, clinical UI changes, acceptance evidence, and remaining gaps. |
 | `2026-10-15-parity-ledger.md` | expanded Python-to-Rust and UI parity phases, concrete gaps, acceptance rules, and implementation state. |
 | `2026-10-15-phase-two-verification.md` | first parity increment and exact staged-source local acceptance. |

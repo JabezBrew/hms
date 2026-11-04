@@ -639,11 +639,19 @@ async fn saved_human_prescription_and_lab_targets_are_immutable_and_revalidated(
     assert_eq!(targets[1].code, Some(code));
     assert!(!targets[1].selected);
     let before = f.counts().await;
-    sqlx::query("UPDATE lab_tests SET name='Synthetic renamed test' WHERE id=$1")
+    let observed: i64 = sqlx::query_scalar("SELECT version FROM lab_tests WHERE id=$1")
         .bind(test)
-        .execute(f.db.pool())
+        .fetch_one(f.db.pool())
         .await
         .unwrap();
+    assert_eq!(targets[1].catalog_version, Some(observed));
+    // A real trusted definition transition, with observed CAS and one genuine
+    // clock witness. Do not erase this independent name-change regression.
+    let changed = sqlx::query("WITH point AS MATERIALIZED(SELECT clock_timestamp() at) UPDATE lab_tests SET name='Synthetic renamed test',version=version+1,catalog_changed_at=point.at,updated_at=point.at,catalog_changed_by_user_id=NULL FROM point WHERE id=$1 AND version=$2")
+        .bind(test).bind(observed).execute(f.db.pool()).await.unwrap();
+    assert_eq!(changed.rows_affected(), 1);
+    let witness:(i64,bool,bool,bool)=sqlx::query_as("SELECT version,name='Synthetic renamed test',catalog_changed_at=updated_at,catalog_changed_by_user_id IS NULL FROM lab_tests WHERE id=$1 AND code=$2 AND facility_id=$3").bind(test).bind(&targets[1].code).bind(f.actor.facility_id).fetch_one(f.db.pool()).await.unwrap();
+    assert_eq!(witness, (observed + 1, true, true, true));
     error(
         commit(
             f.db.pool(),
@@ -1320,4 +1328,178 @@ async fn sibling_prn_supply_and_round_discharge_share_group_before_admission_loc
             .unwrap()
             .is_ok()
     );
+}
+
+#[tokio::test]
+async fn laboratory_same_name_material_version_change_requires_explicit_ward_round_rereview() {
+    let f = Fixture::new().await;
+    let test: Uuid = sqlx::query_scalar(
+        "SELECT id FROM lab_tests WHERE facility_id=$1 AND is_active ORDER BY id LIMIT 1",
+    )
+    .bind(f.actor.facility_id)
+    .fetch_one(f.db.pool())
+    .await
+    .unwrap();
+    let mut input = f.draft();
+    input.actions = vec![WardRoundDraftActionInput::LabOrder(
+        WardRoundLabOrderInput {
+            test_ids: vec![test],
+            panel_ids: vec![],
+            priority: hms_domain::laboratory::LabPriority::Routine,
+        },
+    )];
+    let first = f.save(input.clone()).await;
+    let expected = first.ward_round.actions[0].reviewed_targets[0]
+        .catalog_version
+        .unwrap();
+    // Identity, code and display name remain exact; the real definition changes.
+    let before: (String, String) = sqlx::query_as("SELECT name,code FROM lab_tests WHERE id=$1")
+        .bind(test)
+        .fetch_one(f.db.pool())
+        .await
+        .unwrap();
+    let refused =
+        sqlx::query("UPDATE lab_tests SET specimen_type='synthetic revised specimen' WHERE id=$1")
+            .bind(test)
+            .execute(f.db.pool())
+            .await;
+    assert!(
+        refused.is_err(),
+        "trusted definition changes cannot bypass observed version/time protocol"
+    );
+    let changed=sqlx::query("WITH point AS MATERIALIZED(SELECT clock_timestamp() at) UPDATE lab_tests SET specimen_type='synthetic revised specimen',result_unit='synthetic revised unit',version=version+1,catalog_changed_at=point.at,updated_at=point.at,catalog_changed_by_user_id=NULL FROM point WHERE id=$1 AND version=$2").bind(test).bind(expected).execute(f.db.pool()).await.unwrap();
+    assert_eq!(changed.rows_affected(), 1);
+    let after: (String, String) = sqlx::query_as("SELECT name,code FROM lab_tests WHERE id=$1")
+        .bind(test)
+        .fetch_one(f.db.pool())
+        .await
+        .unwrap();
+    assert!(before == after);
+    let counts = f.counts().await;
+    error(
+        commit(
+            f.db.pool(),
+            f.actor.clone(),
+            f.patient,
+            first.ward_round.id,
+            CommitWardRoundRequest {
+                client_request_id: Uuid::new_v4(),
+                expected_version: first.ward_round.version,
+            },
+        )
+        .await
+        .unwrap_err(),
+        WardRoundError::SourceChanged,
+    );
+    assert_eq!(counts, f.counts().await);
+    let original = receipt(
+        f.db.pool(),
+        f.actor.clone(),
+        f.patient,
+        first.client_request_id,
+    )
+    .await
+    .unwrap();
+    assert!(original.replayed);
+    let mut expected_original = first.clone();
+    expected_original.replayed = true;
+    assert!(
+        serde_json::to_value(expected_original).unwrap() == serde_json::to_value(original).unwrap()
+    );
+    // Same reviewed clinical body, new explicit UUID/current round CAS: server
+    // resolves the real current catalog version. Client never supplies proof.
+    input.client_request_id = Uuid::new_v4();
+    input.ward_round_id = Some(first.ward_round.id);
+    input.expected_version = first.ward_round.version;
+    let reviewed = f.save(input).await;
+    assert_eq!(
+        reviewed.ward_round.actions[0].reviewed_targets[0].catalog_version,
+        Some(expected + 1)
+    );
+    commit(
+        f.db.pool(),
+        f.actor.clone(),
+        f.patient,
+        reviewed.ward_round.id,
+        CommitWardRoundRequest {
+            client_request_id: Uuid::new_v4(),
+            expected_version: reviewed.ward_round.version,
+        },
+    )
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn laboratory_unknown_legacy_draft_is_readable_but_new_commit_requires_rereview() {
+    let f = Fixture::new().await;
+    let test: Uuid = sqlx::query_scalar(
+        "SELECT id FROM lab_tests WHERE facility_id=$1 AND is_active ORDER BY id LIMIT 1",
+    )
+    .bind(f.actor.facility_id)
+    .fetch_one(f.db.pool())
+    .await
+    .unwrap();
+    let mut input = f.draft();
+    input.actions = vec![WardRoundDraftActionInput::LabOrder(
+        WardRoundLabOrderInput {
+            test_ids: vec![test],
+            panel_ids: vec![],
+            priority: hms_domain::laboratory::LabPriority::Routine,
+        },
+    )];
+    let saved = f.save(input.clone()).await;
+    // Compatibility import of an UNKNOWN review, not a manufactured historical
+    // completed receipt. Immutable originals are deliberately left untouched.
+    sqlx::query("UPDATE ward_round_actions SET reviewed_targets=(SELECT jsonb_agg(value-'catalog_version' ORDER BY position) FROM jsonb_array_elements(reviewed_targets) WITH ORDINALITY entries(value,position)) WHERE ward_round_id=$1").bind(saved.ward_round.id).execute(f.db.pool()).await.unwrap();
+    let before = f.counts().await;
+    error(
+        commit(
+            f.db.pool(),
+            f.actor.clone(),
+            f.patient,
+            saved.ward_round.id,
+            CommitWardRoundRequest {
+                client_request_id: Uuid::new_v4(),
+                expected_version: saved.ward_round.version,
+            },
+        )
+        .await
+        .unwrap_err(),
+        WardRoundError::SourceChanged,
+    );
+    assert_eq!(before, f.counts().await);
+    let original = receipt(
+        f.db.pool(),
+        f.actor.clone(),
+        f.patient,
+        saved.client_request_id,
+    )
+    .await
+    .unwrap();
+    assert!(original.replayed);
+    let mut expected_original = saved.clone();
+    expected_original.replayed = true;
+    assert!(
+        serde_json::to_value(expected_original).unwrap() == serde_json::to_value(original).unwrap()
+    );
+    input.client_request_id = Uuid::new_v4();
+    input.ward_round_id = Some(saved.ward_round.id);
+    input.expected_version = saved.ward_round.version;
+    let reviewed = f.save(input).await;
+    assert!(reviewed.ward_round.actions[0].reviewed_targets[0]
+        .catalog_version
+        .is_some());
+    commit(
+        f.db.pool(),
+        f.actor.clone(),
+        f.patient,
+        reviewed.ward_round.id,
+        CommitWardRoundRequest {
+            client_request_id: Uuid::new_v4(),
+            expected_version: reviewed.ward_round.version,
+        },
+    )
+    .await
+    .unwrap();
 }

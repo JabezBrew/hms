@@ -28,7 +28,7 @@ function prepareSession(authTime = Math.floor(Date.now() / 1000) - 5) {
 }
 function decisionFor(bearer, changes = {}) { const now = Date.now(); return { ...networkDecision, reauth_expires_at: null, evaluated_at: new Date(now).toISOString(), auth_clock: fixtureClock(now, bearer), ...changes }; }
 beforeEach(() => { vi.stubGlobal('crypto', webcrypto); prepareSession(); window.__HMS_RUNTIME_CONFIG__ = { apiMode: 'rust-v2', v2ApiBaseUrl: 'http://localhost:8080/api/v2' }; __resetV2ApiClientForTests(); configureV2ApiClient({ getAccessToken: () => token, setAccessToken: (value) => { token = value; }, getFacilityCode: () => 'HMS', canRefreshSession: () => true }); client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: 2 } } }); });
-afterEach(() => { cleanup(); vi.unstubAllGlobals(); client.clear(); globalThis.fetch = originalFetch; window.__HMS_RUNTIME_CONFIG__ = runtime; __resetV2ApiClientForTests(); });
+afterEach(() => { cleanup(); vi.useRealTimers(); vi.unstubAllGlobals(); client.clear(); globalThis.fetch = originalFetch; window.__HMS_RUNTIME_CONFIG__ = runtime; __resetV2ApiClientForTests(); });
 function mount() { return render(<AuthContext.Provider value={{ user: boundaryUser, login: vi.fn(), logout: vi.fn() }}><QueryClientProvider client={client}><MemoryRouter><HelmetProvider><BreadcrumbProvider><NetworkAccessBoundary><p>Synthetic clinical workspace</p></NetworkAccessBoundary></BreadcrumbProvider></HelmetProvider></MemoryRouter></QueryClientProvider></AuthContext.Provider>); }
 it('waits for authoritative rotated-scope status before replaying a definitively unauthorized request, preserving body and signal', async () => {
   let finishStatus; let workflowCalls = 0; const bodies = []; const signals = [];
@@ -50,4 +50,50 @@ it('never treats a token refresh as fresh credential proof for an expired offsit
     if (path.endsWith('/auth/refresh')) return json({ data: refreshReply }); workflowCalls += 1; return json({ error: { code: 'unauthorized', message: 'Expired token' } }, 401);
   });
   mount(); await screen.findByText('Synthetic clinical workspace'); let pending; let result; await act(async () => { pending = v2Request({ method: 'POST', path: '/api/v2/clinical/prescriptions', body: { synthetic: true } }).catch((error) => { result = error; return error; }); }); await waitFor(() => expect(result).toMatchObject({ status: 403 })); await expect(pending).resolves.toMatchObject({ status: 403 }); expect(workflowCalls).toBe(1);
+});
+
+it('removes retained clinical content at the original credential deadline while a denial-triggered network read stays held', async () => {
+  vi.useFakeTimers({ shouldAdvanceTime: true, toFake: ['Date', 'performance', 'setTimeout', 'clearTimeout'] });
+  vi.setSystemTime(new Date('2026-11-04T10:00:00Z')); prepareSession();
+  const deadline = new Date(Date.now() + 1000).toISOString(); let holdStatus = false; const statusRequests = [];
+  globalThis.fetch = vi.fn(async url => {
+    const path = new URL(url).pathname;
+    if (path.endsWith('/auth/network-access')) {
+      if (holdStatus) return new Promise(resolve => statusRequests.push(resolve));
+      return json({ data: decisionFor(token, { classification: 'offsite', mode: 'fresh_reauth', reason: 'offsite_fresh_reauth', reauth_expires_at: deadline }) });
+    }
+    return json({ error: { code: 'forbidden' } }, 403);
+  });
+  mount(); await screen.findByText('Synthetic clinical workspace'); holdStatus = true;
+  await act(async () => { await expect(v2Request({ method: 'GET', path: '/api/v2/system/deployment-capabilities' })).rejects.toMatchObject({ status: 403 }); });
+  await waitFor(() => expect(statusRequests.length).toBeGreaterThan(0));
+  expect(screen.getByText('Synthetic clinical workspace')).not.toBeVisible();
+  await act(async () => vi.advanceTimersByTimeAsync(1100));
+  await screen.findByText('A fresh sign-in is required');
+  expect(screen.queryByText('Synthetic clinical workspace')).not.toBeInTheDocument();
+  expect(fetch.mock.calls.filter(([, options]) => options.method === 'POST')).toHaveLength(0);
+});
+
+it.each([503, 403])('handles an actual denial-triggered network %i without retaining clinical content past its original deadline', async status => {
+  vi.useFakeTimers({ shouldAdvanceTime: true, toFake: ['Date', 'performance', 'setTimeout', 'clearTimeout'] });
+  vi.setSystemTime(new Date('2026-11-04T10:00:00Z')); prepareSession();
+  const deadline = new Date(Date.now() + 1000).toISOString(); let statusFailure = false, statusReads = 0;
+  globalThis.fetch = vi.fn(async url => {
+    const path = new URL(url).pathname;
+    if (path.endsWith('/auth/network-access')) {
+      statusReads += 1;
+      return statusFailure ? json({ error: { code: status === 403 ? 'forbidden' : 'unavailable' } }, status)
+        : json({ data: decisionFor(token, { classification: 'offsite', mode: 'fresh_reauth', reason: 'offsite_fresh_reauth', reauth_expires_at: deadline }) });
+    }
+    return json({ error: { code: 'forbidden' } }, 403);
+  });
+  mount(); await screen.findByText('Synthetic clinical workspace'); statusFailure = true;
+  await act(async () => { await expect(v2Request({ method: 'GET', path: '/api/v2/system/deployment-capabilities' })).rejects.toMatchObject({ status: 403 }); });
+  await waitFor(() => expect(client.getQueryCache().findAll().some(query => query.state.error?.status === status)).toBe(true));
+  expect(statusReads).toBeGreaterThanOrEqual(2);
+  if (status === 503) expect(screen.getByText('Synthetic clinical workspace')).not.toBeVisible();
+  else expect(screen.queryByText('Synthetic clinical workspace')).not.toBeInTheDocument();
+  await act(async () => vi.advanceTimersByTimeAsync(1100));
+  expect(screen.queryByText('Synthetic clinical workspace')).not.toBeInTheDocument();
+  expect(fetch.mock.calls.filter(([, options]) => options.method === 'POST')).toHaveLength(0);
 });

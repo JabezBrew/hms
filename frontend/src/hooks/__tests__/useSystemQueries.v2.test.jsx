@@ -1,6 +1,7 @@
+import { AuthContext } from '@/lib/auth/AuthContext'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { renderHook, waitFor } from '@testing-library/react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { useFeatureEntitlements, useSystemCapabilities } from '../useSystemQueries'
 import { systemApi } from '@/shared/api/system'
@@ -11,6 +12,10 @@ vi.mock('@/shared/api/system', () => ({
     getFeatureEntitlements: vi.fn(),
   },
 }))
+
+const runtime = window.__HMS_RUNTIME_CONFIG__
+const systemReader = { id: '27272727-0000-4000-8000-000000000110', adminAccess: { capabilities: ['system.deployment_capabilities.view'] }, accessContext: { facility_id: '27272727-0000-4000-8000-000000000111', active_profile: 'hospital' } }
+afterEach(() => { window.__HMS_RUNTIME_CONFIG__ = runtime })
 
 function createWrapper() {
   const queryClient = new QueryClient({
@@ -23,7 +28,7 @@ function createWrapper() {
   })
 
   return function Wrapper({ children }) {
-    return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    return <AuthContext.Provider value={{ user: systemReader }}><QueryClientProvider client={queryClient}>{children}</QueryClientProvider></AuthContext.Provider>
   }
 }
 
@@ -36,6 +41,7 @@ async function expectSuccessfulHook(render) {
 
 describe('useSystemQueries Rust V2 behavior', () => {
   beforeEach(() => {
+    window.__HMS_RUNTIME_CONFIG__ = { apiMode: 'rust-v2' }
     vi.clearAllMocks()
     systemApi.getDeploymentCapabilities.mockResolvedValue({ features: {} })
     systemApi.getFeatureEntitlements.mockResolvedValue({ results: [] })

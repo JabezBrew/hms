@@ -1,6 +1,9 @@
+import { catalogRouteAccess } from './administration/access'
 import { lazy } from 'react'
 import { ROUTE_LAYOUTS, SIDEBARS } from '@/app/routes/routeTypes'
 import { ROLES } from '@/shared/constants/roles'
+
+const LabCatalogAdministrationPage = lazy(() => import('./administration/LabCatalogAdministrationPage'))
 
 const LabCatalogPage = lazy(() => import('./pages/LabCatalogPage'))
 const LabDashboardPage = lazy(() => import('./pages/LabDashboardPage'))
@@ -10,6 +13,15 @@ const LabResultsPage = lazy(() => import('./pages/LabResultsPage'))
 const LAB_BREADCRUMB = { label: 'Laboratory', path: '/laboratory/dashboard' }
 
 export const laboratoryRoutes = [
+  {
+    path: '/laboratory/catalog-administration/*',
+    component: LabCatalogAdministrationPage,
+    ...catalogRouteAccess(),
+    layout: ROUTE_LAYOUTS.APP,
+    sidebar: SIDEBARS.LABORATORY,
+    title: 'Laboratory administration | Hospital Management System',
+    breadcrumbs: [{ label: 'Catalog administration', path: '/laboratory/catalog-administration' }],
+  },
   {
     path: '/laboratory/catalog',
     component: LabCatalogPage,

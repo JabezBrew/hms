@@ -49,3 +49,13 @@ Run from `backend-rs/`:
 ```bash
 cargo test -p hms-domain
 ```
+
+## Laboratory availability contract
+
+`laboratory_catalog.rs` owns closed test/panel administration, scalar history and
+immutable own command receipts. `laboratory.catalog.manage` has no implicit
+patient/demographics or clinical-order permission and does not change privileged
+login classification. Public commands change existing availability only; source
+identity, definition/price/range/TAT/composition editors are unsupported.
+Ward-round catalog targets carry a server-observed optional `catalog_version`;
+unknown old targets remain omitted and require explicit re-review for new commits.

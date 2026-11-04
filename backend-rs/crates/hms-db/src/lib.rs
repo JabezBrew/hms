@@ -13,6 +13,7 @@ pub mod events;
 pub mod facilities;
 pub mod inventory;
 pub mod laboratory;
+pub mod laboratory_catalog;
 pub mod migrate;
 pub mod network;
 pub mod ops;

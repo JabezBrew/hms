@@ -1,6 +1,7 @@
 import { lazy } from 'react'
 import { ROUTE_LAYOUTS, SIDEBARS } from '@/app/routes/routeTypes'
 import { ROLE_GROUPS, ROLES } from '@/shared/constants/roles'
+import { isRustV2ApiMode } from '@/lib/api/v2/runtime'
 
 const PatientChronicleListPage = lazy(() => import('./pages/PatientChronicleListPage'))
 const FindOrRegisterPatientPage = lazy(() => import('./pages/FindOrRegisterPatientPage'))
@@ -89,6 +90,10 @@ export const patientRoutes = [
     path: '/patients/:id/chronicle',
     component: PatientChroniclePage,
     roles: PATIENT_CHRONICLE_ROLES,
+    // A mixed clinical/laboratory account may carry an inferred laboratory
+    // role. Current Rust clinical-read permission is an independent UI route
+    // alternative; patient, visibility and write checks remain authoritative.
+    ...(isRustV2ApiMode() ? { capabilities: ['clinical_documentation.view'] } : {}),
     features: ['patient_chronicle'],
     layout: ROUTE_LAYOUTS.APP,
     sidebar: SIDEBARS.PATIENT_WORKSPACE,

@@ -22,7 +22,11 @@ export function canonical(value) {
 function validPermissions(value) { return value && permissions.every((key) => typeof value[key] === 'boolean'); }
 function validTarget(value) {
   if (!uuid(value?.resource_id) || !['prescription', 'lab_test', 'lab_panel'].includes(value.resource_type) || typeof value.display_name !== 'string' || !value.display_name.trim() || !(value.code === null || typeof value.code === 'string') || typeof value.selected !== 'boolean') return false;
+  // Absent is a valid historical observation. Never fill an old receipt from a
+  // current catalog, and never accept a rounded/invalid present version.
+  if (Object.hasOwn(value, 'catalog_version') && (!Number.isSafeInteger(value.catalog_version) || value.catalog_version < 1)) return false;
   if (value.resource_type !== 'prescription') return value.prescription === null;
+  if (Object.hasOwn(value, 'catalog_version')) return false;
   return value.prescription && ['medication_name', 'dose', 'route', 'frequency'].every((key) => typeof value.prescription[key] === 'string') && ['active', 'on_hold', 'stopped', 'completed'].includes(value.prescription.status);
 }
 function reviewedTargetsMatch(action) {
@@ -34,6 +38,24 @@ function reviewedTargetsMatch(action) {
     return canonical(selected.map((row) => `${row.resource_type}:${row.resource_id}`).sort()) === canonical(expected);
   }
   return selected.length === 0;
+}
+const currentCatalogTargets = action => reviewedTargetsMatch(action) && action.reviewed_targets.length > 0
+  && action.reviewed_targets.every(target => ['lab_test', 'lab_panel'].includes(target.resource_type) && Number.isSafeInteger(target.catalog_version) && target.catalog_version > 0);
+export function roundCatalogReviewReady(round) {
+  return Boolean(round && Array.isArray(round.actions) && round.actions.filter(action => action.status === 'draft' && action.action_type === 'lab_order').every(currentCatalogTargets));
+}
+export function catalogReviewFrom(round) {
+  if (!roundCatalogReviewReady(round)) throw new Error('Save and review the laboratory selections again before completing this round.');
+  return structuredClone(round.actions.filter(action => action.status === 'draft' && action.action_type === 'lab_order').map(action => ({ payload: action.payload, reviewed_targets: action.reviewed_targets })));
+}
+export function assertCurrentCatalogReview(command) {
+  if (command.kind === 'draft') return;
+  const laboratory = command.reviewed?.actions?.filter(action => action.action_type === 'lab_order') || [];
+  if (!laboratory.length) return;
+  if (!Array.isArray(command.catalogReview) || command.catalogReview.length !== laboratory.length || !laboratory.every((action, index) => {
+    const review = command.catalogReview[index];
+    return review && canonical(review.payload) === canonical(action.payload) && currentCatalogTargets({ ...action, reviewed_targets: review.reviewed_targets });
+  })) throw new Error('Save and review the laboratory selections again before completing this round.');
 }
 export function roundDetail(value, { patientId, admissionId, id } = {}) {
   if (!uuid(value?.id) || (id && value.id !== id) || value.patient_id !== patientId || value.admission_case_id !== admissionId

@@ -68,7 +68,7 @@ export function useChronicleVisitScope({
   }, [activeEncounter?.id, encounters, formatEncounterScopeLabel]);
 
   const visitScopeRedirectSearch = useMemo(() => {
-    if (!visitParam || !resolvedVisitScope || visitParam === resolvedVisitScope) {
+    if (areEncountersLoading || !canFetchClinical || !visitParam || !resolvedVisitScope || visitParam === resolvedVisitScope) {
       return null;
     }
 
@@ -77,7 +77,7 @@ export function useChronicleVisitScope({
         [CHRONICLE_VISIT_PARAM]: resolvedVisitScope,
       },
     });
-  }, [resolvedVisitScope, search, visitParam]);
+  }, [areEncountersLoading, canFetchClinical, resolvedVisitScope, search, visitParam]);
 
   const handleVisitScopeChange = useCallback((nextVisitScope) => {
     const nextSearch = buildChronicleSearch(search, {

@@ -114,3 +114,12 @@ it('shows preserved structured readiness evidence even when the legacy scalar se
   source = receipt({ client_request_id: ids[8], expected_version: 0, note_sections: { interval_history: null, examination: null, assessment: null, plan: null, clinical_readiness_blockers: ['Synthetic earlier readiness evidence'] }, rendered_note: null, actions: [] }).ward_round;
   render(<Harness />); await screen.findByLabelText('Clinical narrative'); expect(screen.getByText('Synthetic earlier readiness evidence')).toBeInTheDocument(); expect(writes).toHaveLength(0);
 });
+
+// Proposed033 server-review cases, authored but not executed.
+it('requires explicit same-body server save of an old lab draft before new completion, without filling versions client-side', async () => {
+  const wire = { client_request_id: ids[8], expected_version: 0, note_sections: { interval_history: null, examination: null, assessment: null, plan: null, clinical_readiness_blockers: [] }, rendered_note: 'Synthetic retained lab draft', actions: [{ action_type: 'lab_order', payload: { test_ids: [ids[10]], panel_ids: [], priority: 'routine' } }] };
+  source = receipt(wire).ward_round; delete source.actions[0].reviewed_targets[0].catalog_version;
+  render(<Harness />); await screen.findByText('Laboratory selections need a new review'); fireEvent.click(screen.getByRole('checkbox', { name: /I reviewed/ })); expect(screen.getByRole('button', { name: 'Complete reviewed round' })).toBeDisabled(); expect(screen.getByRole('button', { name: 'Save reviewed draft' })).toBeEnabled();
+  fireEvent.click(screen.getByRole('button', { name: 'Save reviewed draft' })); await screen.findByText('Draft saved'); expect(writes).toHaveLength(1); expect(writes[0].wire.client_request_id).not.toBe(wire.client_request_id); expect(writes[0].wire.expected_version).toBe(1); expect(writes[0].wire.actions).toEqual(wire.actions); expect(JSON.stringify(writes[0].wire)).not.toContain('catalog_version');
+  await waitFor(() => expect(screen.queryByText('Laboratory selections need a new review')).not.toBeInTheDocument()); expect(screen.getByRole('button', { name: 'Complete reviewed round' })).toBeDisabled(); fireEvent.click(screen.getByRole('checkbox', { name: /I reviewed/ })); expect(screen.getByRole('button', { name: 'Complete reviewed round' })).toBeEnabled(); expect(source.actions[0].reviewed_targets[0].catalog_version).toBe(1);
+});

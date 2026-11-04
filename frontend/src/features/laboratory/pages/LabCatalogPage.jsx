@@ -151,6 +151,7 @@ function getCatalogStatusBadge(item) {
 
 function createTestsColumns({
   catalogMutationsAvailable,
+  rustCatalog,
   customizeCatalogItem,
   deleteCatalogItem,
   resetCatalogItem,
@@ -163,9 +164,9 @@ function createTestsColumns({
       render: (test) => (
         <div className="min-w-0">
           <p className="truncate font-medium text-foreground">{test.name}</p>
-          <p className="truncate text-xs text-muted-foreground">
+          {!rustCatalog ? <p className="truncate text-xs text-muted-foreground">
             {test.description || "No description"}
-          </p>
+          </p> : null}
         </div>
       ),
     },
@@ -175,7 +176,7 @@ function createTestsColumns({
       width: "140px",
       render: (test) => (
         <span className="font-mono text-sm text-muted-foreground">
-          {test.loinc_code || "—"}
+          {(rustCatalog ? test.code : test.loinc_code) || "—"}
         </span>
       ),
     },
@@ -244,11 +245,13 @@ function createTestsColumns({
         />
       ),
     },
-  ].filter((column) => catalogMutationsAvailable || column.key !== "actions");
+  ].filter((column) => (catalogMutationsAvailable || column.key !== "actions")
+    && (!rustCatalog || (column.key !== "price" && column.key !== "tat")));
 }
 
 function createPanelsColumns({
   catalogMutationsAvailable,
+  rustCatalog,
   customizeCatalogItem,
   deleteCatalogItem,
   resetCatalogItem,
@@ -261,9 +264,9 @@ function createPanelsColumns({
       render: (panel) => (
         <div className="min-w-0">
           <p className="truncate font-medium text-foreground">{panel.name}</p>
-          <p className="truncate text-xs text-muted-foreground">
+          {!rustCatalog ? <p className="truncate text-xs text-muted-foreground">
             {panel.description || "No description"}
-          </p>
+          </p> : null}
         </div>
       ),
     },
@@ -332,7 +335,8 @@ function createPanelsColumns({
         />
       ),
     },
-  ].filter((column) => catalogMutationsAvailable || column.key !== "actions");
+  ].filter((column) => (catalogMutationsAvailable || column.key !== "actions")
+    && (!rustCatalog || (column.key !== "price" && column.key !== "tat")));
 }
 
 function CatalogRowActions({ item, onCustomize, onDelete, onReset, type }) {
@@ -387,6 +391,7 @@ function LabCatalogView({
   addItemType,
   addSlideOverOpen,
   catalogMutationsAvailable,
+  rustCatalog,
   categoryFilter,
   clearFilters,
   closeAddSlideOver,
@@ -457,6 +462,7 @@ function LabCatalogView({
         <div className="p-4 sm:p-6">
           {targetItemId ? (
             <TargetCatalogItemPanel
+              rustCatalog={rustCatalog}
               isLoading={targetItemLoading}
               item={targetItem}
               itemLabel={targetItemLabel}
@@ -599,7 +605,7 @@ function LabCatalogReadonlyAlert() {
   );
 }
 
-function TargetCatalogItemPanel({ isLoading, item, itemLabel }) {
+function TargetCatalogItemPanel({ isLoading, item, itemLabel, rustCatalog }) {
   if (!isLoading && !item) {
     return (
       <div
@@ -636,13 +642,13 @@ function TargetCatalogItemPanel({ isLoading, item, itemLabel }) {
       <div className="min-w-0">
         <p className="font-mono text-[11px] uppercase text-muted-foreground">Selected {itemLabel}</p>
         <h3 className="mt-1 truncate text-sm font-semibold text-foreground">{item.name}</h3>
-        <p className="mt-1 font-mono text-xs text-muted-foreground">{item.code || item.loinc_code || "No code"}</p>
+        <p className="mt-1 font-mono text-xs text-muted-foreground">{(rustCatalog ? item.code : item.code || item.loinc_code) || "No code"}</p>
       </div>
       <div className="flex flex-wrap items-center gap-2 md:justify-end">
         <Badge variant="outline" className={cn("text-xs", badge.className)}>
           {badge.label}
         </Badge>
-        <span className="font-mono text-sm text-muted-foreground">{formatCatalogPrice(item.price)}</span>
+        {!rustCatalog ? <span className="font-mono text-sm text-muted-foreground">{formatCatalogPrice(item.price)}</span> : null}
       </div>
     </div>
   );
@@ -945,7 +951,8 @@ const LabCatalogPage = () => {
   const targetTestId = routeSearchParams.get("test") || "";
   const targetPanelId = routeSearchParams.get("panel") || "";
   const targetCatalogTab = labCatalogTabFromSearchParams(routeSearchParams);
-  const catalogMutationsAvailable = !isRustV2ApiMode();
+  const rustCatalog = isRustV2ApiMode();
+  const catalogMutationsAvailable = !rustCatalog;
   const [persistedCatalogState, setPersistedCatalogState] = useRouteTableState('laboratory:catalogTable', {
     searchQuery: '',
     categoryFilter: 'all',
@@ -1213,6 +1220,7 @@ const LabCatalogPage = () => {
 
   const testsColumns = createTestsColumns({
     catalogMutationsAvailable,
+    rustCatalog,
     customizeCatalogItem: handleCustomize,
     deleteCatalogItem: handleDeleteInit,
     resetCatalogItem: handleReset,
@@ -1220,6 +1228,7 @@ const LabCatalogPage = () => {
 
   const panelsColumns = createPanelsColumns({
     catalogMutationsAvailable,
+    rustCatalog,
     customizeCatalogItem: handleCustomize,
     deleteCatalogItem: handleDeleteInit,
     resetCatalogItem: handleReset,
@@ -1234,6 +1243,7 @@ const LabCatalogPage = () => {
       addItemType={addItemType}
       addSlideOverOpen={addSlideOverOpen}
       catalogMutationsAvailable={catalogMutationsAvailable}
+      rustCatalog={rustCatalog}
       categoryFilter={categoryFilter}
       clearFilters={clearFilters}
       closeAddSlideOver={closeAddSlideOver}

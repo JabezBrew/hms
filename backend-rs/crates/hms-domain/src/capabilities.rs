@@ -152,6 +152,7 @@ fn permissions_for_features(features: &HashMap<FeatureKey, bool>) -> Vec<Permiss
     if enabled(&features, FeatureKey::Laboratory) {
         permissions.extend([
             PermissionCode::LaboratoryOrderManage,
+            PermissionCode::LaboratoryCatalogManage,
             PermissionCode::LaboratoryResultVerify,
         ]);
     }

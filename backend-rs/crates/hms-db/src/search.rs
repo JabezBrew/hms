@@ -1305,12 +1305,12 @@ async fn insert_laboratory_documents(
                CASE WHEN lab_tests.is_active THEN 'active' ELSE 'inactive' END,
                'laboratory',
                'laboratory.order.manage',
-               false,
+               true,
                concat_ws(' ', lab_tests.code, lab_tests.name, lab_tests.specimen_type, lab_tests.result_unit),
                45,
                lab_tests.updated_at,
                lab_tests.updated_at,
-               jsonb_build_object('source_table', 'lab_tests', 'code', lab_tests.code, 'specimen_type', lab_tests.specimen_type),
+               jsonb_build_object('source_table', 'lab_tests', 'code', lab_tests.code, 'specimen_type', lab_tests.specimen_type, 'catalog_version', lab_tests.version),
                lab_tests.is_active
         FROM lab_tests
         WHERE lab_tests.facility_id = $1
@@ -1329,12 +1329,12 @@ async fn insert_laboratory_documents(
                CASE WHEN lab_panels.is_active THEN 'active' ELSE 'inactive' END,
                'laboratory',
                'laboratory.order.manage',
-               false,
+               true,
                concat_ws(' ', lab_panels.code, lab_panels.name),
                45,
                lab_panels.updated_at,
                lab_panels.updated_at,
-               jsonb_build_object('source_table', 'lab_panels', 'code', lab_panels.code),
+               jsonb_build_object('source_table', 'lab_panels', 'code', lab_panels.code, 'catalog_version', lab_panels.version),
                lab_panels.is_active
         FROM lab_panels
         WHERE lab_panels.facility_id = $1

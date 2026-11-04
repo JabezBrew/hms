@@ -101,6 +101,31 @@ fn reviewed_optional_query_filters_match_the_actual_http_query_extractors() {
             &["cursor", "is_active", "limit", "unit_type"],
         ),
         ("getAdminOrgUnitChildren", &["cursor", "limit"]),
+        (
+            "getLaboratoryTestAdministration",
+            &[
+                "category",
+                "cursor",
+                "is_active",
+                "is_facility_modified",
+                "is_system_default",
+                "limit",
+                "search",
+            ],
+        ),
+        (
+            "getLaboratoryPanelAdministration",
+            &[
+                "cursor",
+                "is_active",
+                "is_facility_modified",
+                "is_system_default",
+                "limit",
+                "search",
+            ],
+        ),
+        ("getLaboratoryTestHistory", &["cursor", "limit"]),
+        ("getLaboratoryPanelHistory", &["cursor", "limit"]),
     ];
     for (id, expected) in expected {
         let params = operation(&doc, id)["parameters"].as_array().unwrap();

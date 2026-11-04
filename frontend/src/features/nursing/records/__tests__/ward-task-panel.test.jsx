@@ -2,7 +2,7 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
 import { AuthContext } from '@/lib/auth/AuthContext';
-import { ReadOnlyModeProvider } from '@/contexts/ReadOnlyModeContext';
+import { ModeledReadOnlyModeProvider as ReadOnlyModeProvider } from '@/tests/networkClockModel';
 import { ExpandedPatientDetailPanel } from '@/features/ward-board/components/ExpandedPatientDetailPanel';
 import { useWardBoardPatient } from '@/features/ward-board/hooks';
 vi.mock('@/features/ward-board/hooks', () => ({ useWardBoardPatient: vi.fn() }));

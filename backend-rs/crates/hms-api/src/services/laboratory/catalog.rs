@@ -1,5 +1,4 @@
 use hms_db::laboratory::LabCatalogFilters;
-use hms_domain::deployment::PermissionCode;
 use hms_domain::laboratory::{LabPanelListItem, LabTestCatalogItem, LaboratoryCatalogQuery};
 use uuid::Uuid;
 
@@ -31,15 +30,11 @@ impl LabCatalogService {
         ctx: &hms_access::RequestContext,
         query: LaboratoryCatalogQuery,
     ) -> Result<ListResponse<LabTestCatalogItem>, ApiError> {
-        common::require_laboratory_access(
-            ctx,
-            self.facility_id(),
-            PermissionCode::LaboratoryOrderManage,
-        )?;
+        let actor = common::laboratory_order_actor(ctx, self.facility_id())?;
         let (cursor, page_size) = common::page_request(query.cursor, query.limit)?;
-        let tests = hms_db::laboratory::list_test_catalog_page(
+        let tests = hms_db::laboratory::list_test_catalog_page_authorized(
             self.pool(),
-            self.facility_id(),
+            actor,
             cursor,
             page_size as i64 + 1,
             LabCatalogFilters {
@@ -51,8 +46,9 @@ impl LabCatalogService {
             },
         )
         .await
-        .map_err(|_| {
-            ApiError::conflict(
+        .map_err(|error| {
+            common::repository_error(
+                error,
                 "lab_catalog_list_failed",
                 "Laboratory test catalog could not be loaded.",
             )
@@ -68,15 +64,12 @@ impl LabCatalogService {
         ctx: &hms_access::RequestContext,
         id: Uuid,
     ) -> Result<ObjectResponse<LabTestCatalogItem>, ApiError> {
-        common::require_laboratory_access(
-            ctx,
-            self.facility_id(),
-            PermissionCode::LaboratoryOrderManage,
-        )?;
-        let test = hms_db::laboratory::get_test_catalog_item(self.pool(), self.facility_id(), id)
+        let actor = common::laboratory_order_actor(ctx, self.facility_id())?;
+        let test = hms_db::laboratory::get_test_catalog_item_authorized(self.pool(), actor, id)
             .await
-            .map_err(|_| {
-                ApiError::conflict(
+            .map_err(|error| {
+                common::repository_error(
+                    error,
                     "lab_catalog_item_load_failed",
                     "Laboratory test could not be loaded.",
                 )
@@ -96,15 +89,11 @@ impl LabCatalogService {
         ctx: &hms_access::RequestContext,
         query: LaboratoryCatalogQuery,
     ) -> Result<ListResponse<LabPanelListItem>, ApiError> {
-        common::require_laboratory_access(
-            ctx,
-            self.facility_id(),
-            PermissionCode::LaboratoryOrderManage,
-        )?;
+        let actor = common::laboratory_order_actor(ctx, self.facility_id())?;
         let (cursor, page_size) = common::page_request(query.cursor, query.limit)?;
-        let panels = hms_db::laboratory::list_panels_page(
+        let panels = hms_db::laboratory::list_panels_page_authorized(
             self.pool(),
-            self.facility_id(),
+            actor,
             cursor,
             page_size as i64 + 1,
             LabCatalogFilters {
@@ -116,8 +105,9 @@ impl LabCatalogService {
             },
         )
         .await
-        .map_err(|_| {
-            ApiError::conflict(
+        .map_err(|error| {
+            common::repository_error(
+                error,
                 "lab_panel_list_failed",
                 "Laboratory panels could not be loaded.",
             )
@@ -133,15 +123,12 @@ impl LabCatalogService {
         ctx: &hms_access::RequestContext,
         id: Uuid,
     ) -> Result<ObjectResponse<LabPanelListItem>, ApiError> {
-        common::require_laboratory_access(
-            ctx,
-            self.facility_id(),
-            PermissionCode::LaboratoryOrderManage,
-        )?;
-        let panel = hms_db::laboratory::get_panel_by_id(self.pool(), self.facility_id(), id)
+        let actor = common::laboratory_order_actor(ctx, self.facility_id())?;
+        let panel = hms_db::laboratory::get_panel_authorized(self.pool(), actor, id)
             .await
-            .map_err(|_| {
-                ApiError::conflict(
+            .map_err(|error| {
+                common::repository_error(
+                    error,
                     "lab_panel_load_failed",
                     "Laboratory panel could not be loaded.",
                 )

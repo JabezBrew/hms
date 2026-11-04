@@ -1,9 +1,11 @@
+mod administration;
 mod catalog;
 mod common;
 mod orders;
 mod results;
 mod specimens;
 
+pub use administration::LaboratoryCatalogAdministrationService;
 pub use catalog::LabCatalogService;
 pub use orders::LabOrdersService;
 pub use results::LabResultsService;
@@ -23,6 +25,10 @@ impl LaboratoryServices {
 
     pub fn catalog(&self) -> LabCatalogService {
         LabCatalogService::new(self.state.clone())
+    }
+
+    pub fn administration(&self) -> LaboratoryCatalogAdministrationService {
+        LaboratoryCatalogAdministrationService::new(self.state.clone())
     }
 
     pub fn orders(&self) -> LabOrdersService {

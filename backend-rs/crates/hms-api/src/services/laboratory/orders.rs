@@ -105,8 +105,9 @@ impl LabOrdersService {
             payload.visit_id,
         )
         .await?;
-        let order = hms_db::laboratory::create_order(
+        let order = hms_db::laboratory::create_order_authorized(
             self.pool(),
+            common::laboratory_order_actor(ctx, self.facility_id())?,
             NewLabOrder {
                 id: Uuid::new_v4(),
                 facility_id: self.facility_id(),
@@ -120,8 +121,9 @@ impl LabOrdersService {
             },
         )
         .await
-        .map_err(|_| {
-            ApiError::conflict(
+        .map_err(|error| {
+            common::repository_error(
+                error,
                 "lab_order_create_failed",
                 "Laboratory order could not be created.",
             )

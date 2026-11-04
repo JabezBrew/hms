@@ -5,7 +5,9 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import re
 import shutil
+import stat
 import subprocess
 import time
 import uuid
@@ -64,6 +66,39 @@ def proxy_runtime(tmp_path_factory):
     directory = tmp_path_factory.mktemp("proxy-runtime")
     name = "hms-proxy-test-" + uuid.uuid4().hex[:10]
     containers = [name + "-echo", name + "-caddy"]
+    label = "hms.test.proxy.owner"
+    owner = os.environ.get("HMS_PROXY_RUNTIME_OWNER_TOKEN", uuid.uuid4().hex)
+    if not re.fullmatch("[0-9a-f]{32}", owner):
+        raise RuntimeError("Invalid synthetic proxy ownership token")
+    docker_host = os.environ.get("HMS_PROXY_RUNTIME_DOCKER_HOST")
+    if docker_host is not None and docker_host != "unix:///Users/jebre/.docker/run/docker.sock":
+        raise RuntimeError("Synthetic proxy requires the declared local Docker endpoint")
+    journal_path = os.environ.get("HMS_PROXY_RUNTIME_JOURNAL")
+    journal = None
+    if journal_path:
+        journal_path = Path(journal_path)
+        if not journal_path.is_absolute() or journal_path.resolve() != journal_path or not journal_path.is_relative_to(ROOT / "results") or stat.S_IMODE(journal_path.stat().st_mode) != 0o600:
+            raise RuntimeError("Invalid synthetic proxy ownership journal")
+        journal = json.loads(journal_path.read_text())
+        if journal.get("schema") != "hms-proxy-runtime-ownership-v1" or journal.get("owner_token") != owner or journal.get("plan") is not None or journal.get("docker_endpoint") != docker_host:
+            raise RuntimeError("Invalid synthetic proxy ownership header")
+    plan = {"planned_at_epoch": time.time(), "network": name, "containers": containers, "owner_label": label}
+    immutable_header = {key: journal[key] for key in ("schema", "owner_token", "runner_created_at_epoch", "docker_endpoint")} if journal else None
+    def journal_update(**values):
+        if journal is None:
+            return
+        current = json.loads(journal_path.read_text())
+        if any(current.get(key) != value for key, value in immutable_header.items()) or current.get("plan") not in (None, plan):
+            raise RuntimeError("Synthetic proxy ownership changed")
+        journal.update(plan=plan, **values)
+        temporary = journal_path.with_name(journal_path.name + ".tmp")
+        with temporary.open("x") as stream:
+            os.chmod(temporary, 0o600)
+            json.dump(journal, stream, sort_keys=True)
+            stream.write("\n")
+        temporary.replace(journal_path)
+    request_plans = []
+    journal_update(preexisting_absence_verified=False, request_plans=request_plans)
     # No published ports or credentials. This test-only network contains three peers.
     network = "172.31.247.0/29"
     echo = directory / "EchoCaddyfile"
@@ -76,25 +111,64 @@ def proxy_runtime(tmp_path_factory):
 ''')
 
     def docker(*arguments, check=True):
-        return subprocess.run(["docker", *arguments], capture_output=True, text=True,
-                              check=check, timeout=25)
+        environment = os.environ.copy()
+        if docker_host is not None:
+            for key in list(environment):
+                if key.startswith("DOCKER_"):
+                    environment.pop(key)
+            environment["DOCKER_HOST"] = docker_host
+        try:
+            result = subprocess.run(["docker", *arguments], capture_output=True, text=True,
+                                    check=False, timeout=25, env=environment)
+        except subprocess.TimeoutExpired:
+            raise subprocess.TimeoutExpired(["docker", "synthetic-proxy-operation"], 25) from None
+        if check and result.returncode:
+            raise subprocess.CalledProcessError(result.returncode, ["docker", "synthetic-proxy-operation"]) from None
+        return result
 
-    docker("network", "create", "--subnet", network, name)
+    def names(kind):
+        args = ("network", "ls", "--format", "{{json .Name}}") if kind == "network" else ("ps", "-a", "--format", "{{json .Names}}")
+        return {value.strip() for line in docker(*args).stdout.splitlines() for value in json.loads(line).split(",")}
+
+    absent = name not in names("network") and not set(containers) & names("container")
+    if not absent:
+        raise RuntimeError("Synthetic proxy resource name already exists")
+    journal_update(preexisting_absence_verified=True, preflight_recorded_at_epoch=time.time())
+
     try:
+        journal_update(creation_attempted=True)
+        docker("network", "create", "--label", label + "=" + owner, "--subnet", network, name)
         docker("run", "-d", "--name", containers[0], "--network", name,
+               "--label", label + "=" + owner,
                "--ip", "172.31.247.5", "--network-alias", "hms-api",
                "-v", f"{echo}:/etc/caddy/Caddyfile:ro", "caddy:2-alpine")
         docker("run", "-d", "--name", containers[1], "--network", name,
+               "--label", label + "=" + owner,
                "--ip", "172.31.247.2", "-e", "HMS_TUNNEL_PROXY_IPV4=172.31.247.3",
                "-v", f"{KIT / 'Caddyfile'}:/etc/caddy/Caddyfile:ro", "caddy:2-alpine")
+        journal_update(creation_complete=True)
 
         def request(peer, *headers, path="/api/v2/proxy-test"):
             args = []
             for header in headers:
                 args.extend(["--header", header])
-            completed = docker("run", "--rm", "--network", name, "--ip", peer,
-                               "--entrypoint", "wget", "caddy:2-alpine", "-qO-",
-                               "-T", "3", *args, "http://172.31.247.2" + path)
+            request_name = name + "-request-" + uuid.uuid4().hex[:8]
+            if request_name in names("container"):
+                raise RuntimeError("Synthetic proxy request name already exists")
+            entry = {"name": request_name, "planned_at_epoch": time.time(), "preexisting_absence_verified": True, "operation_returned": False}
+            request_plans.append(entry)
+            journal_update(request_plans=request_plans)
+            try:
+                completed = docker("run", "--rm", "--name", request_name, "--label", label + "=" + owner,
+                                   "--network", name, "--ip", peer,
+                                   "--entrypoint", "wget", "caddy:2-alpine", "-qO-",
+                                   "-T", "3", *args, "http://172.31.247.2" + path)
+            except subprocess.CalledProcessError:
+                entry["operation_returned"] = True
+                journal_update(request_plans=request_plans)
+                raise
+            entry["operation_returned"] = True
+            journal_update(request_plans=request_plans)
             return json.loads(completed.stdout)
 
         request.logs = lambda: docker("logs", containers[1]).stderr
@@ -109,9 +183,19 @@ def proxy_runtime(tmp_path_factory):
                 time.sleep(0.1)
         yield request
     finally:
-        for container in reversed(containers):
-            docker("rm", "-f", container, check=False)
-        docker("network", "rm", name, check=False)
+        journal_update(fixture_finally_reached=True)
+        # Root-journalled runs are cleaned by the outer supervisor even on TERM.
+        # Standalone opt-in runs retain fixture cleanup, guarded by exact labels.
+        if journal is None:
+            all_containers = [entry["name"] for entry in request_plans] + containers
+            for kind, resource in [("container", value) for value in reversed(all_containers)] + [("network", name)]:
+                if resource not in names(kind):
+                    continue
+                value = json.loads(docker(kind, "inspect", resource).stdout)[0]
+                labels = value.get("Labels", {}) if kind == "network" else value.get("Config", {}).get("Labels", {})
+                if labels.get(label) != owner:
+                    raise RuntimeError("Refusing unowned synthetic proxy cleanup")
+                docker("network", "rm", value["Id"]) if kind == "network" else docker("rm", "-f", value["Id"])
 
 
 def test_real_proxy_ignores_untrusted_forwarding_and_strips_location_flags(proxy_runtime):

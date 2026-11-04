@@ -902,7 +902,7 @@ pub async fn provision_demo_seed(
     let mut tx = pool.begin().await?;
     // Demo reseeding deletes a graph, including encounter links. Once notes
     // carry immutable evidence it must use a fresh isolated fixture database.
-    let retained:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM clinical_notes n JOIN patients p ON p.id=n.patient_id AND p.facility_id=n.facility_id JOIN clinical_note_versions v ON v.note_id=n.id AND v.facility_id=n.facility_id WHERE n.facility_id=$1 AND p.patient_code ~ '^DEMO-[0-9]+$') OR EXISTS(SELECT 1 FROM admission_placements e JOIN patients p ON p.id=e.patient_id AND p.facility_id=e.facility_id WHERE e.facility_id=$1 AND p.patient_code ~ '^DEMO-[0-9]+$') OR EXISTS(SELECT 1 FROM admission_moves e JOIN patients p ON p.id=e.patient_id AND p.facility_id=e.facility_id WHERE e.facility_id=$1 AND p.patient_code ~ '^DEMO-[0-9]+$')")
+    let retained:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM clinical_notes n JOIN patients p ON p.id=n.patient_id AND p.facility_id=n.facility_id JOIN clinical_note_versions v ON v.note_id=n.id AND v.facility_id=n.facility_id WHERE n.facility_id=$1 AND p.patient_code ~ '^DEMO-[0-9]+$') OR EXISTS(SELECT 1 FROM admission_placements e JOIN patients p ON p.id=e.patient_id AND p.facility_id=e.facility_id WHERE e.facility_id=$1 AND p.patient_code ~ '^DEMO-[0-9]+$') OR EXISTS(SELECT 1 FROM admission_moves e JOIN patients p ON p.id=e.patient_id AND p.facility_id=e.facility_id WHERE e.facility_id=$1 AND p.patient_code ~ '^DEMO-[0-9]+$') OR EXISTS(SELECT 1 FROM lab_orders o JOIN patients p ON p.id=o.patient_id AND p.facility_id=o.facility_id WHERE o.facility_id=$1 AND p.patient_code ~ '^DEMO-[0-9]+$')")
         .bind(baseline.facility_id).fetch_one(&mut *tx).await?;
     if retained {
         anyhow::bail!("demo_seed_existing_clinical_evidence");
@@ -2149,6 +2149,74 @@ async fn seed_demo_chronicle_entries(
 }
 
 #[allow(dead_code)]
+// Exact reserved IDs only; no same-code substitution or partial synthetic journey.
+// All source SHARE locks survive until the caller publishes/commits its graph.
+async fn retain_seed_lab_tests(
+    tx: &mut Transaction<'_, Postgres>,
+    facility: Uuid,
+    requested: &[Uuid],
+) -> anyhow::Result<bool> {
+    let ids: Vec<Uuid> = requested
+        .iter()
+        .copied()
+        .collect::<std::collections::BTreeSet<_>>()
+        .into_iter()
+        .collect();
+    ensure!(
+        !ids.is_empty() && ids.len() <= 500 && !ids.iter().any(Uuid::is_nil),
+        "laboratory_seed_invalid_selection"
+    );
+    let retained: Vec<Uuid> = sqlx::query_scalar("SELECT id FROM lab_tests WHERE facility_id=$1 AND is_active AND id=ANY($2) ORDER BY id FOR SHARE NOWAIT")
+        .bind(facility).bind(&ids).fetch_all(&mut **tx).await?;
+    Ok(retained == ids)
+}
+
+async fn record_skipped_seed_labs(
+    tx: &mut Transaction<'_, Postgres>,
+    facility: Uuid,
+    subject: Uuid,
+    count: i32,
+) -> anyhow::Result<()> {
+    // Only opaque synthetic IDs and scalar counts, never definitions/results.
+    sqlx::query("INSERT INTO audit_events(id,facility_id,actor_user_id,event_type,resource_type,resource_id,metadata) VALUES(gen_random_uuid(),$1,$2,'laboratory.seed.skipped','laboratory_seed',$3,jsonb_build_object('skipped_journey_count',$4::int,'reason','default_source_unavailable'))")
+        .bind(facility).bind(Uuid::from_u128(OWNER_USER_ID)).bind(subject).bind(count)
+        .execute(&mut **tx).await?;
+    Ok(())
+}
+
+async fn begin_seed_lab_journey(
+    tx: &mut Transaction<'_, Postgres>,
+    facility: Uuid,
+    patient: Uuid,
+    order: Uuid,
+    tests: &[Uuid],
+) -> anyhow::Result<bool> {
+    // Serialize reserved synthetic identities before looking for an original.
+    let gate: bool = sqlx::query_scalar("SELECT pg_try_advisory_xact_lock(hashtextextended('hms.lab-seed.order.v1:'||$1::uuid::text,0))")
+        .bind(order).fetch_one(&mut **tx).await?;
+    ensure!(gate, "laboratory_seed_busy");
+    let original: Option<(Uuid, Uuid)> = sqlx::query_as(
+        "SELECT facility_id,patient_id FROM lab_orders WHERE id=$1 FOR SHARE NOWAIT",
+    )
+    .bind(order)
+    .fetch_optional(&mut **tx)
+    .await?;
+    if let Some((old_facility, old_patient)) = original {
+        ensure!(
+            old_facility == facility && old_patient == patient,
+            "laboratory_seed_identity_conflict"
+        );
+        // Accepted history wins before later source eligibility. Never fill an
+        // old order's missing links/specimens/results or rewrite its evidence.
+        return Ok(false);
+    }
+    if !retain_seed_lab_tests(tx, facility, tests).await? {
+        record_skipped_seed_labs(tx, facility, order, 1).await?;
+        return Ok(false);
+    }
+    Ok(true)
+}
+
 async fn seed_demo_laboratory_path(
     transaction: &mut Transaction<'_, Postgres>,
     baseline: &BaselineProvisioning,
@@ -2159,36 +2227,6 @@ async fn seed_demo_laboratory_path(
     let lab_order_id = patient.lab_order_id();
     let specimen_id = patient.lab_specimen_id();
     let order_time = demo_time(90 + i64::from(patient.ordinal));
-
-    sqlx::query(
-        r#"
-        INSERT INTO lab_orders (
-            id,
-            facility_id,
-            patient_id,
-            priority,
-            status,
-            ordered_by_user_id,
-            ordered_at,
-            updated_at
-        )
-        VALUES ($1, $2, $3, $4, 'verified', $5, $6, $6)
-        ON CONFLICT (id) DO UPDATE
-        SET priority = EXCLUDED.priority,
-            status = EXCLUDED.status,
-            ordered_by_user_id = EXCLUDED.ordered_by_user_id,
-            ordered_at = EXCLUDED.ordered_at,
-            updated_at = EXCLUDED.updated_at
-        "#,
-    )
-    .bind(lab_order_id)
-    .bind(baseline.facility_id)
-    .bind(patient_id)
-    .bind(patient.lab_priority)
-    .bind(owner_user_id)
-    .bind(order_time)
-    .execute(&mut **transaction)
-    .await?;
 
     let mut lab_results = vec![DemoLabResult {
         test_id: Uuid::from_u128(DEFAULT_LAB_TEST_FBC_ID),
@@ -2203,8 +2241,50 @@ async fn seed_demo_laboratory_path(
         });
     }
 
+    let sources: Vec<Uuid> = lab_results.iter().map(|result| result.test_id).collect();
+    if !begin_seed_lab_journey(
+        transaction,
+        baseline.facility_id,
+        patient_id,
+        lab_order_id,
+        &sources,
+    )
+    .await?
+    {
+        return Ok(());
+    }
+
+    let inserted = sqlx::query(
+        r#"
+        INSERT INTO lab_orders (
+            id,
+            facility_id,
+            patient_id,
+            priority,
+            status,
+            ordered_by_user_id,
+            ordered_at,
+            updated_at
+        )
+        VALUES ($1, $2, $3, $4, 'verified', $5, $6, $6)
+        ON CONFLICT (id) DO NOTHING
+        "#,
+    )
+    .bind(lab_order_id)
+    .bind(baseline.facility_id)
+    .bind(patient_id)
+    .bind(patient.lab_priority)
+    .bind(owner_user_id)
+    .bind(order_time)
+    .execute(&mut **transaction)
+    .await?;
+    ensure!(
+        inserted.rows_affected() == 1,
+        "laboratory_seed_identity_conflict"
+    );
+
     for result in &lab_results {
-        sqlx::query(
+        let published = sqlx::query(
             r#"
             INSERT INTO lab_order_tests (order_id, test_id)
             VALUES ($1, $2)
@@ -2215,9 +2295,13 @@ async fn seed_demo_laboratory_path(
         .bind(result.test_id)
         .execute(&mut **transaction)
         .await?;
+        ensure!(
+            published.rows_affected() == 1,
+            "laboratory_seed_identity_conflict"
+        );
     }
 
-    sqlx::query(
+    let published = sqlx::query(
         r#"
         INSERT INTO lab_specimens (
             id,
@@ -2231,11 +2315,7 @@ async fn seed_demo_laboratory_path(
             updated_at
         )
         VALUES ($1, $2, $3, $4, 'blood', 'collected', $5, $6, $6)
-        ON CONFLICT (id) DO UPDATE
-        SET status = EXCLUDED.status,
-            collected_by_user_id = EXCLUDED.collected_by_user_id,
-            collected_at = EXCLUDED.collected_at,
-            updated_at = EXCLUDED.updated_at
+        ON CONFLICT (id) DO NOTHING
         "#,
     )
     .bind(specimen_id)
@@ -2246,9 +2326,13 @@ async fn seed_demo_laboratory_path(
     .bind(demo_time(100 + i64::from(patient.ordinal)))
     .execute(&mut **transaction)
     .await?;
+    ensure!(
+        published.rows_affected() == 1,
+        "laboratory_seed_identity_conflict"
+    );
 
     for (index, result) in lab_results.iter().enumerate() {
-        sqlx::query(
+        let published = sqlx::query(
             r#"
             INSERT INTO lab_results (
                 id,
@@ -2267,15 +2351,7 @@ async fn seed_demo_laboratory_path(
                 updated_at
             )
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'verified', $9, $10, $9, $11, $11)
-            ON CONFLICT (specimen_id, test_id) DO UPDATE
-            SET value = EXCLUDED.value,
-                unit = EXCLUDED.unit,
-                status = EXCLUDED.status,
-                entered_by_user_id = EXCLUDED.entered_by_user_id,
-                entered_at = EXCLUDED.entered_at,
-                verified_by_user_id = EXCLUDED.verified_by_user_id,
-                verified_at = EXCLUDED.verified_at,
-                updated_at = EXCLUDED.updated_at
+            ON CONFLICT (specimen_id, test_id) DO NOTHING
             "#,
         )
         .bind(demo_uuid(
@@ -2298,6 +2374,10 @@ async fn seed_demo_laboratory_path(
         ))
         .execute(&mut **transaction)
         .await?;
+        ensure!(
+            published.rows_affected() == 1,
+            "laboratory_seed_identity_conflict"
+        );
     }
 
     Ok(())
@@ -4173,8 +4253,23 @@ async fn seed_chronicle_demo_labs(
     let order_id = demo_graph_uuid(DEMO_LAB_ORDER_BASE_ID, journey.ordinal, sequence);
     let specimen_id = demo_graph_uuid(DEMO_LAB_SPECIMEN_BASE_ID, journey.ordinal, sequence);
     let selected_tests = journey.selected_lab_codes(sequence);
+    let sources: Vec<Uuid> = selected_tests
+        .iter()
+        .map(|code| chronicle_demo_lab_test_id(code))
+        .collect();
+    if !begin_seed_lab_journey(
+        transaction,
+        hospital.facility_id,
+        journey.patient_id(),
+        order_id,
+        &sources,
+    )
+    .await?
+    {
+        return Ok(());
+    }
 
-    sqlx::query(
+    let inserted = sqlx::query(
         r#"
         INSERT INTO lab_orders (
             id,
@@ -4187,12 +4282,7 @@ async fn seed_chronicle_demo_labs(
             updated_at
         )
         VALUES ($1, $2, $3, $4, 'verified', $5, $6, $6)
-        ON CONFLICT (id) DO UPDATE
-        SET priority = EXCLUDED.priority,
-            status = EXCLUDED.status,
-            ordered_by_user_id = EXCLUDED.ordered_by_user_id,
-            ordered_at = EXCLUDED.ordered_at,
-            updated_at = EXCLUDED.updated_at
+        ON CONFLICT (id) DO NOTHING
         "#,
     )
     .bind(order_id)
@@ -4207,18 +4297,26 @@ async fn seed_chronicle_demo_labs(
     .bind(order_time)
     .execute(&mut **transaction)
     .await?;
+    ensure!(
+        inserted.rows_affected() == 1,
+        "laboratory_seed_identity_conflict"
+    );
 
     for code in &selected_tests {
-        sqlx::query(
+        let published = sqlx::query(
             "INSERT INTO lab_order_tests (order_id, test_id) VALUES ($1, $2) ON CONFLICT (order_id, test_id) DO NOTHING",
         )
         .bind(order_id)
         .bind(chronicle_demo_lab_test_id(code))
         .execute(&mut **transaction)
         .await?;
+        ensure!(
+            published.rows_affected() == 1,
+            "laboratory_seed_identity_conflict"
+        );
     }
 
-    sqlx::query(
+    let published = sqlx::query(
         r#"
         INSERT INTO lab_specimens (
             id,
@@ -4232,11 +4330,7 @@ async fn seed_chronicle_demo_labs(
             updated_at
         )
         VALUES ($1, $2, $3, $4, 'blood', 'collected', $5, $6, $6)
-        ON CONFLICT (id) DO UPDATE
-        SET status = EXCLUDED.status,
-            collected_by_user_id = EXCLUDED.collected_by_user_id,
-            collected_at = EXCLUDED.collected_at,
-            updated_at = EXCLUDED.updated_at
+        ON CONFLICT (id) DO NOTHING
         "#,
     )
     .bind(specimen_id)
@@ -4247,10 +4341,14 @@ async fn seed_chronicle_demo_labs(
     .bind(order_time + Duration::minutes(20))
     .execute(&mut **transaction)
     .await?;
+    ensure!(
+        published.rows_affected() == 1,
+        "laboratory_seed_identity_conflict"
+    );
 
     for (index, code) in selected_tests.iter().enumerate() {
         let (value, unit) = chronicle_demo_lab_value(code, journey, sequence);
-        sqlx::query(
+        let published = sqlx::query(
             r#"
             INSERT INTO lab_results (
                 id,
@@ -4269,15 +4367,7 @@ async fn seed_chronicle_demo_labs(
                 updated_at
             )
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'verified', $9, $10, $9, $11, $11)
-            ON CONFLICT (specimen_id, test_id) DO UPDATE
-            SET value = EXCLUDED.value,
-                unit = EXCLUDED.unit,
-                status = EXCLUDED.status,
-                entered_by_user_id = EXCLUDED.entered_by_user_id,
-                entered_at = EXCLUDED.entered_at,
-                verified_by_user_id = EXCLUDED.verified_by_user_id,
-                verified_at = EXCLUDED.verified_at,
-                updated_at = EXCLUDED.updated_at
+            ON CONFLICT (specimen_id, test_id) DO NOTHING
             "#,
         )
         .bind(demo_compound_uuid(
@@ -4298,6 +4388,10 @@ async fn seed_chronicle_demo_labs(
         .bind(order_time + Duration::minutes(60))
         .execute(&mut **transaction)
         .await?;
+        ensure!(
+            published.rows_affected() == 1,
+            "laboratory_seed_identity_conflict"
+        );
     }
     Ok(())
 }
@@ -6209,6 +6303,21 @@ pub async fn provision_performance_seed(
     // Only a first seed selects a supplier. Original receipt replay above never
     // revalidates or rewrites later state. Retain the actual first active row;
     // contention refuses rather than selecting another or using SKIP LOCKED.
+    let actual_lab_order_count = if config.lab_order_count == 0
+        || retain_seed_lab_tests(&mut tx, baseline.facility_id, &[default_lab_test_id]).await?
+    {
+        config.lab_order_count
+    } else {
+        record_skipped_seed_labs(
+            &mut tx,
+            baseline.facility_id,
+            baseline.facility_id,
+            config.lab_order_count,
+        )
+        .await?;
+        0
+    };
+
     let performance_supplier_id: Option<Uuid> = if config.inventory_item_count > 0 {
         sqlx::query_scalar("SELECT id FROM inventory_suppliers WHERE facility_id=$1 AND is_active ORDER BY code ASC,id ASC LIMIT 1 FOR SHARE NOWAIT")
             .bind(baseline.facility_id).fetch_optional(&mut *tx).await.map_err(inventory_supplier_provisioning_error)?
@@ -6539,7 +6648,7 @@ pub async fn provision_performance_seed(
     .execute(&mut *tx)
     .await?;
 
-    sqlx::query(
+    let published = sqlx::query(
         r#"
         WITH generated AS (
             SELECT generate_series(1, $2::int) AS i
@@ -6567,22 +6676,21 @@ pub async fn provision_performance_seed(
                TIMESTAMPTZ '2026-05-01 00:00:00+00' + (i * INTERVAL '10 minutes'),
                TIMESTAMPTZ '2026-05-01 00:00:00+00' + (i * INTERVAL '10 minutes')
         FROM generated
-        ON CONFLICT (id) DO UPDATE
-        SET patient_id = EXCLUDED.patient_id,
-            priority = EXCLUDED.priority,
-            status = EXCLUDED.status,
-            ordered_at = EXCLUDED.ordered_at,
-            updated_at = EXCLUDED.updated_at
+        ON CONFLICT (id) DO NOTHING
         "#,
     )
     .bind(baseline.facility_id)
-    .bind(config.lab_order_count)
+    .bind(actual_lab_order_count)
     .bind(config.patient_count)
     .bind(owner_user_id)
     .execute(&mut *tx)
     .await?;
+    ensure!(
+        published.rows_affected() == u64::try_from(actual_lab_order_count)?,
+        "laboratory_seed_identity_conflict"
+    );
 
-    sqlx::query(
+    let published = sqlx::query(
         r#"
         WITH generated AS (
             SELECT generate_series(1, $1::int) AS i
@@ -6594,12 +6702,16 @@ pub async fn provision_performance_seed(
         ON CONFLICT (order_id, test_id) DO NOTHING
         "#,
     )
-    .bind(config.lab_order_count)
+    .bind(actual_lab_order_count)
     .bind(default_lab_test_id)
     .execute(&mut *tx)
     .await?;
+    ensure!(
+        published.rows_affected() == u64::try_from(actual_lab_order_count)?,
+        "laboratory_seed_identity_conflict"
+    );
 
-    sqlx::query(
+    let published = sqlx::query(
         r#"
         WITH generated AS (
             SELECT generate_series(1, $2::int) AS i
@@ -6626,21 +6738,21 @@ pub async fn provision_performance_seed(
                TIMESTAMPTZ '2026-05-01 01:00:00+00' + (i * INTERVAL '10 minutes'),
                TIMESTAMPTZ '2026-05-01 01:00:00+00' + (i * INTERVAL '10 minutes')
         FROM generated
-        ON CONFLICT (id) DO UPDATE
-        SET patient_id = EXCLUDED.patient_id,
-            status = EXCLUDED.status,
-            collected_at = EXCLUDED.collected_at,
-            updated_at = EXCLUDED.updated_at
+        ON CONFLICT (id) DO NOTHING
         "#,
     )
     .bind(baseline.facility_id)
-    .bind(config.lab_order_count)
+    .bind(actual_lab_order_count)
     .bind(config.patient_count)
     .bind(owner_user_id)
     .execute(&mut *tx)
     .await?;
+    ensure!(
+        published.rows_affected() == u64::try_from(actual_lab_order_count)?,
+        "laboratory_seed_identity_conflict"
+    );
 
-    sqlx::query(
+    let published = sqlx::query(
         r#"
         WITH generated AS (
             SELECT generate_series(1, $2::int) AS i
@@ -6680,22 +6792,20 @@ pub async fn provision_performance_seed(
                END,
                TIMESTAMPTZ '2026-05-01 02:00:00+00' + (i * INTERVAL '10 minutes')
         FROM generated
-        ON CONFLICT (specimen_id, test_id) DO UPDATE
-        SET value = EXCLUDED.value,
-            status = EXCLUDED.status,
-            entered_at = EXCLUDED.entered_at,
-            verified_by_user_id = EXCLUDED.verified_by_user_id,
-            verified_at = EXCLUDED.verified_at,
-            updated_at = EXCLUDED.updated_at
+        ON CONFLICT (specimen_id, test_id) DO NOTHING
         "#,
     )
     .bind(baseline.facility_id)
-    .bind(config.lab_order_count)
+    .bind(actual_lab_order_count)
     .bind(config.patient_count)
     .bind(default_lab_test_id)
     .bind(owner_user_id)
     .execute(&mut *tx)
     .await?;
+    ensure!(
+        published.rows_affected() == u64::try_from(actual_lab_order_count)?,
+        "laboratory_seed_identity_conflict"
+    );
 
     sqlx::query(
         r#"
@@ -7194,6 +7304,12 @@ async fn seed_clinical_templates(
 }
 
 async fn seed_lab_catalog(pool: &PgPool, baseline: &BaselineProvisioning) -> anyhow::Result<()> {
+    // Old-schema use is quiescent historical fixture support, not a current runtime.
+    let governed: bool = sqlx::query_scalar(
+        "SELECT to_regprocedure('public.laboratory_catalog_identity_gate(text,uuid)') IS NOT NULL",
+    )
+    .fetch_one(pool)
+    .await?;
     for (id, code, name, specimen_type, result_unit) in [
         (
             Uuid::from_u128(DEFAULT_LAB_TEST_FBC_ID),
@@ -7322,88 +7438,102 @@ async fn seed_lab_catalog(pool: &PgPool, baseline: &BaselineProvisioning) -> any
             Some("result"),
         ),
     ] {
-        sqlx::query(
-            r#"
-            INSERT INTO lab_tests (id, facility_id, code, name, specimen_type, result_unit)
-            VALUES ($1, $2, $3, $4, $5, $6)
-            ON CONFLICT (facility_id, code) DO UPDATE
-            SET id = EXCLUDED.id,
-                name = EXCLUDED.name,
-                specimen_type = EXCLUDED.specimen_type,
-                result_unit = EXCLUDED.result_unit,
-                is_active = TRUE
-            "#,
-        )
-        .bind(id)
-        .bind(baseline.facility_id)
-        .bind(code)
-        .bind(name)
-        .bind(specimen_type)
-        .bind(result_unit)
-        .execute(pool)
-        .await?;
+        let mut tx = pool.begin().await?;
+        if governed {
+            sqlx::query("SELECT laboratory_catalog_identity_gate('test',$1)")
+                .bind(id)
+                .execute(&mut *tx)
+                .await?;
+            sqlx::query("SELECT laboratory_catalog_code_gate('test',$1,$2)")
+                .bind(baseline.facility_id)
+                .bind(code)
+                .execute(&mut *tx)
+                .await?;
+        }
+        let existing: Option<Uuid> =
+            sqlx::query_scalar("SELECT facility_id FROM lab_tests WHERE id=$1 FOR SHARE NOWAIT")
+                .bind(id)
+                .fetch_optional(&mut *tx)
+                .await?;
+        if existing.is_none() {
+            let code_owner: Option<Uuid> = sqlx::query_scalar(
+                "SELECT id FROM lab_tests WHERE facility_id=$1 AND code=$2 FOR SHARE NOWAIT",
+            )
+            .bind(baseline.facility_id)
+            .bind(code)
+            .fetch_optional(&mut *tx)
+            .await?;
+            if code_owner.is_none() {
+                let category = match code {
+                    "FBC" | "GS" | "COAG" => "hematology",
+                    "RBG" | "FBS" | "HBA1C" | "U&E" | "CRE" | "LFT" | "LIPID" | "TSH" | "CRP" => {
+                        "chemistry"
+                    }
+                    "MP" | "WIDAL" | "AFB" => "microbiology",
+                    "HBS" | "HIV" => "serology",
+                    "URE" => "urinalysis",
+                    _ => "other",
+                };
+                sqlx::query("INSERT INTO lab_tests(id,facility_id,code,name,specimen_type,result_unit,category,is_system_default,is_facility_modified) VALUES($1,$2,$3,$4,$5,$6,$7,true,false)")
+                    .bind(id).bind(baseline.facility_id).bind(code).bind(name).bind(specimen_type).bind(result_unit).bind(category)
+                    .execute(&mut *tx).await?;
+            }
+        }
+        // Any existing canonical owner or configured code remains exact, including
+        // foreign identity, a renamed code, retired state and unknown provenance.
+        tx.commit().await?;
     }
-
-    sqlx::query(
-        r#"
-        UPDATE lab_tests
-        SET category = CASE
-                WHEN code IN ('FBC', 'GS', 'COAG') THEN 'hematology'
-                WHEN code IN ('RBG', 'FBS', 'HBA1C', 'U&E', 'CRE', 'LFT', 'LIPID', 'TSH', 'CRP') THEN 'chemistry'
-                WHEN code IN ('MP', 'WIDAL', 'AFB') THEN 'microbiology'
-                WHEN code IN ('HBS', 'HIV') THEN 'serology'
-                WHEN code = 'URE' THEN 'urinalysis'
-                ELSE COALESCE(category, 'other')
-            END,
-            is_system_default = TRUE,
-            is_facility_modified = FALSE
-        WHERE facility_id = $1
-          AND code IN (
-              'FBC', 'MP', 'RBG', 'FBS', 'HBA1C', 'U&E', 'CRE', 'LFT', 'LIPID',
-              'TSH', 'WIDAL', 'HBS', 'HIV', 'URE', 'GS', 'CRP', 'COAG', 'AFB'
-          )
-        "#,
+    let panel = Uuid::from_u128(DEFAULT_LAB_PANEL_BASIC_ID);
+    let mut tx = pool.begin().await?;
+    if governed {
+        sqlx::query("SELECT laboratory_catalog_identity_gate('panel',$1)")
+            .bind(panel)
+            .execute(&mut *tx)
+            .await?;
+        sqlx::query("SELECT laboratory_catalog_code_gate('panel',$1,'BASIC_HEME')")
+            .bind(baseline.facility_id)
+            .execute(&mut *tx)
+            .await?;
+        sqlx::query("SELECT laboratory_catalog_panel_gates($1,false)")
+            .bind(vec![panel])
+            .execute(&mut *tx)
+            .await?;
+    }
+    let existing: Option<Uuid> =
+        sqlx::query_scalar("SELECT facility_id FROM lab_panels WHERE id=$1 FOR SHARE NOWAIT")
+            .bind(panel)
+            .fetch_optional(&mut *tx)
+            .await?;
+    let code_owner: Option<Uuid> = sqlx::query_scalar(
+        "SELECT id FROM lab_panels WHERE facility_id=$1 AND code='BASIC_HEME' FOR SHARE NOWAIT",
     )
     .bind(baseline.facility_id)
-    .execute(pool)
+    .fetch_optional(&mut *tx)
     .await?;
-
-    sqlx::query(
-        r#"
-        INSERT INTO lab_panels (id, facility_id, code, name)
-        VALUES ($1, $2, 'BASIC_HEME', 'Basic Hematology')
-        ON CONFLICT (facility_id, code) DO UPDATE
-        SET id = EXCLUDED.id,
-            name = EXCLUDED.name,
-            is_active = TRUE,
-            is_system_default = TRUE,
-            is_facility_modified = FALSE
-        "#,
-    )
-    .bind(Uuid::from_u128(DEFAULT_LAB_PANEL_BASIC_ID))
-    .bind(baseline.facility_id)
-    .execute(pool)
-    .await?;
-
-    for test_id in [
-        Uuid::from_u128(DEFAULT_LAB_TEST_FBC_ID),
-        Uuid::from_u128(DEFAULT_LAB_TEST_MALARIA_ID),
-        Uuid::from_u128(DEFAULT_LAB_TEST_RBG_ID),
-        Uuid::from_u128(DEFAULT_LAB_TEST_URINALYSIS_ID),
-    ] {
-        sqlx::query(
-            r#"
-            INSERT INTO lab_panel_tests (panel_id, test_id)
-            VALUES ($1, $2)
-            ON CONFLICT (panel_id, test_id) DO NOTHING
-            "#,
-        )
-        .bind(Uuid::from_u128(DEFAULT_LAB_PANEL_BASIC_ID))
-        .bind(test_id)
-        .execute(pool)
-        .await?;
+    if existing.is_none() && code_owner.is_none() {
+        let mut ids = vec![
+            Uuid::from_u128(DEFAULT_LAB_TEST_FBC_ID),
+            Uuid::from_u128(DEFAULT_LAB_TEST_MALARIA_ID),
+            Uuid::from_u128(DEFAULT_LAB_TEST_RBG_ID),
+            Uuid::from_u128(DEFAULT_LAB_TEST_URINALYSIS_ID),
+        ];
+        ids.sort_unstable();
+        let available: Vec<Uuid> = sqlx::query_scalar("SELECT id FROM lab_tests WHERE facility_id=$1 AND is_active AND id=ANY($2) ORDER BY id FOR SHARE NOWAIT")
+            .bind(baseline.facility_id).bind(&ids).fetch_all(&mut *tx).await?;
+        if available == ids {
+            sqlx::query("INSERT INTO lab_panels(id,facility_id,code,name,is_system_default,is_facility_modified) VALUES($1,$2,'BASIC_HEME','Basic Hematology',true,false)")
+                .bind(panel).bind(baseline.facility_id).execute(&mut *tx).await?;
+            sqlx::query(
+                "INSERT INTO lab_panel_tests(panel_id,test_id) SELECT $1,unnest($2::uuid[])",
+            )
+            .bind(panel)
+            .bind(ids)
+            .execute(&mut *tx)
+            .await?;
+        }
     }
-
+    // Existing empty/custom panels are observations, not incomplete defaults.
+    tx.commit().await?;
     Ok(())
 }
 

@@ -2,7 +2,7 @@
 
 Status: active
 Owner: Engineering
-Last reviewed: 2026-10-17
+Last reviewed: 2026-11-04
 Scope: durable Interfaces that code, tests, deploys, and frontend integrations rely on.
 
 ## Contract Registry
@@ -697,3 +697,65 @@ state. Held callbacks recheck transport before navigation or mutation.
 records full frontend and actual ordinary-user startup/reload checks; it does
 not implement the absent Rust feature or prove broader legacy actor/facility
 cache isolation.
+
+## Laboratory catalog availability
+
+Checkpoint 27 adds nine compiled/generated operations for existing facility test
+and panel availability, bounded directories/detail/scalar history and original-
+actor UUID receipts. The metadata purpose requires current catalog management
+and Laboratory authority without patient, ordering, verification or deployment-
+administrator authority. Clinical catalog operations retain their separate purpose.
+Current transport leases, cancellation, scoped keys and current denial handling
+bind the BoardUI workspace; detail/history cannot acknowledge an uncertain command.
+Finite UI clock/denial repairs preserve concealment through pending proof refresh
+and discard retained state on definite expiry, including after failed refetch.
+Own producer denials use actual dispatch provenance. These UI lifetimes grant no
+server authority. The 290 focused followup cases are a subset of the final full
+frontend run, not additional unique tests.
+Recovery requires the exact current original-actor receipt, with no automatic POST
+retry. Old Ward originals stay exact; an old draft requires explicit save with a
+new UUID/current round version to obtain server observations before a new commit.
+
+Migration 033 retains complete source selection, current authority and final-time
+proof. Configured defaults and memberships remain preserved; unavailable required
+seed definitions cause a whole optional laboratory journey to skip. Retained demo
+clinical evidence refuses reset. The known upgrade-fixture baseline delta is one
+bootstrap-owner `laboratory.catalog.manage` permission; native attempt 17 measures
+it separately and proves the unchanged graph on refused demo reset.
+
+Complete component checks pass: 1,245 Rust tests across 170 summaries, 4,010
+frontend tests across 402 files, and 618 ops tests. A separate canonical suite
+passes 25 storage-guard cases; the ops/guard aggregate is 643 nonoverlapping cases.
+The actual API/SDK has 549 operations. Fresh native17, protected timing and
+326 catalog/80 Ward browser checks pass. Selected visuals were inspected and
+three owned databases removed without force, conserving all 63 unrelated entries.
+Documentation supplements are separately
+bound to those tested maps. This is not full parity, Linux, hardware, WAN or
+production/deployment acceptance.
+
+Historical ordered-definition snapshots, public creation/definition editing/reset,
+composition, price, ranges and TAT remain queued. The optional nested order result
+summary is NULL pending a defined selection policy. Normal migrator live-layout
+admission before all writes is a checkpoint 28 proposal, not a 033 guarantee.
+Source-confirmed self-verification, aggregate result completion and malformed
+result/order facility-patient ownership gaps have reviewed checkpoint 28 source
+proposals only. Compilation, genuine baseline reproduction and correction
+validation remain pending; they are not closed by this slice.
+The [Cargo storage policy](../../ops/CARGO_BUDGET.md) has separate canonical
+lightweight verification; actual Cargo admission and original-six runner
+integration remain pending.
+See [catalog scope](../v2/2026-11-04-laboratory-catalog-governance-scope.md) and
+[checkpoint 27 verification](../v2/2026-11-04-checkpoint-27-verification.md).
+
+The Rust V2 main Patient Chronicle route accepts the exact current
+`clinical_documentation.view` capability as an alternative to its existing role
+list. This corrects mixed clinical/laboratory role inference without changing
+legacy, print or Ward alias admission. The outer feature check and protected
+patient-specific backend access remain authoritative. Historical completed Ward
+narrative detail remains separate from the current draft editor and is queued
+for explicit Chronicle history UI parity. The selected encounter-list admission
+link wins over a thin same-ID active-context object, and unresolved/denied startup
+cannot automatically rewrite the requested visit. The 18 route, 13 admission and
+nine initial-loading cases are subsets of the final 4,010-test full run. The Ward
+completion Alert layout repair changes CSS classes only; it grants no clinical
+authority or write/replay behavior.

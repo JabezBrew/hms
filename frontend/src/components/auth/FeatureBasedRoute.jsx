@@ -10,11 +10,14 @@ export function FeatureBasedRoute({ children, features, redirectTo = '/feature-u
     data: deploymentCapabilities,
     isLoading,
     isPending,
+    admissionDenied,
   } = useSystemCapabilities({ enabled: hasFeatureRequirements })
 
   if (!hasFeatureRequirements) {
     return children
   }
+
+  if (admissionDenied) return <Navigate to={redirectTo} replace />
 
   if (!deploymentCapabilities && (isLoading || isPending)) {
     return <PageLoader rows={3} />

@@ -10,6 +10,13 @@ use uuid::Uuid;
 use crate::codec;
 use crate::PgPool;
 
+pub(crate) mod catalog_source;
+mod governed;
+pub use governed::{
+    create_order_authorized, get_panel_authorized, get_test_catalog_item_authorized,
+    list_panels_page_authorized, list_test_catalog_page_authorized,
+};
+
 #[derive(Clone, Debug)]
 pub struct LabCursor {
     pub occurred_at: DateTime<Utc>,
@@ -407,49 +414,41 @@ pub async fn list_orders(
 }
 
 pub async fn create_order(pool: &PgPool, order: NewLabOrder) -> anyhow::Result<LabOrderListItem> {
-    let test_ids = resolve_order_test_ids(pool, &order).await?;
-    if test_ids.is_empty() {
-        anyhow::bail!("lab order requires at least one active test");
-    }
-
     let mut transaction = pool.begin().await?;
-    sqlx::query(
-        r#"
-        INSERT INTO lab_orders (
-            id, facility_id, patient_id, encounter_id, visit_id, priority, status, ordered_by_user_id
-        )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-        "#,
-    )
-    .bind(order.id)
-    .bind(order.facility_id)
-    .bind(order.patient_id)
-    .bind(order.encounter_id)
-    .bind(order.visit_id)
-    .bind(codec::encode(order.priority)?)
-    .bind(codec::encode(LabOrderStatus::Ordered)?)
-    .bind(order.actor_user_id)
-    .execute(&mut *transaction)
-    .await?;
-
-    for test_id in test_ids {
-        sqlx::query(
-            r#"
-            INSERT INTO lab_order_tests (order_id, test_id)
-            VALUES ($1, $2)
-            ON CONFLICT (order_id, test_id) DO NOTHING
-            "#,
-        )
-        .bind(order.id)
-        .bind(test_id)
-        .execute(&mut *transaction)
-        .await?;
-    }
-
+    crate::laboratory_catalog::budget(&mut transaction).await?;
+    let result = insert_order_tx(&mut transaction, order).await?;
     transaction.commit().await?;
-    fetch_order_by_id(pool, order.facility_id, order.id)
+    Ok(result)
+}
+
+async fn insert_order_tx(
+    transaction: &mut sqlx::Transaction<'_, Postgres>,
+    order: NewLabOrder,
+) -> anyhow::Result<LabOrderListItem> {
+    let sources = catalog_source::select(
+        transaction,
+        order.facility_id,
+        &order.test_ids,
+        &order.panel_ids,
+    )
+    .await?;
+    let tests: Vec<Uuid> = sources.tests.iter().map(|source| source.id).collect();
+    hms_observability::observe_db_query("laboratory.order.insert", sqlx::query(
+        "INSERT INTO lab_orders(id,facility_id,patient_id,encounter_id,visit_id,priority,status,ordered_by_user_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8)")
+        .bind(order.id).bind(order.facility_id).bind(order.patient_id).bind(order.encounter_id).bind(order.visit_id)
+        .bind(codec::encode(order.priority)?).bind(codec::encode(LabOrderStatus::Ordered)?).bind(order.actor_user_id)
+        .execute(&mut **transaction)).await?;
+    hms_observability::observe_db_query(
+        "laboratory.order.links",
+        sqlx::query("INSERT INTO lab_order_tests(order_id,test_id) SELECT $1,unnest($2::uuid[])")
+            .bind(order.id)
+            .bind(tests)
+            .execute(&mut **transaction),
+    )
+    .await?;
+    fetch_order_by_id(&mut **transaction, order.facility_id, order.id)
         .await?
-        .ok_or_else(|| anyhow::anyhow!("created lab order was not found"))
+        .ok_or_else(|| anyhow::anyhow!("Created laboratory order could not be loaded."))
 }
 
 pub async fn get_order_by_id(
@@ -1175,53 +1174,6 @@ async fn verify_results_inner(
     Ok(order_ids.len() as i64)
 }
 
-async fn resolve_order_test_ids(pool: &PgPool, order: &NewLabOrder) -> anyhow::Result<Vec<Uuid>> {
-    let mut ids = Vec::new();
-    if !order.test_ids.is_empty() {
-        let direct_ids = sqlx::query_scalar::<_, Uuid>(
-            r#"
-            SELECT id
-            FROM lab_tests
-            WHERE facility_id = $1
-              AND is_active = TRUE
-              AND id = ANY($2)
-            "#,
-        )
-        .bind(order.facility_id)
-        .bind(&order.test_ids)
-        .fetch_all(pool)
-        .await?;
-        if direct_ids.len() != order.test_ids.len() {
-            anyhow::bail!("lab order contains inactive or unknown tests");
-        }
-        ids.extend(direct_ids);
-    }
-
-    if !order.panel_ids.is_empty() {
-        let panel_test_ids = sqlx::query_scalar::<_, Uuid>(
-            r#"
-            SELECT DISTINCT lab_panel_tests.test_id
-            FROM lab_panel_tests
-            INNER JOIN lab_panels ON lab_panels.id = lab_panel_tests.panel_id
-            INNER JOIN lab_tests ON lab_tests.id = lab_panel_tests.test_id
-            WHERE lab_panels.facility_id = $1
-              AND lab_panels.is_active = TRUE
-              AND lab_tests.is_active = TRUE
-              AND lab_panels.id = ANY($2)
-            "#,
-        )
-        .bind(order.facility_id)
-        .bind(&order.panel_ids)
-        .fetch_all(pool)
-        .await?;
-        ids.extend(panel_test_ids);
-    }
-
-    ids.sort_unstable();
-    ids.dedup();
-    Ok(ids)
-}
-
 async fn current_order_status(
     pool: &PgPool,
     facility_id: Uuid,
@@ -1270,11 +1222,14 @@ async fn transition_order_status(
     fetch_order_by_id(pool, facility_id, order_id).await
 }
 
-async fn fetch_order_by_id(
-    pool: &PgPool,
+async fn fetch_order_by_id<'e, E>(
+    executor: E,
     facility_id: Uuid,
     order_id: Uuid,
-) -> anyhow::Result<Option<LabOrderListItem>> {
+) -> anyhow::Result<Option<LabOrderListItem>>
+where
+    E: sqlx::Executor<'e, Database = Postgres>,
+{
     let mut query = order_query();
     query.push(" WHERE lab_orders.facility_id = ");
     query.push_bind(facility_id);
@@ -1282,7 +1237,7 @@ async fn fetch_order_by_id(
     query.push_bind(order_id);
     query
         .build_query_as::<OrderRow>()
-        .fetch_optional(pool)
+        .fetch_optional(executor)
         .await?
         .map(order_from_row)
         .transpose()

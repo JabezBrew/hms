@@ -91,7 +91,9 @@ export const featureRoutes = [
   ...withFeature(admissionRoutes, 'inpatient_admissions'),
   ...withFeature(inventoryRoutes, 'inventory'),
   ...withFeature(billingRoutes, 'billing'),
-  ...withFeature(laboratoryRoutes, 'laboratory'),
+  // The no-patient catalog purpose checks its current user feature in its own
+  // scoped workspace; the deployment metadata endpoint has a different grant.
+  ...withFeature(laboratoryRoutes, route => route.path === '/laboratory/catalog-administration/*' ? [] : ['laboratory']),
   ...withFeature(pharmacyRoutes, 'pharmacy'),
   ...dashboardRoutes,
   ...careAreaRoutes,

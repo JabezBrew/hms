@@ -34,3 +34,7 @@ Scope: Rust V2 domain types, DTOs, policies, and capability language.
 - Domain types should not depend on HTTP extractors or SQLx rows.
 - DTOs for hot lists should stay lightweight.
 - Capability names must match deployed backend/frontend behavior.
+
+`laboratory_catalog.rs` defines the finite nine-operation administration contract.
+Its internal DB membership-generation counter is deliberately absent from public
+DTOs/receipts. Historical unknown Ward Round catalog versions stay absent.

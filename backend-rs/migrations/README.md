@@ -68,3 +68,19 @@ document identities/unrelated JSON without rewriting other families or orphans.
 Deploy matching 032 API/worker/migrator under the quiesce/no-old-restart fence.
 The new runtime refuses 031 before provisioning. Actual older 031 behavior on 032 is
 a separate diagnostic, not supported rollback. Accepted 031 bytes remain immutable.
+
+## Laboratory epoch033
+
+`202611030033_laboratory_catalog_governance.sql` adds existing-definition
+availability CAS/provenance with unknown historical attribution; permanent
+identity, complete-source/link/membership guards; immutable originals and own
+catalog-only search publication/privacy repair. `lab_panels.membership_generation`
+is internal, baseline0/nonnegative and +1 per genuine membership row transition;
+it is never an order proof or public input. Current version/time changes also
+invalidate ward-round review for material trusted metadata changes.
+
+Keep032 and earlier bytes immutable. Quiesce all writers and deploy matching033
+API/worker/migrator; refuse032 startup on the new runtime and do not restart older
+binaries against033. Actual old032 future-schema behavior is a separate diagnostic,
+not supported rollback. Preserve a verified schema-compatible release/backup.
+This isolated draft has not applied the migration or established deploy acceptance.

@@ -582,3 +582,28 @@ latency. Keep a verified compatible release and the governed backup/restore
 anchors; a previous031 release does not become schema-compatible by being
 retained on disk. Local process fixtures do not establish a live migration,
 remote backup verification or a supported restoration drill.
+
+
+Migration `202611030033` requires runtime epoch `202611030033` for laboratory
+catalog availability, current source versions and retained complete test/panel
+selection. Deploy its matching API, worker, migrator and generated frontend as
+one release. The supported protocol drains writers, verifies the complete
+predecessor chain and keeps services stopped until the actual 033 schema is
+proved. Runtime 032 and earlier are not supported rollback binaries after 033
+commits; keeping an older image does not make its schema compatible.
+
+The coordinated migration preserves existing definitions, timestamps, flags and
+panel memberships. Version 1 is a concurrency baseline, with unknown historical
+actor/governed time; it is not a reconstructed definition revision. Missing-only
+default provisioning does not reactivate or rekey configured definitions, add
+members to an existing panel or substitute a different test. Completed original
+seed receipts remain original observations. New optional synthetic lab journeys
+skip unavailable sources as a whole.
+
+Mandatory catalog-source search repair runs inside the quiescent migration
+window even when optional rebuilds are off. It preserves unrelated documents and
+requires the existing clinical search permission/demographics purpose. Measure
+its population-dependent work separately from protected request latency. Retain
+a verified compatible release and governed backup/restore anchors. Process
+fixtures and a local native migration do not establish live deployment, off-host
+backup verification or a supported restoration drill.

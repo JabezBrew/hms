@@ -12,7 +12,7 @@ import { patientKeys } from '@/features/patients/hooks/usePatientQueries';
 import { invalidatePatientTimelineQueries } from '@/hooks/useTimelineQueries';
 import { hashQueryValue } from '@/shared/lib/privateQueryKey';
 import { roundCommandApi } from './commandApi';
-import { buildRoundDraft, canonical } from './commandModel';
+import { buildRoundDraft, canonical, catalogReviewFrom, roundCatalogReviewReady } from './commandModel';
 import { RoundCommandActions } from './RoundCommandActions';
 import { roundForm, unavailableRoundActions } from './roundForm';
 import { useRoundCommand } from './useRoundCommand';
@@ -34,7 +34,8 @@ function RoundEditor({ patientId, admissionId, workspace, command, medications, 
     } catch (error) { return { wire: null, error: error.message }; }
   }, [form, base, unavailable.length]);
   const stale = (base?.id ?? null) !== (workspace.ward_round?.id ?? null) || (base?.version ?? 0) !== (workspace.ward_round?.version ?? 0);
-  const dirty = !base || !validation.wire || base.actions.some((row) => row.status === 'draft' && row.position == null) || canonical(snapshot(validation.wire)) !== canonical(reviewedSnapshot(base));
+  const catalogNeedsReview = Boolean(base && !roundCatalogReviewReady(base));
+  const dirty = !base || catalogNeedsReview || !validation.wire || base.actions.some((row) => row.status === 'draft' && row.position == null) || canonical(snapshot(validation.wire)) !== canonical(reviewedSnapshot(base));
   const disabled = !canWrite || !workspace.permissions.can_edit_draft || command.busy || stale;
   const hasNote = Boolean(form.renderedNote?.trim() || Object.values(form.preservedSections).some((value) => typeof value === 'string' && value.trim()));
   const save = () => onSave({ ...validation.wire, client_request_id: crypto.randomUUID() });
@@ -43,6 +44,7 @@ function RoundEditor({ patientId, admissionId, workspace, command, medications, 
   return <div className="space-y-5">
     {stale && <Alert variant="destructive"><AlertTitle>The saved round changed</AlertTitle><AlertDescription>Your copied draft has not overwritten it. Reload the saved draft to discard copied edits and review the current version.</AlertDescription><Button className="mt-3" variant="outline" disabled={command.busy} onClick={onReload}>Discard copied edits and reload</Button></Alert>}
     {!canWrite && <Alert><AlertDescription>This connection has review access. Round changes are unavailable.</AlertDescription></Alert>}
+    {catalogNeedsReview && <Alert><AlertTitle>Laboratory selections need a new review</AlertTitle><AlertDescription>This earlier draft has no confirmed catalog revision for every selected or expanded test. Review it and explicitly save the draft to obtain current server observations, then review the saved round before completing it.</AlertDescription></Alert>}
     <fieldset disabled={disabled} className="space-y-5 disabled:opacity-75"><section className="space-y-4 rounded-xl border bg-card p-4 shadow-sm sm:p-6"><div><h3 className="font-heading text-xl">Round note</h3><p className="mt-1 text-sm text-muted-foreground">Review the exact narrative that will be saved with the selected admission.</p></div><div className="space-y-2"><Label htmlFor="reviewed-round-narrative">Clinical narrative</Label><Textarea id="reviewed-round-narrative" rows={10} value={form.renderedNote} maxLength={32000} onChange={(event) => setReviewedForm((old) => ({ ...old, renderedNote: event.target.value }))} placeholder="Overnight events, examination, assessment and plan" className="resize-y text-sm leading-7" /></div>
       {Object.entries(form.preservedSections).some(([, value]) => Array.isArray(value) ? value.length > 0 : Boolean(value)) && <details className="rounded-lg border bg-muted/20 p-3"><summary className="cursor-pointer text-sm font-medium">Saved structured context</summary><p className="my-2 text-xs text-muted-foreground">Structured content from this draft. Saving normalizes surrounding whitespace; editing the narrative does not regenerate these fields.</p><dl className="space-y-3">{Object.entries(form.preservedSections).filter(([, value]) => Array.isArray(value) ? value.length > 0 : Boolean(value)).map(([key, value]) => value && <div key={key}><dt className="text-xs capitalize text-muted-foreground">{{ interval_history: 'Interval history', examination: 'Examination', assessment: 'Assessment', plan: 'Plan', clinical_readiness_blockers: 'Earlier readiness notes' }[key]}</dt><dd className="whitespace-pre-wrap text-sm">{Array.isArray(value) ? value.join('\n') : value}</dd></div>)}</dl></details>}
     </section>
@@ -70,7 +72,7 @@ function ScopedRoundWorkspace({ patientId, patient, admissionId, medications, on
     }
   });
   const newDraft = (wire) => command.run({ kind: 'draft', patientId, admissionId, actorId: access.user.id, wire });
-  const commit = (round, reviewed) => command.run({ kind: 'commit', patientId, admissionId, actorId: access.user.id, roundId: round.id, wire: { client_request_id: crypto.randomUUID(), expected_version: round.version }, reviewed });
+  const commit = (round, reviewed) => command.run({ kind: 'commit', patientId, admissionId, actorId: access.user.id, roundId: round.id, wire: { client_request_id: crypto.randomUUID(), expected_version: round.version }, reviewed, catalogReview: catalogReviewFrom(round) });
   const refresh = async () => { const result = await current.refetch(); if (result.data && !result.error) setDenied(false); return result; };
   const reload = async () => { const result = await refresh(); if (result.data && !result.error) setGeneration((old) => old + 1); };
   const editor = (visible = true) => <RoundEditor key={generation} visible={visible} patientId={patientId} admissionId={admissionId} workspace={current.data} command={command} medications={medications} canWrite={access.canWrite && !current.isFetching} onSave={newDraft} onCommit={commit} onDenied={() => setDenied(true)} onReload={reload} />;
@@ -82,7 +84,7 @@ function ScopedRoundWorkspace({ patientId, patient, admissionId, medications, on
     {command.error && <Alert variant="destructive"><AlertTitle>{command.unknown ? 'Save status unknown' : 'Round not saved'}</AlertTitle><AlertDescription>{command.error}</AlertDescription></Alert>}
     {(command.unknown || command.refreshFailed) && <div className="flex flex-wrap gap-3"><Button disabled={command.pending} variant="outline" onClick={command.recover}>Check original saved result</Button>{command.unknown && <Button disabled={command.pending} variant="outline" onClick={command.retry}>Retry exact reviewed request</Button>}</div>}
     {command.refreshFailed && <Alert><AlertDescription>The original save is confirmed. The current workspace could not refresh; further changes remain locked.</AlertDescription></Alert>}
-    {command.saved && !command.unknown && <Alert><AlertTitle>{complete ? 'Round completed' : 'Draft saved'}</AlertTitle><AlertDescription>{complete ? 'The reviewed note and action results are retained in the patient Chronicle.' : 'The exact reviewed draft is saved. Review it again before completing the round.'}</AlertDescription>{complete && <details className="mt-3 w-full"><summary className="cursor-pointer text-sm font-medium">Review the completed round</summary><p className="mt-3 whitespace-pre-wrap text-sm leading-7">{command.saved.ward_round.rendered_note}</p><ul className="mt-3 space-y-2 text-sm">{command.saved.created_artifacts.map((row) => <li key={`${row.resource_type}:${row.resource_id}`}>{row.title}</li>)}</ul></details>}</Alert>}
+    {command.saved && !command.unknown && <Alert><AlertTitle>{complete ? 'Round completed' : 'Draft saved'}</AlertTitle><AlertDescription>{complete ? 'The reviewed note and action results are retained in the patient Chronicle.' : 'The exact reviewed draft is saved. Review it again before completing the round.'}</AlertDescription>{complete && <details className="col-start-2 mt-3 w-full min-w-0"><summary className="cursor-pointer text-sm font-medium">Review the completed round</summary><p className="mt-3 whitespace-pre-wrap text-sm leading-7">{command.saved.ward_round.rendered_note}</p><ul className="mt-3 space-y-2 text-sm">{command.saved.created_artifacts.map((row) => <li key={`${row.resource_type}:${row.resource_id}`}>{row.title}</li>)}</ul></details>}</Alert>}
     {!complete && editor()}
   </div>;
 }

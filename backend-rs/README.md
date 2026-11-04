@@ -2,7 +2,7 @@
 
 Status: active
 Owner: Backend Engineering
-Last reviewed: 2026-06-01
+Last reviewed: 2026-11-04
 Scope: active Rust backend workspace under `backend-rs/`.
 
 ## Purpose
@@ -136,3 +136,35 @@ cargo test -p hms-db billing -- --nocapture
 cargo test -p hms-db laboratory -- --nocapture
 cargo test -p hms-api --test auth_contract --test patients_contract --test ward_contract
 ```
+
+## Laboratory catalog availability
+
+Checkpoint 27 implements availability governance for existing facility test and
+panel definitions at epoch 033. Nine new compiled/generated catalog operations
+bring the actual API/SDK to 549 operations. The metadata-management purpose stays
+separate from patient ordering and verification. Existing orders and original
+Ward Round receipts retain their supported completion/recovery paths.
+
+Complete local component checks pass: 1,245 Rust tests, 4,010 frontend tests and
+618 ops tests plus 25 separately executed storage-guard tests, with no failed or
+skipped coverage. The latter two suites total 643 nonoverlapping cases. Final
+native attempt 17, protected timing and 326 catalog/80 Ward browser checks pass.
+Selected visuals were inspected; exact three-database cleanup conserves all 63
+unrelated entries. These documentation supplements are separately bound to the
+executed source maps; they do not establish Linux, hardware or deployment proof.
+
+Migration 033 requires matching API/worker/migrator binaries and the deployment
+quiesce/no-old-restart fence. API and worker check live layout before provisioning
+or serving. A live-layout check before all normal migrator provisioning/seeding/
+search work is a checkpoint 28 proposal, not a 033 guarantee. Historical ordered
+facts are not snapshotted in 033; creation, definition editing/reset, composition,
+price, ranges and TAT remain queued public features. Source-confirmed
+self-verification, aggregate completion and malformed result/order ownership gaps
+have checkpoint 28 source proposals only; no compiled/runtime fix is claimed here.
+
+See the [catalog scope](../docs/v2/2026-11-04-laboratory-catalog-governance-scope.md)
+and [checkpoint 27 verification](../docs/v2/2026-11-04-checkpoint-27-verification.md)
+for the finite contract, executed checks and remaining acceptance gates.
+Local Cargo compilation follows the [shared-target storage policy](../ops/CARGO_BUDGET.md).
+The guard has canonical lightweight test evidence; actual Cargo admission and the
+versioned original-six runner integration remain pending.

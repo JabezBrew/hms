@@ -620,6 +620,19 @@ pub fn require_lab_access(
         .map_err(|_| AccessError::LaboratoryAccessDenied)
 }
 
+/// Catalog configuration is a facility metadata purpose, not patient access.
+/// Fresh ordinary credential proof is required separately by its writers and
+/// original-command recovery, then retained by the repository transaction.
+pub fn require_laboratory_catalog_access(
+    ctx: &RequestContext,
+    facility_id: Uuid,
+) -> Result<(), AccessError> {
+    require_feature(ctx, FeatureKey::Laboratory)
+        .map_err(|_| AccessError::LaboratoryAccessDenied)?;
+    require_facility_permission(ctx, facility_id, PermissionCode::LaboratoryCatalogManage)
+        .map_err(|_| AccessError::LaboratoryAccessDenied)
+}
+
 pub fn require_lab_list_access(ctx: &RequestContext, facility_id: Uuid) -> Result<(), AccessError> {
     require_feature(ctx, FeatureKey::Laboratory)
         .map_err(|_| AccessError::LaboratoryAccessDenied)?;
@@ -1131,6 +1144,89 @@ mod tests {
                 .with_resolved_network_policy_version(-1)
                 .resolved_network_policy_version,
             None
+        );
+    }
+
+    fn catalog_context() -> RequestContext {
+        let mut ctx = make_ctx();
+        ctx.permissions = vec![PermissionCode::LaboratoryCatalogManage];
+        ctx.user.permissions = ctx.permissions.clone();
+        ctx.enabled_features = vec![FeatureKey::Laboratory];
+        ctx.user.features = vec![FeatureKey::Laboratory];
+        ctx.patient_visibility.clear();
+        ctx.user.patient_visibility.clear();
+        ctx.active_authorities.clear();
+        ctx.reauth = ReauthState::missing(Utc::now());
+        ctx.user.auth_security = AuthSecurityState::from_permissions(&ctx.permissions, false, 0);
+        ctx
+    }
+
+    #[test]
+    fn laboratory_catalog_is_an_ordinary_no_patient_metadata_purpose() {
+        let ctx = catalog_context();
+        assert_eq!(
+            require_laboratory_catalog_access(&ctx, ctx.facility_id),
+            Ok(())
+        );
+        assert!(!ctx.user.auth_security.privileged_user);
+        assert!(!ctx.user.auth_security.passkey_required);
+        assert_eq!(
+            require_lab_access(&ctx, ctx.facility_id, PermissionCode::LaboratoryOrderManage),
+            Err(AccessError::LaboratoryAccessDenied)
+        );
+        assert_eq!(
+            require_patient_demographics_access(&ctx, &patient(ctx.facility_id)),
+            Err(AccessError::MissingPermission)
+        );
+    }
+
+    #[test]
+    fn ordinary_lab_ordering_or_verification_does_not_grant_catalog_management() {
+        let mut ctx = make_ctx();
+        ctx.permissions = vec![
+            PermissionCode::LaboratoryOrderManage,
+            PermissionCode::LaboratoryResultVerify,
+            PermissionCode::PatientDemographicsView,
+        ];
+        assert_eq!(
+            require_laboratory_catalog_access(&ctx, ctx.facility_id),
+            Err(AccessError::LaboratoryAccessDenied)
+        );
+    }
+
+    #[test]
+    fn laboratory_catalog_feature_and_facility_are_required_without_scope_promotion() {
+        let mut ctx = catalog_context();
+        assert_eq!(
+            require_laboratory_catalog_access(&ctx, Uuid::new_v4()),
+            Err(AccessError::LaboratoryAccessDenied)
+        );
+        ctx.enabled_features.clear();
+        assert_eq!(
+            require_laboratory_catalog_access(&ctx, ctx.facility_id),
+            Err(AccessError::LaboratoryAccessDenied)
+        );
+        ctx.enabled_features.push(FeatureKey::Laboratory);
+        ctx.permissions.clear();
+        ctx.user.permissions.clear();
+        ctx.active_authorities.push(active_authority(
+            ctx.facility_id,
+            PermissionCode::LaboratoryCatalogManage,
+            AuthorityScope::organization_unit(Uuid::new_v4()),
+        ));
+        assert_eq!(
+            require_laboratory_catalog_access(&ctx, ctx.facility_id),
+            Err(AccessError::LaboratoryAccessDenied)
+        );
+        ctx.active_authorities.clear();
+        ctx.active_authorities.push(active_authority(
+            ctx.facility_id,
+            PermissionCode::LaboratoryCatalogManage,
+            AuthorityScope::facility(),
+        ));
+        assert_eq!(
+            require_laboratory_catalog_access(&ctx, ctx.facility_id),
+            Ok(())
         );
     }
 

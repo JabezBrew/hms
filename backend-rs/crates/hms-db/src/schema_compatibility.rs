@@ -3,6 +3,7 @@ mod appointment_types;
 mod inventory_categories;
 mod inventory_items;
 mod inventory_suppliers;
+mod laboratory_catalog;
 use crate::PgPool;
 use sqlx::{migrate::Migrate, Acquire};
 
@@ -29,7 +30,9 @@ pub const INVENTORY_ITEMS_BREAKING_EPOCH: i64 = 202610300030;
 pub const INVENTORY_CATEGORIES_BREAKING_EPOCH: i64 = 202610310031;
 /// Earlier runtimes bypass governed supplier metadata and reference publication.
 pub const INVENTORY_SUPPLIERS_BREAKING_EPOCH: i64 = 202611020032;
-pub const REQUIRED_RUNTIME_SCHEMA_EPOCH: i64 = INVENTORY_SUPPLIERS_BREAKING_EPOCH;
+/// Earlier runtimes admit incomplete/unavailable lab selections and bypass catalog governance.
+pub const LABORATORY_CATALOG_BREAKING_EPOCH: i64 = 202611030033;
+pub const REQUIRED_RUNTIME_SCHEMA_EPOCH: i64 = LABORATORY_CATALOG_BREAKING_EPOCH;
 
 /// This once-per-process startup gate is separate from cheap health probes.
 pub async fn require_runtime_schema(pool: &PgPool) -> anyhow::Result<()> {
@@ -168,6 +171,7 @@ pub async fn committed_breaking_epoch(pool: &PgPool) -> anyhow::Result<i64> {
     let epoch = inventory_items::committed_epoch(&mut tx, history, epoch).await?;
     let epoch = inventory_categories::committed_epoch(&mut tx, history, epoch).await?;
     let epoch = inventory_suppliers::committed_epoch(&mut tx, history, epoch).await?;
+    let epoch = laboratory_catalog::committed_epoch(&mut tx, history, epoch).await?;
     Migrate::unlock(&mut *tx).await?;
     tx.commit().await?;
     Ok(epoch)

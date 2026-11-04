@@ -6,7 +6,7 @@ async fn supplier32_checksum_defaults_source_triggers_and_reference_lookup_are_r
     let pool = hms_db::connect(database.database_url()).await.unwrap();
     hms_db::migrate::run(&pool).await.unwrap();
     require_runtime_schema(&pool).await.unwrap();
-    assert_eq!(committed_breaking_epoch(&pool).await.unwrap(), 202611020032);
+    assert_eq!(committed_breaking_epoch(&pool).await.unwrap(), 202611030033);
     let checksum = hms_db::migrate::MIGRATOR
         .iter()
         .find(|migration| migration.version == 202611020032)

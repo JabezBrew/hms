@@ -75,6 +75,8 @@ pub enum PermissionCode {
     ClinicalDocumentationManage,
     #[serde(rename = "laboratory.order.manage")]
     LaboratoryOrderManage,
+    #[serde(rename = "laboratory.catalog.manage")]
+    LaboratoryCatalogManage,
     #[serde(rename = "laboratory.result.verify")]
     LaboratoryResultVerify,
     #[serde(rename = "inventory.view")]

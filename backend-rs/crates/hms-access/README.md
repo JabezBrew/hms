@@ -20,6 +20,12 @@ caller can see or mutate HMS data.
 - offsite/reauth facts
 - access errors and decision helpers
 
+`require_laboratory_catalog_access` is a separate facility metadata purpose:
+Laboratory feature and `laboratory.catalog.manage`, without patient visibility,
+ordering/verification or passkey requirements. Writers and original-command
+recovery add ordinary credential freshness separately; repositories retain the
+current server-derived identity, feature, permission, network and time proof.
+
 ## Does Not Own
 
 - HTTP response mapping

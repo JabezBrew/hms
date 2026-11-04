@@ -192,3 +192,9 @@ export async function inventorySupplierCommandRecoveryCandidate() {
   return (await import('./writeScopeRouter')).inventorySupplierRecoveryCandidate(store, origin);
 }
 export function resetWriteUncertaintyForTests({ preserveStorage = false } = {}) { store = undefined; fault = false; currentScope = null; currentContext = null; activation += 1; active.clear(); serial = Promise.resolve(); if (!preserveStorage) sessionStorage.removeItem(WRITE_UNCERTAINTY_KEY); publish(); }
+
+// Only a singleton existing cross-kind laboratory command UUID is discoverable.
+export async function laboratoryCatalogCommandRecoveryCandidate() {
+  const store = manualStore(), origin = store.current();
+  return (await import('./writeScopeRouter')).laboratoryCatalogRecoveryCandidate(store, origin);
+}

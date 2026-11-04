@@ -475,6 +475,20 @@ pub async fn commit_ward_round(
     .fetch_all(&mut *transaction)
     .await?;
 
+    // Reserve every legacy lab parent before any test source is retained.
+    let mut laboratory_panels = Vec::new();
+    for action in &actions {
+        if action.action_type == "lab_order" {
+            let payload: WardRoundLabOrderPayload = serde_json::from_value(action.payload.clone())?;
+            laboratory_panels.extend(payload.panel_ids);
+        }
+    }
+    laboratory_panels.sort_unstable();
+    laboratory_panels.dedup();
+    sqlx::query("SELECT laboratory_catalog_panel_gates($1,true)")
+        .bind(laboratory_panels)
+        .execute(&mut *transaction)
+        .await?;
     let mut artifacts = Vec::new();
     for action in actions {
         let artifact = commit_action(
@@ -900,41 +914,13 @@ async fn commit_lab_order_action(
 
 async fn resolve_lab_order_test_ids(
     transaction: &mut Transaction<'_, Postgres>,
-    facility_id: Uuid,
-    test_ids: &[Uuid],
-    panel_ids: &[Uuid],
+    facility: Uuid,
+    tests: &[Uuid],
+    panels: &[Uuid],
 ) -> anyhow::Result<Vec<Uuid>> {
-    let rows = sqlx::query_scalar::<_, Uuid>(
-        r#"
-        SELECT DISTINCT test_id
-        FROM (
-            SELECT lab_tests.id AS test_id
-            FROM lab_tests
-            WHERE lab_tests.facility_id = $1
-              AND lab_tests.is_active = TRUE
-              AND lab_tests.id = ANY($2)
-            UNION
-            SELECT lab_panel_tests.test_id
-            FROM lab_panel_tests
-            JOIN lab_panels
-              ON lab_panels.id = lab_panel_tests.panel_id
-             AND lab_panels.facility_id = $1
-             AND lab_panels.is_active = TRUE
-            JOIN lab_tests
-              ON lab_tests.id = lab_panel_tests.test_id
-             AND lab_tests.facility_id = $1
-             AND lab_tests.is_active = TRUE
-            WHERE lab_panel_tests.panel_id = ANY($3)
-        ) tests
-        ORDER BY test_id
-        "#,
-    )
-    .bind(facility_id)
-    .bind(test_ids)
-    .bind(panel_ids)
-    .fetch_all(&mut **transaction)
-    .await?;
-    Ok(rows)
+    let selected =
+        crate::laboratory::catalog_source::select(transaction, facility, tests, panels).await?;
+    Ok(selected.tests.into_iter().map(|row| row.id).collect())
 }
 
 async fn commit_nursing_task_action(

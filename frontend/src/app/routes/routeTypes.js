@@ -68,6 +68,9 @@ function routeMatchesRequirement(routePath, requirement) {
 }
 
 export function requiredFeaturesForRoute(routePath) {
+  // This exact administration route owns current-user Laboratory validation.
+  // It must not require the separately authorized global deployment query.
+  if (routePath === '/laboratory/catalog-administration/*') return []
   const features = new Set()
   TIER_CONTROLLED_ROUTE_REQUIREMENTS.forEach((requirement) => {
     if (routeMatchesRequirement(routePath, requirement)) {

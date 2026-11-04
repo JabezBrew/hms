@@ -21,6 +21,7 @@ pub mod inventory_items;
 pub mod inventory_standing;
 pub mod inventory_suppliers;
 pub mod laboratory;
+pub mod laboratory_catalog;
 pub mod network;
 pub mod organization_units;
 pub mod patient_handover;

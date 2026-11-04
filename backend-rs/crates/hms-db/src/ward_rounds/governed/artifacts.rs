@@ -111,6 +111,7 @@ pub(super) async fn prepare(
                     display_name: source.medication_name.clone(),
                     code: None,
                     selected: true,
+                    catalog_version: None,
                     prescription: Some(WardRoundPrescriptionReview {
                         medication_name: source.medication_name.clone(),
                         dose: source.dose.clone(),
@@ -166,64 +167,51 @@ pub(super) async fn discharge_source(
 async fn lab_tests(
     tx: &mut Tx<'_>,
     actor: &WardRoundActor,
-    p: &WardRoundLabOrderInput,
+    input: &WardRoundLabOrderInput,
 ) -> anyhow::Result<PreparedLab> {
-    let mut panels = p.panel_ids.clone();
-    panels.sort();
-    let panel_rows:Vec<(Uuid,String,String)>=sqlx::query_as("SELECT id,name,code FROM lab_panels WHERE facility_id=$1 AND is_active AND id=ANY($2) ORDER BY id FOR SHARE").bind(actor.facility_id).bind(&panels).fetch_all(&mut **tx).await?;
-    if panel_rows.iter().map(|r| r.0).collect::<Vec<_>>() != panels {
-        return Err(WardRoundError::CatalogChanged.into());
-    }
-    // A panel with >500 distinct members cannot fit the governed expansion. Bound
-    // each indexed panel read before materializing imported catalog memberships.
-    let members:Vec<(Uuid,Uuid)>=sqlx::query_as("SELECT selected.id,m.test_id FROM unnest($1::uuid[]) selected(id) CROSS JOIN LATERAL (SELECT test_id FROM lab_panel_tests WHERE panel_id=selected.id ORDER BY test_id LIMIT 501 FOR SHARE) m ORDER BY selected.id,m.test_id").bind(&panels).fetch_all(&mut **tx).await?;
-    if panels
-        .iter()
-        .any(|id| !members.iter().any(|(panel, _)| panel == id))
-    {
-        return Err(WardRoundError::CatalogChanged.into());
-    }
-    let ids: Vec<Uuid> = p
-        .test_ids
-        .iter()
-        .copied()
-        .chain(members.into_iter().map(|(_, test)| test))
-        .collect::<BTreeSet<_>>()
+    let selected = crate::laboratory::catalog_source::select(
+        tx,
+        actor.facility_id,
+        &input.test_ids,
+        &input.panel_ids,
+    )
+    .await
+    .map_err(|error| {
+        if error.is::<crate::laboratory_catalog::LabCatalogError>() {
+            WardRoundError::CatalogChanged.into()
+        } else {
+            error
+        }
+    })?;
+    let tests = selected.tests.iter().map(|row| row.id).collect();
+    let mut targets: Vec<WardRoundReviewedTarget> = selected
+        .panels
         .into_iter()
-        .collect();
-    if ids.is_empty() || ids.len() > 500 {
-        return Err(WardRoundError::CatalogChanged.into());
-    }
-    let rows:Vec<(Uuid,String,String)>=sqlx::query_as("SELECT id,name,code FROM lab_tests WHERE facility_id=$1 AND is_active AND id=ANY($2) ORDER BY id FOR SHARE").bind(actor.facility_id).bind(&ids).fetch_all(&mut **tx).await?;
-    if rows.iter().map(|r| r.0).collect::<Vec<_>>() != ids {
-        return Err(WardRoundError::CatalogChanged.into());
-    }
-    let mut targets: Vec<WardRoundReviewedTarget> = panel_rows
-        .into_iter()
-        .map(|(id, name, code)| WardRoundReviewedTarget {
+        .map(|row| WardRoundReviewedTarget {
             resource_type: WardRoundTargetType::LabPanel,
-            resource_id: id,
-            display_name: name,
-            code: Some(code),
+            resource_id: row.id,
+            display_name: row.name,
+            code: Some(row.code),
             selected: true,
             prescription: None,
+            catalog_version: Some(row.version),
         })
         .collect();
     targets.extend(
-        rows.into_iter()
-            .map(|(id, name, code)| WardRoundReviewedTarget {
+        selected
+            .tests
+            .into_iter()
+            .map(|row| WardRoundReviewedTarget {
                 resource_type: WardRoundTargetType::LabTest,
-                resource_id: id,
-                display_name: name,
-                code: Some(code),
-                selected: p.test_ids.contains(&id),
+                resource_id: row.id,
+                display_name: row.name,
+                code: Some(row.code),
+                selected: input.test_ids.contains(&row.id),
                 prescription: None,
+                catalog_version: Some(row.version),
             }),
     );
-    Ok(PreparedLab {
-        tests: ids,
-        targets,
-    })
+    Ok(PreparedLab { tests, targets })
 }
 
 pub(super) async fn commit(

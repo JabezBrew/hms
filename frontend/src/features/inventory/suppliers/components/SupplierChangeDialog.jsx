@@ -42,7 +42,7 @@ export function SupplierChangeDialog({ selection, open, onClose, access, control
       if (own) assertWriteRecoveryReadCurrent(own.response);
       if (!abort.signal.aborted && operation.current === abort && mounted.current && lease.isCurrent()) { if (attemptEpoch === epoch.current) setReview(command); else setError('Supplier source data changed during preparation. Refresh and review the exact change again.'); }
     } catch (failure) {
-      if (!abort.signal.aborted && mounted.current && operation.current === abort && attemptEpoch === epoch.current && isCurrentReadDenial(failure)) onDenied();
+      if (!abort.signal.aborted && mounted.current && operation.current === abort && isCurrentReadDenial(failure)) onDenied();
       else if (!abort.signal.aborted && mounted.current && operation.current === abort && lease.isCurrent()) setError(failure.status ? errorCopy(failure) : failure.message);
     } finally { if (operation.current === abort) { operation.current = null; if (mounted.current) setPreparing(false); } }
   };

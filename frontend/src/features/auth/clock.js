@@ -1,4 +1,4 @@
-import { activeTokenClock, assertServerClockSource, bindServerClock, clockDenialEpoch, clockNow, projectAuthSecurity, serverClock, serverClockSource } from '@/shared/lib/serverClock';
+import { activeTokenClock, assertServerClockSource, bindServerClock, clockDenialEpoch, clockDisplayReadLifetime, clockNow, projectAuthSecurity, serverClock, serverClockSource } from '@/shared/lib/serverClock';
 
 const NS_PER_MS = 1000000n;
 const NS_PER_SECOND = 1000000000n;
@@ -51,6 +51,7 @@ function observation(value, raw, { issuedToken = null } = {}) {
     if (issuer < issuedAt || issuer >= expiry || !safe(raw.access_token_remaining_ms) || BigInt(raw.access_token_remaining_ms) !== (expiry - issuer) / NS_PER_MS) return fail();
     access = BigInt(raw.access_token_remaining_ms) * NS_PER_MS;
   } else if (raw.access_token_remaining_ms !== null) return fail();
+  const displayLifetime = clockDisplayReadLifetime(), observedDenial = clockDenialEpoch();
   let active = null;
   const age = () => {
     if (!active) return elapsedNs(source);
@@ -63,6 +64,21 @@ function observation(value, raw, { issuedToken = null } = {}) {
     database, issuer, source, token: bearer || null,
     remaining(deadline) { try { return remainingMs(clockInstant(deadline) - database - age()); } catch { return 0; } },
     tokenRemaining() { try { return access === null ? 0 : remainingMs(access - age()); } catch { return 0; } },
+    // Display-only classification: never used for admission or clock renewal.
+    // Retention ends at the ORIGINAL token/credential deadline even after denial.
+    uiExpiry(deadline) {
+      const current = Math.min(proof.tokenRemaining(), deadline === undefined ? Infinity : proof.remaining(deadline));
+      if (current > 0) return { phase: 'current', remaining: current };
+      try {
+        if (active ? !active.network || active.current?.() !== true || active.denial === clockDenialEpoch()
+          : displayLifetime !== clockDisplayReadLifetime() || observedDenial === clockDenialEpoch() || source.signal?.aborted || source.current?.() !== true) return { phase: 'expired', remaining: 0 };
+        const elapsed = clockNow() - source.started;
+        if (!Number.isFinite(elapsed) || elapsed < 0) return { phase: 'expired', remaining: 0 };
+        const age = BigInt(Math.floor(elapsed * Number(NS_PER_MS)));
+        const remaining = Math.min(access === null ? 0 : remainingMs(access - age), deadline === undefined ? Infinity : remainingMs(clockInstant(deadline) - database - age));
+        return { phase: remaining > 0 ? 'denied' : 'expired', remaining };
+      } catch { return { phase: 'expired', remaining: 0 }; }
+    },
     shorten(other) { if (other.token !== bearer) return fail(); const limit = BigInt(other.tokenRemaining()) * NS_PER_MS + age(); if (access !== null && limit < access) access = limit; },
     elapsed() { return age(); },
     assertResponse() { assertServerClockSource(source); },

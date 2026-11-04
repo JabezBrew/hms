@@ -7,7 +7,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { AuthContext } from '@/lib/auth/AuthContext';
 import { ReadOnlyModeProvider } from '@/contexts/ReadOnlyModeContext';
 import { __resetV2ApiClientForTests, configureV2ApiClient, getV2ClientScopeKey, v2Request } from '@/lib/api/v2/client';
-import { bindNetworkAccessGuard } from '@/lib/api/v2/networkAccessGuard';
+import { bindNetworkAccessGuard, networkClockCurrent } from '@/lib/api/v2/networkAccessGuard';
 import { activateWriteUncertainty, getWriteUncertaintySnapshot } from '@/lib/api/v2/writeUncertainty';
 import { authorizationIdentity } from '@/shared/lib/authorizationScope';
 import { networkApi } from '@/features/settings/network/api';
@@ -95,14 +95,24 @@ it('cancels only read preparation and rejects its late response after close and 
  const oldRequest = fetch.mock.calls.at(-1)[1]; await ev.click(screen.getByRole('button', { name: 'Close catalog review' })); expect(oldRequest.signal.aborted).toBe(true); await ev.click(screen.getByRole('button', { name: 'Correct catalog details' })); detailMode = 'ready'; await review(ev); await act(async () => old()); expect(screen.getByRole('heading', { name: 'Review exact catalog change' })).toBeVisible(); expect(writes).toHaveLength(0);
 });
 it('settles its own read busy state after unrelated actual403 without publishing stale review', async () => {
- mount(`/inventory/catalog/${itemId}`); await openCorrection(); detailMode = 'pending'; fireEvent.click(screen.getByRole('button', { name: 'Refresh and review catalog change' })); await waitFor(() => expect(pending).toHaveLength(1)); await act(async () => { await v2Request({ path: '/api/v2/dashboard/snapshot' }).catch(() => {}); pending[0](); });
- await waitFor(() => expect(screen.getByRole('button', { name: 'Refresh and review catalog change' })).toBeEnabled()); expect(screen.queryByRole('heading', { name: 'Review exact catalog change' })).not.toBeInTheDocument(); expect(screen.getByRole('button', { name: 'Close catalog review' })).toBeEnabled(); expect(writes).toHaveLength(0);
+ const view = mount(`/inventory/catalog/${itemId}`); await openCorrection(); const originalClock = decision, reasonInput = screen.getByLabelText('Correction reason'); detailMode = 'pending'; fireEvent.click(screen.getByRole('button', { name: 'Refresh and review catalog change' })); await waitFor(() => expect(pending).toHaveLength(1)); await act(async () => { await v2Request({ path: '/api/v2/dashboard/snapshot' }).catch(() => {}); pending[0](); });
+ await waitFor(() => expect(screen.getByRole('button', { name: 'Refresh and review catalog change' })).toBeDisabled());
+  expect(screen.queryByRole('button', { name: 'Confirming current catalog…' })).not.toBeInTheDocument();
+  expect(networkClockCurrent(originalClock)).toBe(false);
+  expect(screen.queryByRole('heading', { name: 'Review exact catalog change' })).not.toBeInTheDocument();
+  expect(screen.queryByLabelText('I reviewed this exact catalog change')).not.toBeInTheDocument();
+  expect(writes).toHaveLength(0);
+  detailMode = 'ready'; await act(async () => { await establish(); view.update(); });
+  expect(networkClockCurrent(decision)).toBe(true); expect(networkClockCurrent(originalClock)).toBe(false);
+  expect(screen.getByLabelText('Correction reason')).toBe(reasonInput);
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Refresh and review catalog change' })).toBeEnabled()); expect(screen.queryByRole('heading', { name: 'Review exact catalog change' })).not.toBeInTheDocument(); expect(screen.getByRole('button', { name: 'Close catalog review' })).toBeEnabled(); expect(writes).toHaveLength(0);
 });
 it('clears review consent on a same-version/same-clock actual source refresh', async () => {
  mount(`/inventory/catalog/${itemId}`); const ev = await openCorrection(); await review(ev); await act(async () => client.invalidateQueries()); await waitFor(() => expect(screen.queryByLabelText('I reviewed this exact catalog change')).not.toBeInTheDocument()); expect(writes).toHaveLength(0);
 });
 it('does not revive cached rows after403 then500; explicit fresh200 is required', async () => {
- mount(); await screen.findByRole('button', { name: `View catalog details for ${item.name}` }); listMode = 'denied'; fireEvent.click(screen.getByRole('button', { name: 'Refresh catalog' })); await screen.findByRole('heading', { name: 'Inventory catalog unavailable' }); listMode = 'failed'; fireEvent.click(screen.getByRole('button', { name: 'Retry' })); await screen.findByRole('heading', { name: 'Catalog could not be loaded' }); expect(screen.queryByRole('button', { name: `View catalog details for ${item.name}` })).not.toBeInTheDocument();
+ const view = mount(); await screen.findByRole('button', { name: `View catalog details for ${item.name}` }); listMode = 'denied'; fireEvent.click(screen.getByRole('button', { name: 'Refresh catalog' })); await screen.findByRole('heading', { name: 'Inventory catalog unavailable' }); listMode = 'failed'; expect(networkClockCurrent(decision)).toBe(false); await act(async () => { await establish(); view.update(); }); expect(networkClockCurrent(decision)).toBe(true); fireEvent.click(screen.getByRole('button', { name: 'Retry' })); await screen.findByRole('heading', { name: 'Catalog could not be loaded' }); expect(screen.queryByRole('button', { name: `View catalog details for ${item.name}` })).not.toBeInTheDocument();
+  listMode = 'ready'; fireEvent.click(screen.getByRole('button', { name: 'Retry' })); await screen.findByRole('button', { name: `View catalog details for ${item.name}` }); expect(writes).toHaveLength(0);
 });
 it('requires explicit category across actual cursor pages, classification and exact raw unit for creation', async () => {
  categoryNext = true; mount(); const ev = userEvent.setup(); await ev.click(await screen.findByRole('button', { name: 'Add catalog item' })); fireEvent.change(screen.getByLabelText('Catalog code'), { target: { value: creation.code } }); fireEvent.change(screen.getByLabelText('Item name'), { target: { value: creation.name } }); fireEvent.change(screen.getByLabelText('Stock unit'), { target: { value: creation.unit } });

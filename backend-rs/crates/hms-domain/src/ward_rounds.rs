@@ -133,6 +133,9 @@ pub struct WardRoundReviewedTarget {
     pub code: Option<String>,
     pub selected: bool,
     pub prescription: Option<WardRoundPrescriptionReview>,
+    /// A reviewed concurrency observation, never an inferred historical revision.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub catalog_version: Option<i64>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]

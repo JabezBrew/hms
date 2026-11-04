@@ -1,4 +1,6 @@
-import { createContext, useContext, useMemo } from 'react';
+import { createContext, useContext, useMemo, useSyncExternalStore } from 'react';
+import { clockDenialEpoch, subscribeServerClockDenials } from '@/shared/lib/serverClock';
+import { networkClockCurrent } from '@/lib/api/v2/networkAccessGuard';
 import { useAuth } from '@/lib/auth';
 import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
 
@@ -16,11 +18,14 @@ const ReadOnlyModeContext = createContext(undefined);
  */
 export function ReadOnlyModeProvider({ children, network }) {
   const { user } = useAuth();
+  useSyncExternalStore(subscribeServerClockDenials, clockDenialEpoch, clockDenialEpoch);
+  const rust = isRustV2ApiMode();
+  const clockCurrent = !rust || networkClockCurrent(network?.decision);
 
   const value = useMemo(() => {
-    if (isRustV2ApiMode()) {
+    if (rust) {
       const decision = network?.decision;
-      const confirmed = network?.confirmed === true;
+      const confirmed = network?.confirmed === true && clockCurrent;
       const canRead = confirmed && decision?.access_allowed === true;
       const isReadOnly = !canRead || decision?.read_only !== false;
       return { isReadOnly, isOffsite: decision?.classification === 'offsite', offsiteMode: decision?.mode || null,
@@ -67,7 +72,7 @@ export function ReadOnlyModeProvider({ children, network }) {
         hasReadonlyMessage: !!readonlyMessage,
       },
     };
-  }, [user?.accessContext, network]);
+  }, [user?.accessContext, network, rust, clockCurrent]);
 
   return (
     <ReadOnlyModeContext.Provider value={value}>

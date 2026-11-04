@@ -18,7 +18,9 @@ export function mergeRustV2Encounters(chronicleContext) {
     });
   }
 
-  if (chronicleContext?.active_encounter?.id !== null && chronicleContext?.active_encounter?.id !== undefined) {
+  if (chronicleContext?.active_encounter?.id !== null
+    && chronicleContext?.active_encounter?.id !== undefined
+    && !encountersById.has(String(chronicleContext.active_encounter.id))) {
     encountersById.set(String(chronicleContext.active_encounter.id), chronicleContext.active_encounter);
   }
 

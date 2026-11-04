@@ -188,6 +188,73 @@ pub(super) fn require_laboratory_access(
     })
 }
 
+pub(super) fn laboratory_order_actor(
+    ctx: &hms_access::RequestContext,
+    facility_id: Uuid,
+) -> Result<hms_db::care::lifecycle::CareActor, ApiError> {
+    require_laboratory_access(ctx, facility_id, PermissionCode::LaboratoryOrderManage)?;
+    let deadline = ctx.authorization_deadline.ok_or_else(|| {
+        ApiError::forbidden(
+            "laboratory_authority_required",
+            "Current laboratory authority and session proof are required.",
+        )
+    })?;
+    Ok(hms_db::care::lifecycle::CareActor {
+        identity: hms_db::clinical::prescription_courses::PrescriptionActor {
+            facility_id,
+            user_id: ctx.user_id,
+            request_id: Some(ctx.request_id.clone()),
+            authorization: Some(
+                crate::services::clinical::prescription_courses::authorization(ctx, deadline),
+            ),
+        },
+        permission: PermissionCode::LaboratoryOrderManage,
+        feature: hms_domain::deployment::FeatureKey::Laboratory,
+    })
+}
+
+pub(super) fn repository_error(
+    error: anyhow::Error,
+    fallback_code: &'static str,
+    fallback_message: &'static str,
+) -> ApiError {
+    if error.is::<hms_db::clinical::prescription_courses::PrescriptionCourseError>()
+        || error.is::<hms_db::clinical::medication_access::MedicationAccessError>()
+        || error.is::<hms_db::network::NetworkPublicationError>()
+    {
+        return ApiError::forbidden(
+            "laboratory_authority_required",
+            "Current laboratory authority, session and network proof are required.",
+        );
+    }
+    if let Some(kind) = error.downcast_ref::<hms_db::care::lifecycle::CareLifecycleError>() {
+        use hms_db::care::lifecycle::CareLifecycleError;
+        return match kind {
+            CareLifecycleError::Unavailable => ApiError::forbidden(
+                "laboratory_authority_required",
+                "Current laboratory authority and session proof are required.",
+            ),
+            CareLifecycleError::Busy => ApiError::conflict(
+                "lab_order_context_busy",
+                "The selected care context is in use. Refresh before another request.",
+            ),
+            _ => ApiError::conflict(
+                "lab_order_context_changed",
+                "The selected patient care context must be reviewed again.",
+            ),
+        };
+    }
+    if error.is::<hms_db::laboratory_catalog::LabCatalogError>() {
+        return super::administration::repository_error(error, false);
+    }
+    if let Some(database) = error.downcast_ref::<sqlx::Error>() {
+        if let Some(kind) = hms_db::laboratory_catalog::database_error(database) {
+            return super::administration::repository_error(kind.into(), false);
+        }
+    }
+    ApiError::conflict(fallback_code, fallback_message)
+}
+
 pub(super) fn page_request(
     cursor: Option<String>,
     limit: Option<u8>,

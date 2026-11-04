@@ -21,7 +21,8 @@ for local development, staging, demo data, and performance data.
   print only a redacted target summary. Deploy scripts use this before
   migrations.
 - `hms-migrator schema-compatibility`: print only the committed, explicitly
-  registered breaking-schema epoch (`0` or `202610170023`). The bounded read-only
+  registered breaking-schema epoch (`0` or a registered epoch through
+  `202611030033`). The bounded read-only
   probe takes SQLx's actual migration lock and fails closed on concurrent
   migration, incoherent metadata or timeout. It does not apply migrations,
   provision identities or declare a runtime compatible. Deployment compares this
@@ -77,3 +78,9 @@ Run from `backend-rs/`:
 cargo test -p hms-db --test migrations
 cargo test -p hms-db --test provision_demo_seed
 ```
+
+Laboratory epoch033 extends the explicit read-only epoch chain through
+`202611030033`; the current writer runtime requires that exact committed layout.
+The schema probe remains non-provisioning/read-only and is not itself permission
+to start an older runtime. Current fixtures preserve historical032 as an upgrade
+input.033 source-only authoring does not establish migration or rollback acceptance.

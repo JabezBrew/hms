@@ -7,7 +7,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { AuthContext } from '@/lib/auth/AuthContext';
 import { ReadOnlyModeProvider } from '@/contexts/ReadOnlyModeContext';
 import { __resetV2ApiClientForTests, configureV2ApiClient, getV2ClientScopeKey, v2Request } from '@/lib/api/v2/client';
-import { bindNetworkAccessGuard } from '@/lib/api/v2/networkAccessGuard';
+import { bindNetworkAccessGuard, networkClockCurrent } from '@/lib/api/v2/networkAccessGuard';
 import { activateWriteUncertainty, getWriteUncertaintySnapshot } from '@/lib/api/v2/writeUncertainty';
 import { authorizationIdentity } from '@/shared/lib/authorizationScope';
 import { networkApi } from '@/features/settings/network/api';
@@ -156,8 +156,8 @@ it('genuine current403 conceals cached detail and private draft even after inval
   mount(`/inventory/categories/${categoryId}`); const ev = await openCorrection(); detailMode = 'denied'; await ev.click(screen.getByRole('button', { name: 'Refresh and review category change' })); await screen.findByRole('heading', { name: 'Inventory categories unavailable' }); expect(screen.queryByDisplayValue('Synthetic reviewed correction')).not.toBeInTheDocument(); expect(writes).toHaveLength(0);
 });
 it('keeps cached rows hidden after403 then500 until an explicit fresh200', async () => {
-  const view = mount(); await screen.findByRole('button', { name: `View category details for ${category.name}` }); listMode = 'denied'; fireEvent.click(screen.getByRole('button', { name: 'Refresh categories' })); await screen.findByRole('heading', { name: 'Inventory categories unavailable' }); listMode = 'failed'; fireEvent.click(screen.getByRole('button', { name: 'Retry' })); await screen.findByRole('heading', { name: 'Category could not be loaded' }); expect(screen.queryByRole('button', { name: `View category details for ${category.name}` })).not.toBeInTheDocument();
-  listMode = 'ready'; await act(async () => { await establish(); view.update(); }); fireEvent.click(screen.getByRole('button', { name: 'Retry' })); await screen.findByRole('button', { name: `View category details for ${category.name}` });
+  const view = mount(); await screen.findByRole('button', { name: `View category details for ${category.name}` }); listMode = 'denied'; fireEvent.click(screen.getByRole('button', { name: 'Refresh categories' })); await screen.findByRole('heading', { name: 'Inventory categories unavailable' }); listMode = 'failed'; expect(networkClockCurrent(decision)).toBe(false); await act(async () => { await establish(); view.update(); }); expect(networkClockCurrent(decision)).toBe(true); fireEvent.click(screen.getByRole('button', { name: 'Retry' })); await screen.findByRole('heading', { name: 'Category could not be loaded' }); expect(screen.queryByRole('button', { name: `View category details for ${category.name}` })).not.toBeInTheDocument();
+  listMode = 'ready'; fireEvent.click(screen.getByRole('button', { name: 'Retry' })); await screen.findByRole('button', { name: `View category details for ${category.name}` });
 });
 it('genuine original receipt403 conceals retained unknown fields while retaining opaque uncertainty', async () => {
   mount(`/inventory/categories/${categoryId}`); const ev = await openCorrection(); await review(ev); writeMode = 'lost'; await ev.click(screen.getByRole('button', { name: 'Confirm reviewed category change' })); await screen.findByText('Category change needs reconciliation'); receiptMode = 'denied'; await ev.click(screen.getByRole('button', { name: 'Check original category result' })); await screen.findByRole('heading', { name: 'Inventory categories unavailable' }); expect(screen.queryByText('Category change needs reconciliation')).not.toBeInTheDocument(); expect(getWriteUncertaintySnapshot().entries).toHaveLength(1); expect(writes).toHaveLength(1);
@@ -175,6 +175,15 @@ it.each(['actor', 'facility', 'profile', 'permission', 'feature', 'visibility'])
   await act(async () => old(json({ error: { code: 'synthetic_old_ABA_denial' } }, 403))); expect(screen.queryByRole('heading', { name: 'Inventory categories unavailable' })).not.toBeInTheDocument(); expect(screen.getByLabelText('Category name')).toHaveValue(category.name); expect(writes).toHaveLength(0);
 });
 it('settles preparation after an unrelated current403 without publishing stale review', async () => {
-  mount(`/inventory/categories/${categoryId}`); await openCorrection(); detailMode = 'pending'; fireEvent.click(screen.getByRole('button', { name: 'Refresh and review category change' })); await waitFor(() => expect(pending).toHaveLength(1)); await act(async () => { await v2Request({ path: '/api/v2/dashboard/snapshot' }).catch(() => {}); pending[0](); });
+  const view = mount(`/inventory/categories/${categoryId}`); await openCorrection(); const originalClock = decision, reasonInput = screen.getByLabelText('Correction reason'); detailMode = 'pending'; fireEvent.click(screen.getByRole('button', { name: 'Refresh and review category change' })); await waitFor(() => expect(pending).toHaveLength(1)); await act(async () => { await v2Request({ path: '/api/v2/dashboard/snapshot' }).catch(() => {}); pending[0](); });
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Refresh and review category change' })).toBeDisabled());
+  expect(screen.queryByRole('button', { name: 'Confirming current category…' })).not.toBeInTheDocument();
+  expect(networkClockCurrent(originalClock)).toBe(false);
+  expect(screen.queryByRole('heading', { name: 'Review exact category change' })).not.toBeInTheDocument();
+  expect(screen.queryByLabelText('I reviewed this exact category change')).not.toBeInTheDocument();
+  expect(writes).toHaveLength(0);
+  detailMode = 'ready'; await act(async () => { await establish(); view.update(); });
+  expect(networkClockCurrent(decision)).toBe(true); expect(networkClockCurrent(originalClock)).toBe(false);
+  expect(screen.getByLabelText('Correction reason')).toBe(reasonInput);
   await waitFor(() => expect(screen.getByRole('button', { name: 'Refresh and review category change' })).toBeEnabled()); expect(screen.queryByRole('heading', { name: 'Review exact category change' })).not.toBeInTheDocument(); expect(writes).toHaveLength(0);
 });

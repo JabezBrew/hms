@@ -10,6 +10,7 @@ HMS_APPOINTMENT_TYPE_SCHEMA_EPOCH=202610180029
 HMS_INVENTORY_ITEM_SCHEMA_EPOCH=202610300030
 HMS_INVENTORY_CATEGORY_SCHEMA_EPOCH=202610310031
 HMS_INVENTORY_SUPPLIER_SCHEMA_EPOCH=202611020032
+HMS_LABORATORY_CATALOG_SCHEMA_EPOCH=202611030033
 
 hms_valid_schema_epoch() {
   case "$1" in
@@ -30,7 +31,7 @@ hms_runtime_schema_epoch() {
     return 1
   fi
   case "$compatible_epoch" in
-    0|202610170023|202610170024|202610170025|202610170026|202610170027|202610170028|202610180029|202610300030|202610310031|202611020032) ;;
+    0|202610170023|202610170024|202610170025|202610170026|202610170027|202610170028|202610180029|202610300030|202610310031|202611020032|202611030033) ;;
     *) printf 'Runtime schema compatibility declaration is unknown.\n' >&2; return 1 ;;
   esac
   printf '%s\n' "$compatible_epoch"
@@ -39,7 +40,7 @@ hms_runtime_schema_epoch() {
 hms_validate_database_epoch() {
   # A new breaking migration must extend the explicit registry and this reader.
   case "$1" in
-    0|202610170023|202610170024|202610170025|202610170026|202610170027|202610170028|202610180029|202610300030|202610310031|202611020032) return 0 ;;
+    0|202610170023|202610170024|202610170025|202610170026|202610170027|202610170028|202610180029|202610300030|202610310031|202611020032|202611030033) return 0 ;;
     *) printf 'Database schema compatibility could not be confirmed.\n' >&2; return 1 ;;
   esac
 }
@@ -54,7 +55,25 @@ hms_validate_schema_fence() {
 
 hms_candidate_breaking_epoch() {
   declared_epoch="$(hms_runtime_schema_epoch "$1")" || return 1
-  if [ -f "$1/backend-rs/migrations/202611020032_inventory_supplier_governance.sql" ]; then
+  if [ -f "$1/backend-rs/migrations/202611030033_laboratory_catalog_governance.sql" ]; then
+    if [ ! -f "$1/backend-rs/migrations/202611020032_inventory_supplier_governance.sql" ] ||
+       [ ! -f "$1/backend-rs/migrations/202610310031_inventory_category_governance.sql" ] ||
+       [ ! -f "$1/backend-rs/migrations/202610300030_inventory_item_governance.sql" ] ||
+       [ ! -f "$1/backend-rs/migrations/202610180029_appointment_type_lifecycle.sql" ] ||
+       [ ! -f "$1/backend-rs/migrations/202610170028_storage_location_lifecycle.sql" ] ||
+       [ ! -f "$1/backend-rs/migrations/202610170027_organization_unit_lifecycle.sql" ] ||
+       [ ! -f "$1/backend-rs/migrations/202610170026_referral_consultation_starts.sql" ] ||
+       [ ! -f "$1/backend-rs/migrations/202610170025_admission_moves.sql" ] ||
+       [ ! -f "$1/backend-rs/migrations/202610170024_referral_response_records.sql" ] ||
+       [ ! -f "$1/backend-rs/migrations/202610170023_treatment_course_windows.sql" ]; then
+      printf 'Candidate release is missing its required breaking migration.\n' >&2
+      return 1
+    fi
+    printf '%s\n' "$HMS_LABORATORY_CATALOG_SCHEMA_EPOCH"
+  elif [ "$declared_epoch" = "$HMS_LABORATORY_CATALOG_SCHEMA_EPOCH" ]; then
+    printf 'Candidate release is missing its required breaking migration.\n' >&2
+    return 1
+  elif [ -f "$1/backend-rs/migrations/202611020032_inventory_supplier_governance.sql" ]; then
     if [ ! -f "$1/backend-rs/migrations/202610310031_inventory_category_governance.sql" ] ||
        [ ! -f "$1/backend-rs/migrations/202610300030_inventory_item_governance.sql" ] ||
        [ ! -f "$1/backend-rs/migrations/202610180029_appointment_type_lifecycle.sql" ] ||

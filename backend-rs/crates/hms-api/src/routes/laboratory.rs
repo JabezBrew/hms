@@ -1,11 +1,47 @@
 use axum::routing::{get, post};
 use axum::Router;
 
-use crate::handlers::laboratory;
+use crate::handlers::{laboratory, laboratory_administration};
 use crate::state::AppState;
 
 pub fn routes() -> Router<AppState> {
     Router::new()
+        .route(
+            "/api/v2/laboratory/test-administration",
+            get(laboratory_administration::list_test_administration),
+        )
+        .route(
+            "/api/v2/laboratory/test-catalog/:id/administration",
+            get(laboratory_administration::get_test_administration),
+        )
+        .route(
+            "/api/v2/laboratory/test-catalog/:id/history",
+            get(laboratory_administration::test_history),
+        )
+        .route(
+            "/api/v2/laboratory/test-catalog/:id/availability",
+            post(laboratory_administration::set_test_availability),
+        )
+        .route(
+            "/api/v2/laboratory/panel-administration",
+            get(laboratory_administration::list_panel_administration),
+        )
+        .route(
+            "/api/v2/laboratory/panels/:id/administration",
+            get(laboratory_administration::get_panel_administration),
+        )
+        .route(
+            "/api/v2/laboratory/panels/:id/history",
+            get(laboratory_administration::panel_history),
+        )
+        .route(
+            "/api/v2/laboratory/panels/:id/availability",
+            post(laboratory_administration::set_panel_availability),
+        )
+        .route(
+            "/api/v2/laboratory/catalog-commands/:client_request_id",
+            get(laboratory_administration::command_receipt),
+        )
         .route(
             "/api/v2/laboratory/test-catalog",
             get(laboratory::list_test_catalog),

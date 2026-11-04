@@ -6,6 +6,12 @@ import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { AuthContext } from '@/lib/auth/AuthContext';
 import { ModeledReadOnlyModeProvider as ReadOnlyModeProvider } from '@/tests/networkClockModel';
+import { ReadOnlyModeProvider as ActualReadOnlyModeProvider } from '@/contexts/ReadOnlyModeContext';
+import { bindNetworkAccessGuard as bindActualNetworkAccessGuard, networkClockCurrent } from '@/lib/api/v2/networkAccessGuard';
+import { isCurrentReadDenial } from '@/lib/api/v2/readDenials';
+import { networkApi } from '@/features/settings/network/api';
+import { clockToken, clockNetwork, issuerNow } from '@/features/auth/__tests__/clock-fixtures';
+import { jwtFor, json as actualJson, failure as actualFailure } from '@/features/auth/__tests__/fixtures';
 import { __resetV2ApiClientForTests, configureV2ApiClient, getV2ClientScopeKey } from '@/lib/api/v2/client';
 import { bindModeledNetworkGuard as bindNetworkAccessGuard } from '@/tests/networkClockModel';
 import { authorizationIdentity } from '@/shared/lib/authorizationScope';
@@ -18,18 +24,38 @@ import { actor, actorId, facilityId, location, otherId, envelope } from './fixtu
 const legacyDirectory = vi.hoisted(() => vi.fn(() => { throw new Error('Legacy directory hook mounted in Rust route'); }));
 vi.mock('@/features/inventory/hooks', () => ({ useStorageLocations: legacyDirectory }));
 const runtime = window.__HMS_RUNTIME_CONFIG__;
-let user, client, current, mode, writes, queries, readOnly, finish, detailMode;
+let user, client, current, mode, writes, queries, readOnly, finish, detailMode, actualDetailCase, actualDecision;
+const actualDetailGet = storageLocationApi.get;
 function bind() { const transport = getV2ClientScopeKey(), authority = authorizationIdentity(user), principal = { id: actorId, facility_id: facilityId, active_profile: 'hospital' }; bindNetworkAccessGuard({ transportScope: transport, authorityScope: authority, principal }).update({ confirmed: true, decision: { access_allowed: true, read_only: readOnly, classification: 'onsite', policy_version: 1 } }); activateWriteUncertainty(principal, { authority, transport }); }
-beforeEach(() => {
+beforeEach(async ({ task }) => {
+  actualDetailCase = task.name === 'suppresses a review after a source403 without exposing its former draft'; actualDecision = null;
   vi.stubGlobal('crypto', webcrypto); legacyDirectory.mockClear(); __resetV2ApiClientForTests(); window.__HMS_RUNTIME_CONFIG__ = { apiMode: 'rust-v2', v2ApiBaseUrl: 'http://localhost:8080/api/v2' }; user = structuredClone(actor); readOnly = false; mode = 'ready'; detailMode = 'ready'; current = structuredClone(location); writes = []; queries = []; finish = null;
   configureV2ApiClient({ getAccessToken: () => 'SYNTHETIC-ORGANIZATION-WORKFLOW', getFacilityCode: () => 'QA', canRefreshSession: () => false }); bind(); client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { retry: 2 } } });
   vi.spyOn(storageLocationApi, 'list').mockImplementation(async query => { queries.push(query); if (mode === 'denied') throw Object.assign(new Error('Current directory unavailable'), { status: 403 }); if (query.cursor) return envelope([{ ...current, id: otherId, code: 'SECOND-PAGE', name: 'Synthetic location beyond first hundred' }]); return envelope([current], 'synthetic-cursor-page-2'); });
   vi.spyOn(storageLocationApi, 'get').mockImplementation(async id => { if (detailMode === 'denied') throw Object.assign(new Error('Current unit unavailable'), { status: 403 }); if (detailMode === 'pending') return new Promise(resolve => { finish = () => resolve(structuredClone(current)); }); return structuredClone(id === location.id ? current : { ...location, id: otherId }); });
   vi.spyOn(storageLocationApi, 'write').mockImplementation(async command => { writes.push(structuredClone(command)); if (mode === 'lost') throw new StorageLocationUnconfirmedError(); if (mode === 'pending') return new Promise(resolve => { finish = () => resolve({ location: current, changed: true }); }); if (mode === 'conflict') throw Object.assign(new Error('Conflict'), { status: 409, data: { error: { code: 'storage_location_version_conflict' } } }); const input = command.input; current = { ...current, name: input.action === 'rename' ? input.name : current.name, is_active: input.action === 'retire' ? false : input.action === 'reactivate' ? true : current.is_active, version: current.version + 1 }; return { client_request_id: input.client_request_id, input_digest: await inputDigest(input), reviewed_input: input, recorded_by_user_id: actorId, location: current, changed: true, recorded_at: location.updated_at }; });
   vi.spyOn(storageLocationApi, 'recover').mockRejectedValue(Object.assign(new Error('Original result absent'), { status: 404 }));
+  if (actualDetailCase) {
+    const raw = clockToken({ ordinary: true });
+    const bearer = jwtFor(raw, { sub: actorId, facility_id: facilityId, active_profile: 'hospital', permission_version: 1, iat: issuerNow / 1000, auth_time: issuerNow / 1000, exp: issuerNow / 1000 + 600 });
+    configureV2ApiClient({ getAccessToken: () => bearer, getFacilityCode: () => 'QA', canRefreshSession: () => false });
+    const live = bindActualNetworkAccessGuard({ transportScope: getV2ClientScopeKey(), authorityScope: authorizationIdentity(user), readOwnerValue: JSON.stringify(user), principal: { id: actorId, facility_id: facilityId, active_profile: 'hospital' } });
+    let detailRequests = 0;
+    vi.stubGlobal('fetch', vi.fn(async url => {
+      if (new URL(url).pathname.endsWith('/auth/network-access')) return actualJson(clockNetwork());
+      detailRequests++; return actualFailure('current_detail_denied', 403);
+    }));
+    actualDecision = await networkApi.current(); live.update({ confirmed: true, decision: actualDecision });
+    storageLocationApi.get.mockImplementation(async (...args) => {
+      expect(networkClockCurrent(actualDecision)).toBe(true);
+      try { return await actualDetailGet(...args); } catch (error) {
+        expect(detailRequests).toBe(1); expect(isCurrentReadDenial(error)).toBe(true); expect(networkClockCurrent(actualDecision)).toBe(false); throw error;
+      }
+    });
+  }
 });
 afterEach(async () => { cleanup(); await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); }); client.clear(); vi.restoreAllMocks(); __resetV2ApiClientForTests(); vi.unstubAllGlobals(); window.__HMS_RUNTIME_CONFIG__ = runtime; });
-function mount(route = false) { const Page = route ? StorageLocationRoute : StorageLocationDirectoryPage; const tree = () => <QueryClientProvider client={client}><AuthContext.Provider value={{ user }}><ReadOnlyModeProvider network={{ confirmed: true, decision: { access_allowed: true, read_only: readOnly, classification: 'onsite', policy_version: 1 } }}><MemoryRouter><Page /></MemoryRouter></ReadOnlyModeProvider></AuthContext.Provider></QueryClientProvider>; const view = render(tree()); return { update() { view.rerender(tree()); } }; }
+function mount(route = false) { const Provider = actualDetailCase ? ActualReadOnlyModeProvider : ReadOnlyModeProvider; const Page = route ? StorageLocationRoute : StorageLocationDirectoryPage; const tree = () => <QueryClientProvider client={client}><AuthContext.Provider value={{ user }}><Provider network={{ confirmed: true, decision: actualDetailCase ? actualDecision : { access_allowed: true, read_only: readOnly, classification: 'onsite', policy_version: 1 } }}><MemoryRouter><Page /></MemoryRouter></Provider></AuthContext.Provider></QueryClientProvider>; const view = render(tree()); return { update() { view.rerender(tree()); } }; }
 async function openRename(ev) { await ev.click(await screen.findByRole('button', { name: 'Rename ' + location.name })); fireEvent.change(screen.getByLabelText('Location name'), { target: { value: 'Synthetic reviewed new name' } }); }
 async function review(ev) { await ev.click(screen.getByRole('button', { name: 'Refresh and review change' })); await ev.click(await screen.findByLabelText('I reviewed this exact storage-location change')); }
 it('browses with real authority despite a false privileged-write hint, no admin role and no mount mutation', async () => { mount(); await screen.findByText(location.name); expect(screen.getByText('Store')).toBeInTheDocument(); expect(writes).toHaveLength(0); expect(queries[0]).toEqual({ limit: 25, is_active: true }); });

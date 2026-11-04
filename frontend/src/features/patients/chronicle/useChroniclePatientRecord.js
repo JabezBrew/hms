@@ -140,7 +140,9 @@ export function useChroniclePatientRecord({ id, rustV2Mode }) {
     [chronicleContext],
   );
   const encounters = rustV2Mode ? rustV2Encounters : legacyEncounters;
-  const areEncountersLoading = rustV2Mode ? false : areLegacyEncountersLoading;
+  // Do not normalize the requested visit against an empty startup projection.
+  // Missing/denied startup is not an authoritative empty encounter list.
+  const areEncountersLoading = rustV2Mode ? isLoading || !chronicleStartup : areLegacyEncountersLoading;
   const activeEncounter = useMemo(
     () => findActiveChronicleEncounter(encounters),
     [encounters],
