@@ -8,6 +8,7 @@ from __future__ import annotations
 import argparse
 import contextlib
 import fcntl
+import hashlib
 import json
 import math
 import os
@@ -357,14 +358,19 @@ def session_worker(lock: int, status: int, control: int, grace: float, command: 
         os.killpg(os.getpgrp(), signal.SIGKILL)
 
 
-def stop_group(child: subprocess.Popen, grace: float) -> None:
+def stop_group(child: subprocess.Popen, grace: float, proof: dict | None = None,
+               kill_grace: float | None = None) -> None:
+    proof = {} if proof is None else proof
+    proof.update(term_attempted=False, kill_attempted=False, group_inspection_complete=False,
+                 no_live_members=False, leader_reaped=False, group_probe_count=0)
     def send(signum: int) -> None:
+        proof['term_attempted' if signum == signal.SIGTERM else 'kill_attempted'] = True
         try:
             os.killpg(child.pid, signum)
-        except (ProcessLookupError, PermissionError):
+        except (ProcessLookupError, PermissionError) as error:
             # macOS also reports EPERM for a zombie-only group. Final group
             # inspection, while the leader remains unreaped, decides closure.
-            pass
+            proof.setdefault('signal_errors', []).append({'signal': signum, 'errno': error.errno})
 
     send(signal.SIGTERM)
     # Also close descendants after normal Cargo exit; a shell/build script
@@ -373,10 +379,15 @@ def stop_group(child: subprocess.Popen, grace: float) -> None:
     while time.monotonic() < deadline:
         time.sleep(min(0.05, max(0, deadline - time.monotonic())))
     send(signal.SIGKILL)
-    deadline = time.monotonic() + grace
+    deadline = time.monotonic() + (grace if kill_grace is None else kill_grace)
     failure = None
     try:
-        while group_has_live_members(child.pid, max(0.001, deadline - time.monotonic())):
+        while True:
+            proof['group_probe_count'] += 1
+            if not group_has_live_members(child.pid, max(0.001, deadline - time.monotonic())):
+                proof.update(group_inspection_complete=True, no_live_members=True,
+                             no_live_members_observed_at=time.time())
+                break
             if time.monotonic() >= deadline:
                 raise Refusal('owned process group still has live members after cleanup')
             time.sleep(min(0.02, max(0, deadline - time.monotonic())))
@@ -384,6 +395,7 @@ def stop_group(child: subprocess.Popen, grace: float) -> None:
         failure = error
     try:
         child.wait(timeout=max(0.001, deadline - time.monotonic()))
+        proof.update(leader_reaped=True, leader_exit_code=child.returncode)
     except subprocess.TimeoutExpired:
         raise Refusal('owned process group did not reap within the cleanup budget') from None
     if failure:
@@ -411,8 +423,129 @@ def group_has_live_members(group: int, timeout: float) -> bool:
     return live
 
 
+CAPTURE_PROTOCOL = 'hms-cargo-pipe-capture-v1'
+
+
+class PipeCapture:
+    """Pipe-only raw transport; all persisted fields are fixed metadata.
+
+    The controller must retain stdin's sole writer and continuously drain stdout.
+    Only one 64 KiB pending chunk lives here; backpressure never blocks sampling.
+    """
+    def __init__(self, directory: Path, drain_seconds: float):
+        if (os.getpid() != os.getpgrp() or os.getsid(0) != os.getpid()
+                or not stat.S_ISFIFO(os.fstat(0).st_mode) or not stat.S_ISFIFO(os.fstat(1).st_mode)):
+            raise Refusal('pipe capture requires an isolated session with piped input and output')
+        self.directory = open_directory(directory)
+        try:
+            private(os.fstat(self.directory), directory=True)
+            self.parent = os.getppid()
+            self.drain_seconds = drain_seconds
+            self.stream = None
+            self.pending = b''
+            self.read_bytes = self.forwarded_bytes = 0
+            self.eof = self.control_eof = self.parent_changed = self.consumer_closed = False
+            self.finish_attempted = False
+            self.worker = None
+            self.closure = {}
+            self.reason = None
+            self.started = time.time()
+            os.set_blocking(0, False)
+            os.set_blocking(1, False)
+            self.save('guardian-started.json', {
+                'protocol': CAPTURE_PROTOCOL, 'guard_pid': os.getpid(), 'guard_pgid': os.getpgrp(),
+                'controller_pid': self.parent, 'started_at': self.started,
+                'guard_sha256': hashlib.sha256(Path(__file__).read_bytes()).hexdigest()})
+        except BaseException:
+            os.close(self.directory)
+            raise
+
+    def save(self, name: str, value: dict) -> None:
+        descriptor = os.open(name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+                             0o600, dir_fd=self.directory)
+        with os.fdopen(descriptor, 'w') as destination:
+            json.dump(value, destination, sort_keys=True)
+            destination.write('\n')
+
+    def attach(self, child: subprocess.Popen) -> None:
+        self.worker = child.pid
+        self.stream = child.stdout
+        os.set_blocking(self.stream.fileno(), False)
+        self.save('worker-started.json', {'protocol': CAPTURE_PROTOCOL,
+                  'guard_pid': os.getpid(), 'worker_pid': child.pid, 'worker_pgid': child.pid})
+
+    def controller_closed(self) -> bool:
+        if not self.control_eof:
+            try:
+                value = os.read(0, 1)
+            except BlockingIOError:
+                value = None
+            if value == b'':
+                self.control_eof = True
+            elif value is not None:
+                raise Refusal('capture controller sent unsupported control data')
+        self.parent_changed = os.getppid() != self.parent
+        return self.control_eof
+
+    def pump(self) -> bool:
+        progress = False
+        for _ in range(16):
+            if self.pending:
+                try:
+                    count = os.write(1, self.pending)
+                except BlockingIOError:
+                    break
+                except BrokenPipeError:
+                    self.consumer_closed = True
+                    raise Refusal('capture output consumer closed its pipe') from None
+                self.forwarded_bytes += count
+                self.pending = self.pending[count:]
+                progress = progress or bool(count)
+                if self.pending:
+                    break
+            if self.eof or self.stream is None:
+                break
+            try:
+                self.pending = os.read(self.stream.fileno(), 65536)
+            except BlockingIOError:
+                break
+            if not self.pending:
+                self.eof = True
+                break
+            self.read_bytes += len(self.pending)
+            progress = True
+        return progress
+
+    def finish(self) -> None:
+        self.finish_attempted = True
+        deadline = time.monotonic() + self.drain_seconds
+        while self.stream is not None and (not self.eof or self.pending):
+            if time.monotonic() >= deadline:
+                raise Refusal('capture pipe did not drain completely within its budget')
+            self.controller_closed()
+            if not self.pump():
+                time.sleep(min(0.01, max(0, deadline - time.monotonic())))
+
+    def complete(self, status: int, reason: str | None) -> None:
+        self.controller_closed()
+        complete = (self.stream is not None and self.eof and not self.pending
+                    and not self.consumer_closed and not self.parent_changed)
+        self.save('completed.json', {
+            'protocol': CAPTURE_PROTOCOL, 'guard_pid': os.getpid(), 'guard_pgid': os.getpgrp(),
+            'worker_pid': self.worker, 'worker_pgid': self.worker,
+            'guard_exit_code': status, 'guard_failure': reason or self.reason,
+            'control_eof': self.control_eof, 'controller_parent_changed': self.parent_changed,
+            'cargo_exit_code': getattr(self, 'cargo_status', None), 'worker_closure': self.closure,
+            'raw_output_files_created': 0, 'pipe_eof': self.eof, 'pipe_complete': complete,
+            'bytes_read': self.read_bytes, 'bytes_forwarded': self.forwarded_bytes,
+            'consumer_closed': self.consumer_closed, 'finished_at': time.time()})
+
+    def close(self) -> None:
+        os.close(self.directory)
+
+
 def supervise(command: list[str], environment: dict[str, str], cwd: Path, lock: int,
-              target: Target, options, log) -> int:
+              target: Target, options, log, capture: PipeCapture | None = None) -> int:
     interrupted = 0
 
     def interrupt(signum, _frame):
@@ -429,14 +562,17 @@ def supervise(command: list[str], environment: dict[str, str], cwd: Path, lock: 
     failure = None
     cleanup_attempted = False
     cargo_status = None
+    command_finished_at = None
     status_read = status_write = control_read = control_write = None
 
     def heartbeat():
         nonlocal next_disk
         now = time.monotonic()
+        if capture is not None and capture.controller_closed():
+            raise Refusal('capture controller closed its liveness pipe')
         if interrupted:
             raise Refusal('interrupted; closing owned process group')
-        if now - started >= options.timeout_seconds:
+        if (now if command_finished_at is None else command_finished_at) - started >= options.timeout_seconds:
             raise Refusal('build runtime limit exceeded')
         if now >= next_disk:
             if target.check() < options.min_free_gib * GIB:
@@ -458,8 +594,10 @@ def supervise(command: list[str], environment: dict[str, str], cwd: Path, lock: 
                   *command]
         child = subprocess.Popen(worker, cwd=cwd, env=environment, start_new_session=True,
                                  pass_fds=(lock, status_write, control_read), stdin=subprocess.DEVNULL,
-                                 stdout=subprocess.PIPE if log else subprocess.DEVNULL,
+                                 stdout=subprocess.PIPE if log or capture else subprocess.DEVNULL,
                                  stderr=subprocess.STDOUT)
+        if capture is not None:
+            capture.attach(child)
         os.close(status_write)
         status_write = None
         os.close(control_read)
@@ -468,12 +606,15 @@ def supervise(command: list[str], environment: dict[str, str], cwd: Path, lock: 
         started = time.monotonic()
         next_scan = started + options.scan_seconds
         with selectors.DefaultSelector() as selector:
-            if child.stdout:
+            if child.stdout and capture is None:
                 os.set_blocking(child.stdout.fileno(), False)
                 selector.register(child.stdout, selectors.EVENT_READ)
 
             def drain():
                 nonlocal log_bytes, log_truncated
+                if capture is not None:
+                    capture.pump()
+                    return
                 for key, _event in selector.select(timeout=0):
                     data = os.read(key.fileobj.fileno(), 65536)
                     if not data:
@@ -503,6 +644,9 @@ def supervise(command: list[str], environment: dict[str, str], cwd: Path, lock: 
                     if len(report) != 4:
                         raise Refusal('build session ended without a complete exit status')
                     cargo_status = struct.unpack('!i', report)[0]
+                    command_finished_at = time.monotonic()
+                    if capture is not None:
+                        capture.cargo_status = cargo_status
                     break
                 if exited(child):
                     raise Refusal('build session leader exited unexpectedly')
@@ -510,24 +654,35 @@ def supervise(command: list[str], environment: dict[str, str], cwd: Path, lock: 
                     target.measure(int(options.max_target_gib * GIB), scan_heartbeat,
                                    options.scan_timeout_seconds)
                     next_scan = time.monotonic() + options.scan_seconds
-                time.sleep(min(options.poll_seconds, 0.05))
+                time.sleep(min(options.poll_seconds, 0.005 if capture is not None else 0.05))
             heartbeat()
             drain()
         # Close writers before the final sample: a descendant may have written
         # during TERM grace after Cargo itself exited. Keep signal handling
         # active through this sample and never signal an already-reaped group.
         cleanup_attempted = True
-        stop_group(child, options.term_grace_seconds)
+        stop_group(child, options.term_grace_seconds, None if capture is None else capture.closure,
+                   options.kill_grace_seconds)
+        if capture is not None:
+            capture.finish()
         next_disk = 0
         heartbeat()
         target.measure(int(options.max_target_gib * GIB), heartbeat, options.scan_timeout_seconds)
     except Refusal as error:
         failure = error
+        if capture is not None:
+            capture.reason = str(error)
     finally:
         try:
             if child is not None and not cleanup_attempted:
-                stop_group(child, options.term_grace_seconds)
+                stop_group(child, options.term_grace_seconds, None if capture is None else capture.closure,
+                           options.kill_grace_seconds)
         finally:
+            if capture is not None and not capture.finish_attempted:
+                try:
+                    capture.finish()
+                except (Refusal, OSError):
+                    capture.reason = capture.reason or 'capture pipe completion failed'
             if child is not None and child.stdout:
                 child.stdout.close()
             for descriptor in (status_read, status_write, control_read, control_write):
@@ -558,30 +713,47 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument('--scan-timeout-seconds', type=float, default=5)
     result.add_argument('--timeout-seconds', type=float, default=3600)
     result.add_argument('--term-grace-seconds', type=float, default=3)
+    result.add_argument('--kill-grace-seconds', type=float, help='inspection/reap grace; defaults to TERM grace')
     result.add_argument('--log-file', type=Path, help='optional NEW private file in an owned 0700 directory; raw output never printed')
     result.add_argument('--max-log-mib', type=float, default=16)
+    result.add_argument('--capture-pipe', action='store_true', help='protocol-v1 guardian: raw stdout ONLY to a pipe; no raw files')
+    result.add_argument('--lifecycle-dir', type=Path, help='existing private directory for exclusive nonsensitive lifecycle receipts')
+    result.add_argument('--pipe-drain-seconds', type=float, default=5)
     return result
 
 
 def main(arguments: list[str] | None = None) -> int:
     arguments = sys.argv[1:] if arguments is None else arguments
+    capture = None
+    status = 75
+    reason = None
     try:
         if arguments == ['--help']:
             parser().print_help()
             return 0
         separator = arguments.index('--')
         options = parser().parse_args(arguments[:separator])
+        if options.kill_grace_seconds is None:
+            options.kill_grace_seconds = options.term_grace_seconds
         command_args = arguments[separator + 1:]
         for name in ('min_free_gib', 'max_target_gib', 'poll_seconds', 'scan_seconds',
-                     'scan_timeout_seconds', 'timeout_seconds', 'term_grace_seconds', 'max_log_mib'):
+                     'scan_timeout_seconds', 'timeout_seconds', 'term_grace_seconds', 'kill_grace_seconds',
+                     'max_log_mib', 'pipe_drain_seconds'):
             if not math.isfinite(getattr(options, name)) or getattr(options, name) <= 0:
                 raise Refusal('budgets must be finite and positive')
         if any(not math.isfinite(getattr(options, name) * GIB) for name in ('min_free_gib', 'max_target_gib')):
             raise Refusal('storage budgets exceed the supported numeric range')
         if (options.poll_seconds > 10 or options.scan_seconds > 60
                 or options.scan_seconds < options.poll_seconds or options.scan_timeout_seconds > 10
-                or options.term_grace_seconds > 10 or options.max_log_mib > 64):
+                or options.term_grace_seconds > 10 or options.kill_grace_seconds > 10
+                or options.pipe_drain_seconds > 10 or options.max_log_mib > 64):
             raise Refusal('sampling, cleanup, or log budget is outside supported bounds')
+        if options.capture_pipe != bool(options.lifecycle_dir) or options.capture_pipe and options.log_file:
+            raise Refusal('pipe capture requires lifecycle receipts and forbids raw log files')
+        if options.capture_pipe:
+            if options.lifecycle_dir.is_relative_to(options.target_dir):
+                raise Refusal('capture lifecycle receipts must remain outside the Cargo target')
+            capture = PipeCapture(options.lifecycle_dir, options.pipe_drain_seconds)
         command = cargo_arguments(command_args, options.target_dir)
         root, common, trees = repository()
         validate_configuration(root)
@@ -590,13 +762,23 @@ def main(arguments: list[str] | None = None) -> int:
             stack.callback(target.close)
             with private_log(options.log_file) as log:
                 status = supervise(command, cargo_environment(options.target_dir), root / 'backend-rs',
-                                   lock, target, options, log)
+                                   lock, target, options, log, capture)
         print(f'cargo-budget: finished; status={status}', file=sys.stderr)
-        return status
     except (Refusal, OSError, ValueError, subprocess.SubprocessError, RecursionError) as error:
         message = str(error) if isinstance(error, Refusal) else 'unsafe or unavailable resource; build refused or closed'
+        reason = message
         print(f'cargo-budget: {message}', file=sys.stderr)
-        return 75
+        status = 75
+    finally:
+        if capture is not None:
+            try:
+                capture.complete(status, reason)
+            except (Refusal, OSError):
+                print('cargo-budget: capture lifecycle receipt could not be completed', file=sys.stderr)
+                status = 75
+            finally:
+                capture.close()
+    return status
 
 
 if __name__ == '__main__':

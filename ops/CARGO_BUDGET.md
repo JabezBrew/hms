@@ -76,6 +76,7 @@ compiler jobs. Preserve any deliberately required test matrix.
 | `--scan-timeout-seconds` | 5 seconds | Fail closed on an excessively slow target scan; maximum 10 seconds. |
 | `--timeout-seconds` | 3600 seconds | Bound the build runtime; preflight also has this budget. |
 | `--term-grace-seconds` | 3 seconds | TERM grace, then KILL and at most another grace period to reap; maximum 10 seconds. |
+| `--kill-grace-seconds` | TERM grace | Optional separate post-KILL inspection/reap budget; maximum 10 seconds. |
 | `--max-log-mib` | 16 MiB | Maximum raw output written when an optional private log is selected; maximum 64 MiB. |
 
 All budgets must be finite and positive. Size uses the larger of apparent length
@@ -147,6 +148,98 @@ permissions. For commands that launch a browser, also follow `AGENTS.md` and
 the shared `browser-test.py` route; this guard does not replace it. `cargo run`
 is suitable for finite generators, not a persistent service: background children
 are closed at completion and the runtime budget still applies.
+
+## RAM-only evidence capture, protocol v1
+
+Owned evidence runners that redact output before writing must use the reviewed
+`scripts/cargo_capture.py::capture_cargo` Interface rather than prefixing the
+default CLI around their current process launcher. The default CLI discards
+output or clips an optional raw log; neither supplies complete redaction input.
+The capture client invokes the same guard, lock, target validation and budgets,
+with **no raw output file and no log-size clipping**. The caller must enforce its
+own authorization/source/environment gates before calling it and redact the
+returned bytes before any persistence. This API does not authorize a build or
+prove that a failed test is meaningful RED evidence.
+
+The client has a fail-closed **64 MiB capture ceiling** by default, configurable
+through `max_capture_mib`. This is an acceptance limit, not a truncation mode:
+one byte beyond the ceiling closes the liveness writer, keeps draining and
+discarding during verified shutdown, discards the retained prefix, and returns
+no raw output with `output_complete=false`, `capture_limit_exceeded=true` and
+the fixed reason `capture memory ceiling exceeded`. The caller must stop and
+cannot classify a partial test summary as meaningful RED. Exact-ceiling EOF is
+allowed; accepted output remains complete and untruncated.
+
+Required inputs are Cargo subcommand arguments, the existing target, a new
+private lifecycle directory outside that target, repository working directory,
+the explicitly prepared environment, timeout, and exact SHA-256 pins for the
+guard and capture client. `stop_requested` is an optional side-effect-free
+callback. Resource and cleanup options retain guard defaults; TERM and KILL
+grace may be set separately (for example the RED6 runner's 8/5 seconds).
+
+The client returns `(raw_bytes, closure)`. It retains at most the configured
+raw-input ceiling and observes only one extra byte to detect overflow. It does not
+print it or place it in a file, argv, environment, or receipt. The guardian's
+raw stdout is pipe-only and its stderr contains only fixed guard diagnostics;
+the client discards those diagnostics and uses structured lifecycle facts.
+Stdout/stderr from Cargo remain merged, matching the original evidence runner.
+The final conversion can temporarily hold both the retained buffer and returned
+bytes (up to 128 MiB of payload at the default), plus Python allocator
+overallocation, a read chunk, pipe buffers and the guardian's 64 KiB chunk.
+This is not an RSS quota. Caller redaction can create further copies and expand
+replacement text; the capture ceiling does not bound that expansion or guarantee
+that Python returns freed memory immediately to the OS. Callers must retain RAM
+headroom and bind any higher ceiling explicitly in their own authorization gate.
+
+There are two explicitly owned sessions. The client owns the outer guardian
+leader; the guardian owns the pinned inner worker/Cargo group. The client never
+blindly kills the inner group. It retains the sole writer of a liveness pipe
+until completion, drains raw output continuously, and cancels by closing that
+writer. EOF makes the guardian stop and verify its nested group. The guardian
+keeps one nonblocking 64 KiB output chunk: a slow/missing reader cannot block
+storage sampling or cancellation. After group closure, `--pipe-drain-seconds`
+(default 5, maximum 10) bounds final forwarding. Any incomplete stream is an
+explicit failed capture, never a successful truncated log.
+
+The guardian exclusively creates three mode-0600, fixed-field JSON files in the
+existing owned mode-0700 lifecycle directory:
+
+- `guardian-started.json`: protocol, guardian/controller IDs, time and guard hash.
+- `worker-started.json`: guardian and exact nested worker IDs; absent on admission refusal.
+- `completed.json`: Cargo/guard statuses, fixed refusal reason, control EOF,
+  parent change, byte counts, EOF/completeness and nested closure observations.
+
+These files contain no commands, environment values, raw output, raw output
+hashes, or patient data. Existing files are never overwritten. The client checks
+both source pins before/after, receipt identities, nested no-live-member proof,
+leader reaping, raw EOF and exact byte counts. It separately proves no live outer
+group members while its guardian leader is still unreaped, then reaps it. Both
+layers distinguish zombie-only observations from `ESRCH`; neither claims PGID
+absence from a different observation.
+
+On controller SIGKILL/death, pipe EOF still reaches the independent guardian.
+It closes/verifies the nested worker and leaves metadata for external review;
+the lost controller's RAM output is never claimed complete. If the **guardian
+itself** is SIGKILLed, its existing worker control-pipe fallback still attempts
+bounded self-closure, but it cannot fabricate a completion receipt. Missing,
+malformed, replayed, mismatched or incomplete proof fails acceptance and prevents
+the next command. A coordinator must independently review any such failure.
+
+Callers must require all of `leader_reaped`, `streams_closed`, `group_closed`,
+`nested_worker_closed`, `communication_complete`, `output_complete`, and
+`source_pins_unchanged`, plus absence of `runner_failure_type`/`closure_failure`.
+A normal Cargo exit 101 can retain complete evidence; a guard refusal, timeout,
+cancel, incomplete output or closure failure cannot establish meaningful RED.
+The original source-gated RED6 adapter is a separately reviewed, versioned
+source proposal; its original commands, six tests, source maps, credential
+loading stages, and in-RAM redaction remain the coordinator's acceptance scope.
+
+The client allows bounded admission overhead (40 seconds for repository probes
+and preflight) in addition to the requested command and cleanup/drain budgets.
+No other code may reap its owned guardian or retain the liveness writer. It
+uses the normal permitted local process route; it does not bypass a denied
+execution permission, escape the cooperative/sampling limits, or detect hostile
+descendants that leave the owned session.
 
 ## Measurements and limits
 
