@@ -48,18 +48,6 @@ struct LocationRow {
 }
 
 #[derive(Clone, Debug, FromRow)]
-struct SupplierRow {
-    id: Uuid,
-    code: String,
-    name: String,
-    contact_name: Option<String>,
-    phone: Option<String>,
-    email: Option<String>,
-    is_active: bool,
-    created_at: DateTime<Utc>,
-}
-
-#[derive(Clone, Debug, FromRow)]
 struct InventoryDashboardSummaryRow {
     total_items: i64,
     low_stock_count: i64,
@@ -312,40 +300,12 @@ pub async fn list_locations(
 
 pub async fn list_suppliers(
     pool: &PgPool,
-    facility_id: Uuid,
+    actor: super::read_access::InventoryReadActor,
     cursor: Option<InventoryCursor>,
     limit: i64,
     filters: SupplierFilters,
 ) -> anyhow::Result<Vec<SupplierListItem>> {
-    let mut query = QueryBuilder::new(
-        r#"
-        SELECT id, code, name, contact_name, phone, email, is_active, created_at
-        FROM inventory_suppliers
-        WHERE facility_id =
-        "#,
-    );
-    query.push_bind(facility_id);
-    if let Some(is_active) = filters.is_active {
-        query.push(" AND is_active = ");
-        query.push_bind(is_active);
-    }
-    if let Some(pattern) = like_contains_pattern(filters.search.as_deref()) {
-        query.push(" AND (name ILIKE ");
-        query.push_bind(pattern.clone());
-        query.push(" ESCAPE '\\' OR code ILIKE ");
-        query.push_bind(pattern.clone());
-        query.push(" ESCAPE '\\' OR contact_name ILIKE ");
-        query.push_bind(pattern);
-        query.push(" ESCAPE '\\')");
-    }
-    apply_forward_cursor(&mut query, "created_at", "id", cursor);
-    query.push(" ORDER BY created_at ASC, id ASC LIMIT ");
-    query.push_bind(limit);
-    let rows = query
-        .build_query_as::<SupplierRow>()
-        .fetch_all(pool)
-        .await?;
-    Ok(rows.into_iter().map(supplier_from_row).collect())
+    super::suppliers::list_legacy(pool, actor, cursor, limit, filters).await
 }
 
 pub async fn get_location(
@@ -630,19 +590,6 @@ fn location_from_row(row: LocationRow) -> StorageLocationListItem {
         name: row.name,
         location_type: row.location_type,
         temperature_zone: row.temperature_zone,
-        created_at: row.created_at,
-    }
-}
-
-fn supplier_from_row(row: SupplierRow) -> SupplierListItem {
-    SupplierListItem {
-        id: row.id,
-        code: row.code,
-        name: row.name,
-        contact_name: row.contact_name,
-        phone: row.phone,
-        email: row.email,
-        is_active: row.is_active,
         created_at: row.created_at,
     }
 }

@@ -68,6 +68,44 @@ async fn omni_search_index_backfills_and_filters_before_ranking() {
             && status.status == SearchIndexState::Ready
             && status.indexed_count > 0
     }));
+    let supplier_projection_contract: (i64, i64, i64, i64) = sqlx::query_as(
+        r#"
+        WITH local_suppliers AS (
+            SELECT id FROM inventory_suppliers WHERE facility_id = $1
+        ), supplier_documents AS (
+            SELECT resource_id, route_path
+            FROM search_documents
+            WHERE facility_id = $1
+              AND resource_type = 'inventory'
+              AND metadata->>'source_table' = 'inventory_suppliers'
+        )
+        SELECT
+            (SELECT count(*) FROM local_suppliers),
+            (SELECT count(*) FROM supplier_documents),
+            (SELECT count(*) FROM supplier_documents d JOIN local_suppliers s ON s.id = d.resource_id),
+            (SELECT count(*) FROM supplier_documents WHERE route_path IS DISTINCT FROM '/inventory/suppliers/' || resource_id::text)
+        "#,
+    )
+    .bind(facility_id)
+    .fetch_one(&pool)
+    .await
+    .expect("actual supplier projection route contract loads");
+    assert!(
+        supplier_projection_contract.0 > 0 && supplier_projection_contract.1 > 0,
+        "supplier route coverage must be non-vacuous"
+    );
+    assert_eq!(
+        supplier_projection_contract.1, supplier_projection_contract.0,
+        "every actual facility supplier has exactly one supplier-source search document"
+    );
+    assert_eq!(
+        supplier_projection_contract.2, supplier_projection_contract.0,
+        "supplier-source documents join the actual local supplier identities"
+    );
+    assert_eq!(
+        supplier_projection_contract.3, 0,
+        "every supplier-source route retains its exact resource UUID"
+    );
     let unroutable_search_documents = sqlx::query_scalar::<_, i64>(
         r#"
         SELECT count(*)
@@ -84,6 +122,7 @@ async fn omni_search_index_backfills_and_filters_before_ranking() {
               OR route_path ~ '^/laboratory/(catalog|orders|results)(\?.*)?$'
               OR route_path ~ '^/billing(/invoices/[0-9a-f-]{36}(\?.*)?|/catalog\?service=[0-9a-f-]{36}|/claims\?claim=[0-9a-f-]{36})$'
               OR route_path ~ '^/inventory(/items(/[0-9a-f-]{36})?(\?.*)?|/purchase-orders(/[0-9a-f-]{36})?(\?.*)?)$'
+              OR route_path ~ '^/inventory/suppliers/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
               OR route_path ~ '^/referrals/(inbox|sent)(\?.*)?$'
           )
         "#,

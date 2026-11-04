@@ -87,6 +87,17 @@ Regenerate OpenAPI from `backend-rs/` after HTTP contract changes:
 cargo run -p hms-api --bin hms-openapi -- openapi/hms-v2.openapi.json
 ```
 
+## Governed supplier administration
+
+Supplier administration adds exact contact/address maintenance, bounded directory/
+history, unused lifecycle and original-actor receipt recovery, preserving the old
+eight-field list. Runtime032 requires the supplier migration before provisioning;
+matching API/worker/migrator and the deployment quiesce fence are required.
+Supplier-row defaults now preserve current configuration independently of the
+existing optional NULL-only item binding. PO names, preferred/alternative supplier
+relationships, assignment UI and procurement identity are separate work. See the
+[supplier repository contract](crates/hms-db/src/inventory/suppliers/README.md).
+
 ## Safety Rules
 
 - Patient identifiers require access checks before returning or mutating data.

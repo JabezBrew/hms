@@ -19,6 +19,7 @@ pub mod inventory;
 pub mod inventory_categories;
 pub mod inventory_items;
 pub mod inventory_standing;
+pub mod inventory_suppliers;
 pub mod laboratory;
 pub mod network;
 pub mod organization_units;

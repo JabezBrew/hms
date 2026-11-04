@@ -36,6 +36,34 @@ pub fn routes() -> Router<AppState> {
             get(inventory::categories::receipt),
         )
         .route(
+            "/api/v2/inventory/supplier-administration",
+            get(inventory::suppliers::list).post(inventory::suppliers::create),
+        )
+        .route(
+            "/api/v2/inventory/suppliers/:id/administration",
+            get(inventory::suppliers::detail),
+        )
+        .route(
+            "/api/v2/inventory/suppliers/:id/history",
+            get(inventory::suppliers::history),
+        )
+        .route(
+            "/api/v2/inventory/suppliers/:id/corrections",
+            post(inventory::suppliers::correct),
+        )
+        .route(
+            "/api/v2/inventory/suppliers/:id/retire",
+            post(inventory::suppliers::retire),
+        )
+        .route(
+            "/api/v2/inventory/suppliers/:id/reactivate",
+            post(inventory::suppliers::reactivate),
+        )
+        .route(
+            "/api/v2/inventory/supplier-commands/:client_request_id",
+            get(inventory::suppliers::receipt),
+        )
+        .route(
             "/api/v2/inventory/categories",
             get(inventory::list_categories),
         )

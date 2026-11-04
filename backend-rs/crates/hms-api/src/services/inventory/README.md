@@ -19,6 +19,7 @@ not coordinate multi-step stock or procurement behavior directly.
 | `common.rs` | shared scope, DTO, and workflow helper code. |
 | `catalog.rs` | inventory item catalog, categories, units, and location-facing metadata. |
 | `categories.rs` | governed current category administration, explicit parent commands and own original receipts. |
+| `suppliers.rs` | governed supplier metadata/address, unused lifecycle, scalar history and own original command receipts. |
 | `stock_control.rs` | stock levels, movements, adjustments, transfers, and low-stock views. |
 | `standing_orders.rs` | explicit line-backed template configuration, due generation, request review and governed approval/cancel/issue actions. |
 | `procurement.rs` | requisitions, purchase orders, goods receipt, suppliers, and approval paths. |
@@ -75,3 +76,31 @@ The actual generated OpenAPI owns the new `category-administration`, category
 correction/lifecycle/history and `category-commands` operations. Existing
 `GET /inventory/categories` stays the active local paged `{id,code,name}` picker.
 Immutable item receipt category observations keep their original shape and values.
+
+## Supplier administration
+
+`InventorySupplierService` exposes bounded InventoryView-protected administration
+and InventoryManage-protected UUID commands/original receipts. Ordinary onsite
+readers do not acquire a management or fresh-credential requirement. The service
+passes the exact current context/deadline into mandatory retained database proof;
+commands and own receipts use the existing fresh credential policy.
+
+The seven-field administration directory omits contact/address values and actor
+attribution. Exact current detail carries contacts/address; general history
+contains only versions and change flags. Original actor receipts retain the
+reviewed nullable choices and original before/after observations. Current reads
+cannot establish an uncertain command's outcome. New nullable contact/address
+choices are explicit even when null; supplier UUID, facility, code and creation
+identity are permanent. Lifecycle eligibility concerns actual retained item
+supplier references, not free-text purchase-order names or commercial non-use.
+
+The actual compiled OpenAPI and generated client expose eight operations for
+directory/create, exact detail, correction, retire/reactivate, scalar history and
+own command receipt. Existing `GET /inventory/suppliers` remains the separate
+eight-field compatibility list. Supplier assignment, preferred/alternative
+suppliers, typed purchase-order identity and analytics remain separate work.
+[Checkpoint 26B verification](../../../../../../docs/v2/2026-11-04-checkpoint-26b-verification.md)
+records the complete local suites, frozen producer/client and finite runtime
+checks without a full-parity or deployment claim.
+Finite public-SDK/native, guarded-browser, visual and exact fixture-cleanup
+checks pass within that separately recorded local scope.

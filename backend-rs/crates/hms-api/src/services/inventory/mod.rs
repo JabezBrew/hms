@@ -1,6 +1,8 @@
 mod catalog;
 mod categories;
 pub use categories::InventoryCategoryService;
+mod suppliers;
+pub use suppliers::InventorySupplierService;
 mod items;
 pub use items::InventoryItemService;
 mod storage_locations;
@@ -41,6 +43,10 @@ impl InventoryServices {
 
     pub fn categories(&self) -> InventoryCategoryService {
         InventoryCategoryService::new(self.state.clone())
+    }
+
+    pub fn suppliers(&self) -> InventorySupplierService {
+        InventorySupplierService::new(self.state.clone())
     }
 
     pub fn items(&self) -> InventoryItemService {

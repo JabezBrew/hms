@@ -620,8 +620,10 @@ locks, sorted code/request try-reservations, immutable evidence and final curren
 authority prevent partial publication; refusal is separate from an unknown
 transport result. Missing-only item-to-supplier link initialization binds a
 canonical supplier UUID after the seed loops and preserves configured item links
-and catalog state. The baseline supplier-row UPSERT itself remains a separate
-26B preservation gap.
+and catalog state. At checkpoint24 the baseline supplier-row UPSERT remained
+a separate preservation gap. Checkpoint26B adds missing-only supplier-row
+provisioning that preserves configured metadata, availability, provenance and
+times; this does not replace or broaden the accepted item-link guarantee.
 
 Transfer request metadata has a strict exact raw expected_unit and stores the
 reviewed requested_unit. Existing legacy rows retain NULL when the unit was not
@@ -657,8 +659,33 @@ imply no inherited item membership. See the
 privacy, migration, query and browser boundaries. Omni search admission/cache
 correctness is separately verified in
 [checkpoint 26A](../v2/2026-11-02-checkpoint-26a-verification.md). Supplier-row
-preservation (26B) and general item search's explicit category-label rebuild
-remain separate; no full parity or production acceptance is implied.
+preservation is the separately bounded checkpoint26B contract below. General
+item search's explicit category-label rebuild remains separate; no full parity
+or production acceptance is implied.
+
+## Inventory supplier governance
+
+Checkpoint26B adds eight compiled/generated operations for bounded supplier
+administration, current contact/address correction, unused lifecycle, scalar
+history and original-actor command receipts. The compatible eight-field contact
+list remains separate. Ordinary reads retain current InventoryView, Inventory,
+demographics, facility/profile/session/network and final-time proof without a
+management or fresh-credential requirement. Commands and own receipts retain
+current management and ordinary credential proof. A current read is not an
+acknowledgment of an unknown command.
+
+Nullable choices and unchanged raw historical values remain exact. A no-op keeps
+the supplier revision/time while still recording its original receipt/audit.
+New item pointers retain an active local supplier; any retained item reference
+blocks lifecycle changes. Purchase-order supplier text is not rewritten. Own
+search projection changes share the command transaction; cached Omni labels may
+lag until turnover/refetch. Missing-only supplier provisioning and the existing
+missing-only item link remain distinct guarantees. Schema032 is a coordinated
+breaking epoch requiring matching binaries and the deployment quiesce fence.
+See [supplier scope](../v2/2026-11-03-inventory-supplier-governance-scope.md) and
+[checkpoint26B verification](../v2/2026-11-04-checkpoint-26b-verification.md).
+Finite local native/HTTP, browser, visual and exact cleanup checks pass; the
+linked verification records their source-bound scope and remaining limits.
 
 ## Optional guided-onboarding transport
 

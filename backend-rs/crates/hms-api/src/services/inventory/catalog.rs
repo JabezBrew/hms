@@ -172,9 +172,23 @@ impl InventoryCatalogService {
     ) -> Result<ListResponse<SupplierListItem>, ApiError> {
         require_catalog_access(ctx, self.facility_id())?;
         let (cursor, page_size) = decode_page(query.cursor.as_deref(), query.limit)?;
+        let deadline = ctx.authorization_deadline.ok_or_else(|| {
+            ApiError::forbidden(
+                "inventory_supplier_authority_required",
+                "Current inventory read authority is required.",
+            )
+        })?;
+        let actor = hms_db::inventory::read_access::InventoryReadActor {
+            facility_id: self.facility_id(),
+            user_id: ctx.user_id,
+            request_id: ctx.request_id.clone(),
+            authorization: crate::services::clinical::prescription_courses::authorization(
+                ctx, deadline,
+            ),
+        };
         let rows = hms_db::inventory::list_suppliers(
             self.pool(),
-            self.facility_id(),
+            actor,
             cursor,
             i64::from(page_size) + 1,
             SupplierFilters {
@@ -183,9 +197,7 @@ impl InventoryCatalogService {
             },
         )
         .await
-        .map_err(|_| {
-            ApiError::conflict("supplier_list_failed", "Suppliers could not be loaded.")
-        })?;
+        .map_err(|error| super::suppliers::error(error, false))?;
         Ok(page_response(rows, page_size, |item| {
             encode_cursor(item.created_at, item.id)
         }))

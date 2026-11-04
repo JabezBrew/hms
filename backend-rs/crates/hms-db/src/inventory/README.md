@@ -17,6 +17,8 @@ multiple lower-level SQL operations together in handlers.
 | --- | --- |
 | `catalog.rs` | inventory item, category, unit, and location metadata queries. |
 | `category_governance.rs` | current category metadata, exact parent publication, unused lifecycle and immutable original command receipts. |
+| `read_access.rs` | shared retained current inventory, demographics, facility/profile/session/network and final-time read proof. |
+| `suppliers.rs` and `suppliers/` | current supplier metadata/address, bounded directory/history, unused lifecycle and original command receipts. |
 | `stock_control.rs` | stock levels, stock movement, adjustment, transfer, and alert queries. |
 | `standing_orders.rs` | governed recurring templates, due occurrences, and immutable line-backed requisition snapshots. |
 | `standing_fulfillment.rs` | audited request approval/cancellation and atomic FEFO stock transfers with paired movement evidence. |
@@ -88,3 +90,29 @@ the existing active local category publication guard.
 
 Focused verification: `cargo test -p hms-db --test inventory_category_governance
 --test baseline_inventory_integrity --test schema_compatibility -- --test-threads=1`.
+
+## Governed suppliers
+
+The original eight-field supplier list retains its current filter, three-field
+literal search and ascending cursor contract with a mandatory shared read proof.
+New administration separates seven-field directory metadata, eleven-field scalar
+history and fourteen-field exact detail. Contact/address values, private reasons,
+snapshots and actors do not expand the new directory/history. Own original receipts
+retain the richer observations under current management/fresh credential authority.
+
+Supplier identity/code/creation are permanent. Exact CAS/UUID commands preserve
+no-op row/search times and append immutable receipt/audit evidence. All retained
+item pointers block both lifecycle intents, including inactive and malformed
+foreign rows, without disclosing item identities or counts. New non-NULL pointers
+retain an active local source; unchanged historical pointers and NULL remain exact.
+
+Canonical supplier rows are ID-first missing-only defaults, preserving configured
+contacts/address, retired state, provenance and timestamps. Canonical unbound item
+defaults remain optional and never borrow a replacement or reactivate a supplier.
+The supplier/binding transaction is not a whole-baseline atomicity claim.
+
+Only the supplier's own search document is refreshed, with demographics required,
+no address indexing, preserved document identity/unrelated JSON and typed ownership
+collision refusal. The032 scoped repair excludes orphans and other families;
+in-memory cache turnover remains separate. Purchase-order names stay free text.
+See the [supplier repository contract](suppliers/README.md) for bounds and limits.

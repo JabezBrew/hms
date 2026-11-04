@@ -1571,6 +1571,52 @@ export const operations = {
     ],
     "hasBody": false
   },
+  "getInventorySupplierAdministration": {
+    "operationId": "getInventorySupplierAdministration",
+    "method": "GET",
+    "path": "/api/v2/inventory/supplier-administration",
+    "pathParamNames": [],
+    "queryParamNames": [
+      "cursor",
+      "limit",
+      "search",
+      "is_active"
+    ],
+    "hasBody": false
+  },
+  "getInventorySupplierAdministrationById": {
+    "operationId": "getInventorySupplierAdministrationById",
+    "method": "GET",
+    "path": "/api/v2/inventory/suppliers/{id}/administration",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [],
+    "hasBody": false
+  },
+  "getInventorySupplierCommandReceipt": {
+    "operationId": "getInventorySupplierCommandReceipt",
+    "method": "GET",
+    "path": "/api/v2/inventory/supplier-commands/{client_request_id}",
+    "pathParamNames": [
+      "client_request_id"
+    ],
+    "queryParamNames": [],
+    "hasBody": false
+  },
+  "getInventorySupplierHistory": {
+    "operationId": "getInventorySupplierHistory",
+    "method": "GET",
+    "path": "/api/v2/inventory/suppliers/{id}/history",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [
+      "cursor",
+      "limit"
+    ],
+    "hasBody": false
+  },
   "getInventorySuppliers": {
     "operationId": "getInventorySuppliers",
     "method": "GET",
@@ -4653,6 +4699,44 @@ export const operations = {
     "queryParamNames": [],
     "hasBody": true
   },
+  "postInventorySupplier": {
+    "operationId": "postInventorySupplier",
+    "method": "POST",
+    "path": "/api/v2/inventory/supplier-administration",
+    "pathParamNames": [],
+    "queryParamNames": [],
+    "hasBody": true
+  },
+  "postInventorySupplierCorrection": {
+    "operationId": "postInventorySupplierCorrection",
+    "method": "POST",
+    "path": "/api/v2/inventory/suppliers/{id}/corrections",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [],
+    "hasBody": true
+  },
+  "postInventorySupplierReactivate": {
+    "operationId": "postInventorySupplierReactivate",
+    "method": "POST",
+    "path": "/api/v2/inventory/suppliers/{id}/reactivate",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [],
+    "hasBody": true
+  },
+  "postInventorySupplierRetire": {
+    "operationId": "postInventorySupplierRetire",
+    "method": "POST",
+    "path": "/api/v2/inventory/suppliers/{id}/retire",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [],
+    "hasBody": true
+  },
   "postLaboratoryOrderCancel": {
     "operationId": "postLaboratoryOrderCancel",
     "method": "POST",
@@ -5843,6 +5927,10 @@ export function createGeneratedClient(request) {
     getInventoryStandingOrders: createOperation(request, operations.getInventoryStandingOrders),
     getInventoryStandingTemplateById: createOperation(request, operations.getInventoryStandingTemplateById),
     getInventoryStandingTemplates: createOperation(request, operations.getInventoryStandingTemplates),
+    getInventorySupplierAdministration: createOperation(request, operations.getInventorySupplierAdministration),
+    getInventorySupplierAdministrationById: createOperation(request, operations.getInventorySupplierAdministrationById),
+    getInventorySupplierCommandReceipt: createOperation(request, operations.getInventorySupplierCommandReceipt),
+    getInventorySupplierHistory: createOperation(request, operations.getInventorySupplierHistory),
     getInventorySuppliers: createOperation(request, operations.getInventorySuppliers),
     getLaboratoryOrderById: createOperation(request, operations.getLaboratoryOrderById),
     getLaboratoryOrderClinicalContext: createOperation(request, operations.getLaboratoryOrderClinicalContext),
@@ -6125,6 +6213,10 @@ export function createGeneratedClient(request) {
     postInventoryStandingTemplateStatus: createOperation(request, operations.postInventoryStandingTemplateStatus),
     postInventoryStockChecks: createOperation(request, operations.postInventoryStockChecks),
     postInventoryStockCheckStatus: createOperation(request, operations.postInventoryStockCheckStatus),
+    postInventorySupplier: createOperation(request, operations.postInventorySupplier),
+    postInventorySupplierCorrection: createOperation(request, operations.postInventorySupplierCorrection),
+    postInventorySupplierReactivate: createOperation(request, operations.postInventorySupplierReactivate),
+    postInventorySupplierRetire: createOperation(request, operations.postInventorySupplierRetire),
     postLaboratoryOrderCancel: createOperation(request, operations.postLaboratoryOrderCancel),
     postLaboratoryOrderCollect: createOperation(request, operations.postLaboratoryOrderCollect),
     postLaboratoryOrders: createOperation(request, operations.postLaboratoryOrders),

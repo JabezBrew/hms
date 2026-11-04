@@ -4,7 +4,7 @@ export const WRITE_UNCERTAINTY_KEY = 'hms.v2.write-review.v1';
 const MAX_ENTRIES = 24; const MAX_BYTES = 24000; const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const HEX = /^[0-9a-f]{64}$/; const receiptKey = Symbol('write-review');
 const ROOTS = new Set(['admin', 'auth', 'billing', 'clinical', 'encounters', 'inventory', 'laboratory', 'nhis', 'nursing', 'patients', 'pharmacy', 'scheduling', 'visits', 'wards', 'appointments']);
-const FAMILY_ALIASES = { 'nursing/prn-dose-requests': 'nursing/medication-administrations', 'nursing/prn-orders': 'nursing/medication-administrations', 'nhis/batches': 'nhis/claims', 'nhis/exports': 'nhis/claims', 'inventory/catalog-edits': 'inventory/items', 'inventory/category-administration': 'inventory/categories' };
+const FAMILY_ALIASES = { 'nursing/prn-dose-requests': 'nursing/medication-administrations', 'nursing/prn-orders': 'nursing/medication-administrations', 'nhis/batches': 'nhis/claims', 'nhis/exports': 'nhis/claims', 'inventory/catalog-edits': 'inventory/items', 'inventory/category-administration': 'inventory/categories', 'inventory/supplier-administration': 'inventory/suppliers' };
 let store; let fault = false; let currentScope = null; let currentContext = null; let activation = 0; let serial = Promise.resolve();
 const active = new Map(); const subscribers = new Set();
 let snapshot = { entries: [], unavailable: false };
@@ -185,5 +185,10 @@ export async function inventoryItemCommandRecoveryCandidate() {
 export async function inventoryCategoryCommandRecoveryCandidate() {
   const store = manualStore(), origin = store.current();
   return (await import('./writeScopeRouter')).inventoryCategoryRecoveryCandidate(store, origin);
+}
+// Reload discovery exposes only one existing same-scope supplier command reference.
+export async function inventorySupplierCommandRecoveryCandidate() {
+  const store = manualStore(), origin = store.current();
+  return (await import('./writeScopeRouter')).inventorySupplierRecoveryCandidate(store, origin);
 }
 export function resetWriteUncertaintyForTests({ preserveStorage = false } = {}) { store = undefined; fault = false; currentScope = null; currentContext = null; activation += 1; active.clear(); serial = Promise.resolve(); if (!preserveStorage) sessionStorage.removeItem(WRITE_UNCERTAINTY_KEY); publish(); }

@@ -1,4 +1,5 @@
 import { transferNavigationFeatures, transferNavigationHref, transferRouteAccess, TRANSFER_READ_CAPABILITIES } from '@/features/inventory/transfers/access'
+import { supplierRouteAccess } from '@/features/inventory/suppliers/access'
 import { categoryRouteAccess } from '@/features/inventory/categories/access'
 import { catalogRouteAccess } from '@/features/inventory/catalog/access'
 import { bookableServiceRouteAccess } from '@/features/appointments/services/access'
@@ -410,6 +411,7 @@ const globalSections = [
         item({ key: 'inventory-items', label: 'Items', href: '/inventory/items', icon: Package, roles: ROLE_GROUPS.INVENTORY, features: ['inventory'], exact: false }),
         ...(isRustV2ApiMode() ? [item({ key: 'inventory-catalog', label: 'Catalog', href: '/inventory/catalog', icon: Package, ...catalogRouteAccess(), exact: false })] : []),
         ...(isRustV2ApiMode() ? [item({ key: 'inventory-categories', label: 'Categories', href: '/inventory/categories', icon: Package, ...categoryRouteAccess(), exact: false })] : []),
+        ...(isRustV2ApiMode() ? [item({ key: 'inventory-suppliers', label: 'Suppliers', href: '/inventory/suppliers', icon: Package, ...supplierRouteAccess(), exact: false })] : []),
         item({ key: 'inventory-locations', label: 'Locations', href: '/inventory/locations', icon: Warehouse, ...storageLocationRouteAccess(), exact: true }),
         item({ key: 'inventory-requisitions', label: 'Requisitions', href: '/inventory/requisitions', icon: ClipboardList, roles: ROLE_GROUPS.INVENTORY, features: ['inventory'], exact: false }),
         item({ key: 'inventory-purchase-orders', label: 'Purchase Orders', href: '/inventory/purchase-orders', icon: ShoppingCart, roles: ROLE_GROUPS.INVENTORY, features: ['inventory'], exact: false }),
@@ -572,6 +574,7 @@ const inventorySections = [
     item({ key: 'inventory-items', label: 'Items', href: '/inventory/items', icon: Package, roles: ROLE_GROUPS.INVENTORY, features: ['inventory'], exact: false }),
     ...(isRustV2ApiMode() ? [item({ key: 'inventory-catalog', label: 'Catalog', href: '/inventory/catalog', icon: Package, ...catalogRouteAccess(), exact: false })] : []),
     ...(isRustV2ApiMode() ? [item({ key: 'inventory-categories', label: 'Categories', href: '/inventory/categories', icon: Package, ...categoryRouteAccess(), exact: false })] : []),
+    ...(isRustV2ApiMode() ? [item({ key: 'inventory-suppliers', label: 'Suppliers', href: '/inventory/suppliers', icon: Package, ...supplierRouteAccess(), exact: false })] : []),
 
     item({ key: 'inventory-locations', label: 'Locations', href: '/inventory/locations', icon: Warehouse, ...storageLocationRouteAccess(), features: ['inventory'], exact: true }),
     item({ key: 'inventory-requisitions', label: 'Requisitions', href: '/inventory/requisitions', icon: ClipboardList, roles: ROLE_GROUPS.INVENTORY, features: ['inventory'], exact: false }),

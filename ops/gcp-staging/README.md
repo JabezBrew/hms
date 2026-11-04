@@ -562,3 +562,23 @@ save fanout. Keep backup/release anchors and measure the migration at the intend
 scale. Subsequent local category renames reach general item search through its
 existing explicit rebuild and cache turnover. Local protocol fixtures do not
 establish a live migration, recovery drill or production latency acceptance.
+
+Migration `202611020032` requires runtime epoch `202611020032` for governed
+supplier metadata, address maintenance and unused-supplier lifecycle. Use the
+matching API, worker, migrator and generated frontend. The supported deployment
+protocol drains writers and requires the complete predecessor chain before
+migration; application services stay stopped until the required032 schema is
+proved. Runtime031 or earlier is not a supported rollback after032 commits.
+An older executable is not assumed to recognize an unknown future migration.
+
+Supplier migration preserves retained identity, contact values, lifecycle and
+item bindings. New address/provenance fields remain unknown (NULL) for existing
+rows; it does not infer historical actors or change times, substitute suppliers,
+or rewrite purchase-order supplier observations.
+Its targeted producer-backed supplier search repair runs inside the coordinated
+migration window, preserves unrelated documents and never indexes address.
+Measure that population-dependent work separately from protected request
+latency. Keep a verified compatible release and the governed backup/restore
+anchors; a previous031 release does not become schema-compatible by being
+retained on disk. Local process fixtures do not establish a live migration,
+remote backup verification or a supported restoration drill.

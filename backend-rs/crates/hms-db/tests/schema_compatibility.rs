@@ -19,7 +19,7 @@ async fn historical(pool: &hms_db::PgPool, before: i64) {
         .expect("historical migrations apply");
 }
 #[tokio::test]
-async fn new_runtime_requires_category_epoch_while_probe_preserves_historical_epochs() {
+async fn new_runtime_requires_supplier_epoch_while_probe_preserves_historical_epochs() {
     let database = hms_db::test_support::TestDatabase::create().unwrap();
     let pool = hms_db::connect(database.database_url()).await.unwrap();
     assert_eq!(committed_breaking_epoch(&pool).await.unwrap(), 0);
@@ -55,8 +55,11 @@ async fn new_runtime_requires_category_epoch_while_probe_preserves_historical_ep
     historical(&pool, 202610310031).await;
     assert_eq!(committed_breaking_epoch(&pool).await.unwrap(), 202610300030);
     assert!(require_runtime_schema(&pool).await.is_err());
-    hms_db::migrate::run(&pool).await.unwrap();
+    historical(&pool, 202611020032).await;
     assert_eq!(committed_breaking_epoch(&pool).await.unwrap(), 202610310031);
+    assert!(require_runtime_schema(&pool).await.is_err());
+    hms_db::migrate::run(&pool).await.unwrap();
+    assert_eq!(committed_breaking_epoch(&pool).await.unwrap(), 202611020032);
     require_runtime_schema(&pool).await.unwrap();
     let identities:(i64,i64,i64)=sqlx::query_as("SELECT (SELECT count(*) FROM facilities),(SELECT count(*) FROM users),(SELECT count(*) FROM audit_events)").fetch_one(&pool).await.unwrap();
     assert_eq!(identities, (0, 0, 0));
@@ -849,6 +852,9 @@ mod appointment_types;
 
 #[path = "schema_compatibility/inventory_items.rs"]
 mod inventory_items;
+
+#[path = "schema_compatibility/inventory_suppliers.rs"]
+mod inventory_suppliers;
 
 #[tokio::test]
 async fn category25_checksum_layout_intrinsic_guards_and_indexes_are_required() {

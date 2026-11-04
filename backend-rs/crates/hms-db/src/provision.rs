@@ -1,5 +1,6 @@
 mod organization_units;
 mod storage_locations;
+mod suppliers;
 use std::collections::HashSet;
 use std::sync::OnceLock;
 
@@ -53,6 +54,38 @@ fn inventory_category_provisioning_error(error: sqlx::Error) -> anyhow::Error {
     } else {
         error.into()
     }
+}
+
+/// Canonical supplier ownership conflicts need review; contention never borrows a source.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum InventorySupplierProvisioningError {
+    OperatorReview,
+    Busy,
+}
+impl std::fmt::Display for InventorySupplierProvisioningError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(match self {
+            Self::OperatorReview => "baseline_inventory_supplier_review_required",
+            Self::Busy => "baseline_inventory_supplier_busy",
+        })
+    }
+}
+impl std::error::Error for InventorySupplierProvisioningError {}
+fn inventory_supplier_provisioning_error(error: sqlx::Error) -> anyhow::Error {
+    if let Some(database) = error.as_database_error() {
+        if matches!(database.code().as_deref(), Some("55P03" | "57014")) {
+            return InventorySupplierProvisioningError::Busy.into();
+        }
+        if database.code().as_deref() == Some("23505")
+            || matches!(
+                database.message(),
+                "inventory_supplier_code_conflict" | "inventory_supplier_projection_conflict"
+            )
+        {
+            return InventorySupplierProvisioningError::OperatorReview.into();
+        }
+    }
+    error.into()
 }
 
 static PROVISION_LOCK: OnceLock<tokio::sync::Mutex<()>> = OnceLock::new();
@@ -6173,6 +6206,16 @@ pub async fn provision_performance_seed(
         "performance_seed_existing_synthetic_evidence_use_fresh_database"
     );
 
+    // Only a first seed selects a supplier. Original receipt replay above never
+    // revalidates or rewrites later state. Retain the actual first active row;
+    // contention refuses rather than selecting another or using SKIP LOCKED.
+    let performance_supplier_id: Option<Uuid> = if config.inventory_item_count > 0 {
+        sqlx::query_scalar("SELECT id FROM inventory_suppliers WHERE facility_id=$1 AND is_active ORDER BY code ASC,id ASC LIMIT 1 FOR SHARE NOWAIT")
+            .bind(baseline.facility_id).fetch_optional(&mut *tx).await.map_err(inventory_supplier_provisioning_error)?
+    } else {
+        None
+    };
+
     sqlx::query(
         r#"
         WITH generated AS (
@@ -6681,14 +6724,7 @@ pub async fn provision_performance_seed(
                'medication',
                'unit',
                FALSE,
-               (
-                   SELECT inventory_suppliers.id
-                   FROM inventory_suppliers
-                   WHERE inventory_suppliers.facility_id = $1
-                     AND inventory_suppliers.is_active = TRUE
-                   ORDER BY inventory_suppliers.code ASC
-                   LIMIT 1
-               ),
+               $4,
                TRUE,
                TIMESTAMPTZ '2026-06-01 00:00:00+00' + (i * INTERVAL '1 minute'),
                TIMESTAMPTZ '2026-06-01 00:00:00+00' + (i * INTERVAL '1 minute')
@@ -6706,6 +6742,7 @@ pub async fn provision_performance_seed(
     .bind(baseline.facility_id)
     .bind(config.inventory_item_count)
     .bind(default_category_id)
+    .bind(performance_supplier_id)
     .execute(&mut *tx)
     .await?;
 
@@ -7535,61 +7572,7 @@ async fn seed_inventory_baseline(
     }
     location_seed.commit().await?;
 
-    for (id, code, name, contact_name, phone, email) in [
-        (
-            Uuid::from_u128(DEFAULT_SUPPLIER_ACME_ID),
-            "ACME",
-            "Acme Medical Supplies",
-            "Procurement Desk",
-            "+233 30 000 1000",
-            "orders@acme-med.local",
-        ),
-        (
-            Uuid::from_u128(DEFAULT_SUPPLIER_CITY_ID),
-            "CITY",
-            "City Medical Depot",
-            "Sales Desk",
-            "+233 30 000 2000",
-            "orders@city-med.local",
-        ),
-    ] {
-        sqlx::query(
-            r#"
-            INSERT INTO inventory_suppliers (id, facility_id, code, name, contact_name, phone, email)
-            VALUES ($1, $2, $3, $4, $5, $6, $7)
-            ON CONFLICT (facility_id, code) DO UPDATE
-            SET id = EXCLUDED.id,
-                name = EXCLUDED.name,
-                contact_name = EXCLUDED.contact_name,
-                phone = EXCLUDED.phone,
-                email = EXCLUDED.email,
-                is_active = TRUE,
-                updated_at = now()
-            "#,
-        )
-        .bind(id)
-        .bind(baseline.facility_id)
-        .bind(code)
-        .bind(name)
-        .bind(contact_name)
-        .bind(phone)
-        .bind(email)
-        .execute(pool)
-        .await?;
-    }
-
-    // Missing-only defaults bind permanent item identity, never a mutable code.
-    // Run after both missing items and suppliers exist, including first bootstrap.
-    for (item, supplier) in [
-        (
-            DEFAULT_INVENTORY_ITEM_PARACETAMOL_ID,
-            DEFAULT_SUPPLIER_ACME_ID,
-        ),
-        (DEFAULT_INVENTORY_ITEM_MORPHINE_ID, DEFAULT_SUPPLIER_CITY_ID),
-    ] {
-        sqlx::query("UPDATE inventory_items i SET primary_supplier_id=s.id,updated_at=clock_timestamp() FROM inventory_suppliers s WHERE i.facility_id=$1 AND i.id=$2 AND i.primary_supplier_id IS NULL AND s.facility_id=i.facility_id AND s.id=$3 AND s.is_active")
-            .bind(baseline.facility_id).bind(Uuid::from_u128(item)).bind(Uuid::from_u128(supplier)).execute(pool).await?;
-    }
+    suppliers::retain_defaults(pool, baseline.facility_id).await?;
 
     Ok(())
 }

@@ -1,4 +1,5 @@
 pub mod categories;
+pub mod suppliers;
 use hms_domain::inventory_items::{InventoryCategoriesQuery, InventoryItemCommandReceipt};
 pub mod items;
 pub mod storage_locations;

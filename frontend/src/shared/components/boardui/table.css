@@ -1,0 +1,51 @@
+/* BoardUI Table section, scoped and mapped to existing HMS clinical tokens. */
+.hms-boardui-table {
+  position: relative;
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--card);
+}
+.hms-boardui-table .bui-table {
+  width: 100%;
+  min-width: 32rem;
+  border-collapse: collapse;
+  text-align: start;
+  color: var(--foreground);
+  font-family: var(--font-dm-sans), sans-serif;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 20px;
+}
+.hms-boardui-table .bui-table thead th {
+  padding: 10px 12px;
+  text-align: start;
+  vertical-align: middle;
+  white-space: nowrap;
+  color: var(--muted-foreground);
+  background: var(--muted);
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  font-weight: 500;
+}
+.hms-boardui-table .bui-table tbody td,
+.hms-boardui-table .bui-table tbody th {
+  padding: 10px 12px;
+  text-align: start;
+  vertical-align: middle;
+}
+.hms-boardui-table .bui-table tbody tr:not(:last-child) {
+  border-bottom: 1px solid var(--border);
+}
+.hms-boardui-table .bui-table [data-focus-visible] {
+  outline: 2px solid var(--ring);
+  outline-offset: -2px;
+}
+.hms-boardui-table .bui-table.bui-table-sm th,
+.hms-boardui-table .bui-table.bui-table-sm td {
+  padding: 6px 10px;
+  font-size: 13px;
+  line-height: 18px;
+}

@@ -35,9 +35,18 @@ async fn supplier_list_is_bounded_and_searchable() {
         .expect("facility query succeeds")
         .expect("facility exists");
 
+    let user = Uuid::from_u128(hms_db::provision::LIMITED_USER_ID);
+    sqlx::query("INSERT INTO user_permissions(user_id,permission_code) VALUES($1,'inventory.view') ON CONFLICT DO NOTHING").bind(user).execute(&pool).await.unwrap();
+    let actor = governed::actor(&pool, facility_id).await;
+    let read_actor = hms_db::inventory::read_access::InventoryReadActor {
+        facility_id,
+        user_id: actor.user_id,
+        request_id: actor.request_id,
+        authorization: actor.authorization,
+    };
     let rows = hms_db::inventory::list_suppliers(
         &pool,
-        facility_id,
+        read_actor,
         None,
         1,
         hms_db::inventory::SupplierFilters {

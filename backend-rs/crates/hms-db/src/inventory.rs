@@ -15,9 +15,11 @@ mod controlled_substances;
 pub mod items;
 mod pharmacy;
 mod procurement;
+pub mod read_access;
 mod standing_fulfillment;
 mod standing_orders;
 pub mod storage_locations;
+pub mod suppliers;
 pub use standing_fulfillment::{
     approve_standing_request, cancel_standing_request, issue_standing_request, StandingRequestError,
 };

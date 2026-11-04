@@ -868,6 +868,7 @@ dependencies = [
  "hms-domain",
  "hms-events",
  "hms-observability",
+ "idna",
  "password-hash",
  "rand_core 0.6.4",
  "regex",

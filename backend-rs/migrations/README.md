@@ -54,3 +54,17 @@ migrator with all writers quiesced and no old-runtime restart. New runtime31
 refuses older schemas before provisioning. Accepted runtime030 cannot know a
 future031 epoch; its observed startup/write behavior is a separate diagnostic,
 not a supported rollback policy. Do not modify accepted030 migration bytes.
+
+## Supplier epoch032
+
+`202611020032_inventory_supplier_governance.sql` adds nullable plain-text address,
+current supplier CAS/provenance, immutable command/audit completeness guards,
+retained item-source locks, global reference lookup and bounded own-document
+publication. Existing supplier text/state/timestamps and malformed retained item
+pointers are preserved; unknown provenance stays NULL. Mandatory producer-backed
+supplier document repair requires demographics, excludes address and preserves
+document identities/unrelated JSON without rewriting other families or orphans.
+
+Deploy matching 032 API/worker/migrator under the quiesce/no-old-restart fence.
+The new runtime refuses 031 before provisioning. Actual older 031 behavior on 032 is
+a separate diagnostic, not supported rollback. Accepted 031 bytes remain immutable.

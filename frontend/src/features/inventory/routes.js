@@ -3,9 +3,11 @@ import { ROUTE_LAYOUTS, SIDEBARS } from '@/app/routes/routeTypes'
 import { ROLE_GROUPS } from '@/shared/constants/roles'
 import { transferRouteAccess } from './transfers/access'
 import { categoryRouteAccess } from './categories/access'
+import { supplierRouteAccess } from './suppliers/access'
 import { catalogRouteAccess } from './catalog/access'
 import { storageLocationRouteAccess } from './locations/access'
 
+const InventorySupplierPage = lazy(() => import('./suppliers/InventorySupplierPage'))
 const InventoryCategoryPage = lazy(() => import('./categories/InventoryCategoryPage'))
 const InventoryCatalogPage = lazy(() => import('./catalog/InventoryCatalogPage'))
 const InventoryDashboardPage = lazy(() => import('./pages/InventoryDashboardPage'))
@@ -28,6 +30,15 @@ const AnalyticsPage = lazy(() => import('./pages/AnalyticsPage'))
 const INVENTORY_BREADCRUMB = { label: 'Inventory', path: '/inventory' }
 
 export const inventoryRoutes = [
+  {
+    path: '/inventory/suppliers/*',
+    component: InventorySupplierPage,
+    ...supplierRouteAccess(),
+    layout: ROUTE_LAYOUTS.APP,
+    sidebar: SIDEBARS.INVENTORY,
+    title: 'Inventory Suppliers | Hospital Management System',
+    breadcrumbs: [INVENTORY_BREADCRUMB, { label: 'Suppliers', path: '/inventory/suppliers' }],
+  },
   {
     path: '/inventory/categories/*',
     component: InventoryCategoryPage,

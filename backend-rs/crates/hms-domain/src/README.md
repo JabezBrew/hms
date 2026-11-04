@@ -20,6 +20,7 @@ Scope: Rust V2 domain types, DTOs, policies, and capability language.
 | `dashboard.rs` | dashboard, notification, and projection DTOs. |
 | `deployment.rs` | deployment profile/domain configuration types. |
 | `inventory.rs` | inventory, procurement, pharmacy, stock, and controlled-substance DTOs. |
+| `inventory_suppliers.rs` | closed supplier inputs, exact contact/address detail, lean directory/history and original command receipts. |
 | `laboratory.rs` | lab catalog, order, specimen, and result DTOs. |
 | `patients.rs` | patient registry, Chronicle, and patient context DTOs. |
 | `referrals.rs` | referral and waitlist DTOs. |
