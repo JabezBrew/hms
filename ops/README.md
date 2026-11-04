@@ -29,6 +29,7 @@ client VPS kit is legacy Django deployment material.
 | `hetzner-client-vps/` | legacy Django deployment kit; do not use for new Rust V2 deploys. |
 | `create-client-deployment.py` | client deployment generator/helper. |
 | `tests/` | Python tests for deployment scripts, Caddy routes, tracing config, monitoring config. |
+| `CARGO_BUDGET.md` | local shared Cargo target admission, cross-worktree storage guard, lightweight tests, and coordinator-only heavy execution. |
 
 ## Rust V2 Compose Kit
 

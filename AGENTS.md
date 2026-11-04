@@ -133,6 +133,19 @@ Do not create standalone clinical patient-data pages such as
 
 ## Tests
 
+### Local Cargo storage policy
+
+Only the coordinator launches heavy Cargo checks. Run every HMS Cargo
+build/check/test/run/clippy command through `python3 scripts/cargo-budget.py
+--target-dir <existing-absolute-shared-target> -- <cargo-subcommand> ...`;
+see `ops/CARGO_BUDGET.md`. Direct builds and per-worktree targets are forbidden.
+Do not recreate the removed primary `backend-rs/target`, copy targets, or clean
+shared artifacts. The Cargo commands below name the required suites; preserve
+their semantics/matrix while invoking them through the guard. Non-building
+format/inspection commands such as `cargo fmt --all --check` and
+`cargo metadata --offline --locked --no-deps` may run directly. No global Cargo
+configuration or shell changes are required.
+
 Backend:
 
 ```bash
